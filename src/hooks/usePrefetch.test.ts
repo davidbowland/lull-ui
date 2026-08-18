@@ -9,10 +9,19 @@ import { pack } from '@test/__mocks__'
 // requests against a 35-second timeout.
 jest.mock('@services/lull')
 
+// A pack's own `date` must match the key it is stored under -- readPack rejects a
+// mismatch as corrupt, which is what stops a poisoned entry crashing every load.
+const packFor = (date: string) => ({ ...pack, date })
+
 describe('prefetchTargets', () => {
-  it('asks for today alone when the app is not installed', () => {
+  // Two days, not one. The shelf's fallback to "the most recent pack on the device"
+  // searches the cache, so a single candidate leaves it nothing to fall back to when
+  // today 404s -- day one of the product, a failed nightly, or a clock ahead of the
+  // generator all show an empty app with a good pack one request away.
+  it('asks for today and yesterday when the app is not installed', () => {
     expect(prefetchTargets({ installed: false, localToday: '2026-08-18', utcToday: '2026-08-18' })).toEqual([
       '2026-08-18',
+      '2026-08-17',
     ])
   })
 
@@ -56,6 +65,7 @@ describe('prefetchTargets', () => {
     expect(prefetchTargets({ installed: false, localToday: '2026-08-17', utcToday: '2026-08-18' })).toEqual([
       '2026-08-18',
       '2026-08-17',
+      '2026-08-16',
     ])
   })
 })
@@ -131,13 +141,15 @@ describe('usePrefetch', () => {
   })
 
   describe('fetching', () => {
-    it("fetches today's pack for a visitor who has not installed", async () => {
+    it("fetches today's and yesterday's packs for a visitor who has not installed", async () => {
       setup()
 
       await renderPrefetch()
 
-      expect(mockFetchPack).toHaveBeenCalledTimes(1)
+      // Yesterday is what the shelf's fallback falls back TO when today has no pack.
+      expect(mockFetchPack).toHaveBeenCalledTimes(2)
       expect(mockFetchPack).toHaveBeenCalledWith('2026-08-18')
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-17')
     })
 
     it('fetches the whole window once installed', async () => {
@@ -160,7 +172,7 @@ describe('usePrefetch', () => {
         window.dispatchEvent(new Event('online'))
       })
 
-      expect(mockFetchPack).toHaveBeenCalledTimes(8)
+      expect(mockFetchPack).toHaveBeenCalledTimes(9)
     })
 
     // Offline, eight sequential requests against a 35-second timeout can hang for over
@@ -183,7 +195,7 @@ describe('usePrefetch', () => {
         window.dispatchEvent(new Event('online'))
       })
 
-      expect(mockFetchPack).toHaveBeenCalledTimes(2)
+      expect(mockFetchPack).toHaveBeenCalledTimes(4)
     })
 
     it('runs again on install', async () => {
@@ -194,7 +206,7 @@ describe('usePrefetch', () => {
         window.dispatchEvent(new Event('appinstalled'))
       })
 
-      expect(mockFetchPack).toHaveBeenCalledTimes(2)
+      expect(mockFetchPack).toHaveBeenCalledTimes(4)
     })
 
     // online fires on every transition with no backoff, and a flapping connection fires
@@ -214,7 +226,9 @@ describe('usePrefetch', () => {
       })
       rendered.unmount()
 
-      expect(mockFetchPack).toHaveBeenCalledTimes(1)
+      // Two, because a non-installed run asks for today and yesterday. The point is that
+      // it is not FOUR: the `online` event that arrived mid-flight started no second run.
+      expect(mockFetchPack).toHaveBeenCalledTimes(2)
     })
 
     // Nobody is left to receive these. Stop rather than spend the rest of the window on
@@ -259,7 +273,7 @@ describe('usePrefetch', () => {
   describe('pruning', () => {
     it('drops a pack older than the retention window', async () => {
       setup()
-      writePack('2026-08-11', pack)
+      writePack('2026-08-11', packFor('2026-08-11'))
 
       await renderPrefetch()
 
@@ -268,11 +282,11 @@ describe('usePrefetch', () => {
 
     it('keeps the oldest pack still inside the window', async () => {
       setup()
-      writePack('2026-08-12', pack)
+      writePack('2026-08-12', packFor('2026-08-12'))
 
       await renderPrefetch()
 
-      expect(readPack('2026-08-12')).toEqual(pack)
+      expect(readPack('2026-08-12')).toEqual(packFor('2026-08-12'))
     })
 
     // Retention window is not the fetch window. prefetchTargets collapses to
@@ -280,22 +294,22 @@ describe('usePrefetch', () => {
     // wipe a casual visitor's whole cache on every open. Prune on age.
     it('keeps a week of packs for a visitor who has not installed', async () => {
       setup()
-      writePack('2026-08-15', pack)
+      writePack('2026-08-15', packFor('2026-08-15'))
 
       await renderPrefetch()
 
-      expect(readPack('2026-08-15')).toEqual(pack)
+      expect(readPack('2026-08-15')).toEqual(packFor('2026-08-15'))
     })
 
     // Staged tomorrow is newer than today, so an age rule never reaches it. A rule that
     // pruned anything outside the seven dates counted back from today would.
     it("keeps tomorrow's staged pack", async () => {
       setup()
-      writePack('2026-08-19', pack)
+      writePack('2026-08-19', packFor('2026-08-19'))
 
       await renderPrefetch()
 
-      expect(readPack('2026-08-19')).toEqual(pack)
+      expect(readPack('2026-08-19')).toEqual(packFor('2026-08-19'))
     })
 
     // Progress prunes by the YYYY-MM-DD prefix of the puzzle id -- the one part of an id

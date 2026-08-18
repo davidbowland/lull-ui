@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-import { readPack, writePack } from '@services/storage'
+import { isValidPack, readPack, writePack } from '@services/storage'
 import { Pack, PackDate } from '@types'
 
 const api = axios.create({
@@ -11,6 +11,8 @@ const api = axios.create({
 // fetchPackDates (GET /packs) is deliberately absent. Nothing in this slice consumes it
 // -- the archive arrives with a later type -- and an unused client is an untested one.
 
+// `response.data as Pack` is a cast, not a check. isValidPack lives in storage.ts
+// because readPack shares it -- see the comment there for what a poisoned key does.
 export const fetchPack = async (date: PackDate): Promise<Pack> => {
   const stored = readPack(date)
 
@@ -23,7 +25,10 @@ export const fetchPack = async (date: PackDate): Promise<Pack> => {
 
   try {
     const response = await api.get(`/packs/${date}`)
-    const pack = response.data as Pack
+    if (!isValidPack(response.data, date)) {
+      throw new Error(`Malformed pack for ${date}`)
+    }
+    const pack = response.data
     // Stored even when incomplete. A partial day is still playable offline, which is the
     // entire reason the backend serves partial packs rather than waiting for a full one.
     writePack(date, pack)
@@ -34,6 +39,7 @@ export const fetchPack = async (date: PackDate): Promise<Pack> => {
     // keeps an incomplete cached pack playable when the refresh fails.
     const fallback = readPack(date)
     if (fallback !== null) {
+      // readPack already validated and self-healed, so anything non-null is sound.
       return fallback
     }
     throw error

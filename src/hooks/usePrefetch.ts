@@ -51,7 +51,13 @@ export interface PrefetchTargetsOptions {
 // is unreachable through the ambient clock on a machine in or east of UTC, so the dates
 // have to be injected rather than manufactured by moving the clock around.
 export const prefetchTargets = ({ installed, localToday, utcToday }: PrefetchTargetsOptions): PackDate[] => {
-  const wanted = installed ? recentPackDates(INSTALLED_WINDOW, localToday) : [localToday]
+  // Two days, not one, when not installed. The shelf's documented fallback -- "east of
+  // UTC the local date can run ahead of the newest generated pack, so show the most
+  // recent one" -- searches the DEVICE cache. With a single candidate date there is
+  // nothing to fall back TO, so a first-time visitor whose today 404s (day one of the
+  // product, a failed nightly, a clock ahead of the generator) sees an empty app while a
+  // perfectly good pack sits one request away. The second date costs ~1.4KB.
+  const wanted = installed ? recentPackDates(INSTALLED_WINDOW, localToday) : recentPackDates(2, localToday)
 
   // West of UTC, the pack for tomorrow's local date already exists: the generator runs
   // nightly for the following UTC date. Store it now so it is on the device before
@@ -105,10 +111,6 @@ export const usePrefetch = (now = Date.now): void => {
     try {
       const localToday = toPackDate(new Date(now()))
 
-      // Before the fetches, not after: the writes below are what run into the quota, and
-      // freeing it first is the point of pruning at all.
-      pruneOutsideWindow(localToday)
-
       const wanted = prefetchTargets({
         installed: isInstalled(),
         localToday,
@@ -130,6 +132,19 @@ export const usePrefetch = (now = Date.now): void => {
           console.error('prefetch failed', { date, error })
         }
       }
+
+      // AFTER the fetches, not before. run() bails when navigator.onLine is false, so
+      // the genuinely-offline case never reaches here -- but the case this product is
+      // named for is onLine === true with no usable throughput: a captive portal, one
+      // bar in a waiting room. Pruning first meant a player returning after a week had
+      // every cached pack deleted, then all eight fetches failed and were swallowed,
+      // leaving an empty app where playable content sat ten seconds earlier.
+      //
+      // The quota argument for pruning first does not survive measurement: a real
+      // five-puzzle pack is ~1.3KB, not the ~15KB the spec assumed for a 14-puzzle
+      // four-type day. A week is under 10KB against a ~5MB budget.
+      if (abandoned.current) return
+      pruneOutsideWindow(localToday)
     } catch (error: unknown) {
       // isInstalled, prefetchTargets and the pruning pass all sit outside the per-pack
       // guard above, and matchMedia and localStorage can each throw. run is called bare

@@ -34,4 +34,11 @@ export const UNKNOWN_TYPE_MESSAGE = 'A newer kind of puzzle. Reload while you’
 // have heard of -- lull-api can ship a generator before the UI that draws it. The
 // caller gets undefined and says so; destructuring straight off REGISTRY would throw
 // during render, where storage.ts's own comments note there is no error boundary.
-export const entryFor = (type: string): RegistryEntry | undefined => (REGISTRY as Record<string, RegistryEntry>)[type]
+//
+// Object.hasOwn, not a plain index. Every object inherits `constructor`, `toString`, and
+// `__proto__`, so `REGISTRY['constructor']` returns a function -- which passed the
+// `entry === undefined` guard, and the frame then rendered <Component /> where Component
+// was undefined. "Element type is invalid", white screen: exactly the failure this guard
+// was written to prevent, from a `type` string off the network.
+export const entryFor = (type: string): RegistryEntry | undefined =>
+  Object.hasOwn(REGISTRY, type) ? (REGISTRY as Record<string, RegistryEntry>)[type] : undefined

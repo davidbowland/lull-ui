@@ -1,4 +1,4 @@
-import { Meta, Pack, PackDate, PuzzleProgress } from '@types'
+import { Meta, Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
 import { packDateOf } from '@utils/pack-dates'
 
 // Ported from connections-ui/src/services/storage.ts. The comments came with it: they
@@ -72,11 +72,54 @@ const keysWithPrefix = (prefix: string): string[] => {
 
 // Packs
 
+// A pack is JSON off the network that was persisted. `JSON.parse(raw) as Pack` asserts a
+// shape rather than testing one, so a malformed or hostile payload used to reach the
+// shelf's `pack.puzzles.toSorted(...)` and throw during render -- and with no error
+// boundary the root unmounts to a white page. Worse, the bad value is on disk, so every
+// later load re-read it and crashed again, offline included.
+//
+// Checked here rather than only in the API client because the shelf and the frame both
+// call readPack directly; this is the choke point every consumer shares.
+//
+// Structural, not exhaustive: it checks what the shell dereferences, not what a puzzle
+// type means. `data` stays opaque -- interpreting it belongs to the component.
+const isValidPuzzle = (value: unknown): value is Puzzle => {
+  if (typeof value !== 'object' || value === null) return false
+  const puzzle = value as Record<string, unknown>
+  return (
+    typeof puzzle.id === 'string' &&
+    typeof puzzle.type === 'string' &&
+    typeof puzzle.difficulty === 'number' &&
+    typeof puzzle.estimatedSeconds === 'number' &&
+    typeof puzzle.data === 'object' &&
+    puzzle.data !== null
+  )
+}
+
+export const isValidPack = (value: unknown, date: PackDate): value is Pack => {
+  if (typeof value !== 'object' || value === null) return false
+  const pack = value as Record<string, unknown>
+  return (
+    pack.date === date &&
+    typeof pack.complete === 'boolean' &&
+    Array.isArray(pack.puzzles) &&
+    pack.puzzles.every(isValidPuzzle)
+  )
+}
+
 export const readPack = (date: PackDate): Pack | null => {
   const raw = safeRead(`${PACK_PREFIX}${date}`)
   if (raw === null) return null
   try {
-    return JSON.parse(raw) as Pack
+    const parsed: unknown = JSON.parse(raw)
+    if (!isValidPack(parsed, date)) {
+      // Self-healing: drop it rather than hand it on, or the crash repeats on every load
+      // with no request able to replace it.
+      console.error('discarding a malformed stored pack', { date })
+      safeRemove(`${PACK_PREFIX}${date}`)
+      return null
+    }
+    return parsed
   } catch (error: unknown) {
     console.error('storage parse failed', { date, error })
     return null

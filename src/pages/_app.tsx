@@ -3,6 +3,7 @@ import type { AppProps } from 'next/app'
 import React, { useEffect } from 'react'
 
 import '@assets/css/index.css'
+import { ErrorBoundary } from '@components/error-boundary'
 import { usePrefetch } from '@hooks/usePrefetch'
 
 export default function App({ Component, pageProps }: AppProps) {
@@ -50,5 +51,9 @@ export default function App({ Component, pageProps }: AppProps) {
     })
   }, [])
 
-  return <Component {...pageProps} />
+  return (
+    <ErrorBoundary>
+      <Component {...pageProps} />
+    </ErrorBoundary>
+  )
 }
