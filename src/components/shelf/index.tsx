@@ -1,6 +1,8 @@
 import { useRouter } from 'next/router'
 import React, { useEffect, useState } from 'react'
 
+import { InstallCard } from '@components/install-card'
+import { useInstallPrompt } from '@hooks/useInstallPrompt'
 import { useOnline } from '@hooks/useOnline'
 import { entryFor, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { cachedPackDates, readMeta, readPack, STORAGE_EVENT } from '@services/storage'
@@ -98,6 +100,7 @@ const ShelfRow = ({ isSolved, onOpen, puzzle }: ShelfRowProps): React.ReactNode 
 export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps): React.ReactNode => {
   const router = useRouter()
   const isOnline = useOnline()
+  const { dismiss, install, mode, platform, reopen } = useInstallPrompt()
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   // Frozen at mount on purpose. Depending on the now prop directly would re-run the
   // effect for any caller that passes an inline arrow, and the effect sets state.
@@ -188,6 +191,11 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
           )}
         </>
       )}
+
+      {/* Not decoration, and not optional. usePrefetch gates the entire seven-day
+          window on isInstalled(), so without something that asks, a first-time visitor
+          gets one pack and the offline premise this app is built on never engages. */}
+      <InstallCard mode={mode} onDismiss={dismiss} onInstall={install} onReopen={reopen} platform={platform} />
     </section>
   )
 }

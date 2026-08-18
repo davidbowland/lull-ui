@@ -240,6 +240,34 @@ describe('Shelf', () => {
     })
   })
 
+  describe('the offer to install', () => {
+    // usePrefetch gates the whole seven-day window on isInstalled(), so the shelf is
+    // where the offer has to live: without it a first-time visitor gets one pack and
+    // never sees the offline behaviour the app is built around.
+    it('offers to install once the browser says it can', async () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+      act(() => {
+        window.dispatchEvent(new Event('beforeinstallprompt'))
+      })
+
+      expect(await screen.findByRole('heading', { name: 'Take the week with you' })).toBeInTheDocument()
+    })
+
+    // Chromium withholds beforeinstallprompt from an installed app, and jsdom is
+    // neither, so nothing is offered until the browser speaks.
+    it('offers nothing while the browser has not spoken', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(screen.queryByRole('heading', { name: 'Take the week with you' })).not.toBeInTheDocument()
+    })
+  })
+
   describe('accessibility', () => {
     it('reaches the first puzzle with the keyboard alone', async () => {
       const user = userEvent.setup()
