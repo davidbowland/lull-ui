@@ -162,13 +162,27 @@ export const usePrefetch = (now = Date.now): void => {
     run()
 
     // Never on a timer: a service worker cannot wake itself without push, so open,
-    // reconnect, and install are the only moments this can run.
+    // reconnect, install, and RESUME are the only moments this can run.
+    //
+    // visibilitychange is the one that makes a daily habit work. An installed app keeps
+    // its JS context across days, so the next morning there is no remount, no `online`
+    // (the connection never dropped), and no `appinstalled`. Without this the shelf
+    // re-reads storage on resume, finds nothing newer, and says "Today's puzzles aren't
+    // ready yet" about a pack that is sitting on the server -- and nothing ever asks for
+    // it. The Shelf already listens for this; the writer did not, which is the half that
+    // matters.
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') void run()
+    }
+
     window.addEventListener('online', run)
     window.addEventListener('appinstalled', run)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       abandoned.current = true
       window.removeEventListener('online', run)
       window.removeEventListener('appinstalled', run)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [run])
 }

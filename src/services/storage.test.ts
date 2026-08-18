@@ -337,4 +337,47 @@ describe('storage', () => {
       expect(() => removeProgress(puzzleId)).not.toThrow()
     })
   })
+
+  // A key whose value cannot be read must not survive: cachedPackDates derives its index
+  // from the keys, so a permanently-unreadable one keeps being chosen and the shelf shows
+  // an empty device forever, with no request able to replace it offline.
+  describe('a pack that cannot be read', () => {
+    const setup = (): void => {
+      window.localStorage.clear()
+      console.error = jest.fn()
+    }
+
+    it('discards a value that is not JSON', () => {
+      setup()
+      window.localStorage.setItem('lull:pack:2026-08-18', '{ not json')
+
+      expect(readPack('2026-08-18')).toBeNull()
+      expect(cachedPackDates()).toEqual([])
+    })
+
+    it('discards a pack whose own date disagrees with its key', () => {
+      setup()
+      window.localStorage.setItem('lull:pack:2026-08-18', JSON.stringify({ ...pack, date: '2026-01-01' }))
+
+      expect(readPack('2026-08-18')).toBeNull()
+      expect(cachedPackDates()).toEqual([])
+    })
+
+    it('discards a pack whose puzzles are not an array', () => {
+      setup()
+      window.localStorage.setItem('lull:pack:2026-08-18', JSON.stringify({ ...pack, puzzles: 'nope' }))
+
+      expect(readPack('2026-08-18')).toBeNull()
+    })
+
+    it('leaves the other days alone', () => {
+      setup()
+      writePack('2026-08-17', { ...pack, date: '2026-08-17' })
+      window.localStorage.setItem('lull:pack:2026-08-18', '{ not json')
+
+      readPack('2026-08-18')
+
+      expect(cachedPackDates()).toEqual(['2026-08-17'])
+    })
+  })
 })

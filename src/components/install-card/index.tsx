@@ -79,11 +79,16 @@ export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: 
   return (
     <div className="rounded-xl border border-[var(--lull-border)] p-4">
       <h3 className="mb-2 text-[var(--lull-ink)]" ref={headingRef} tabIndex={-1}>
-        Take the week with you
+        Have tomorrow ready
       </h3>
+      {/* Says the benefit this slice actually delivers. The previous copy promised "the
+          last seven days stay too", and installing does download seven days -- but the
+          shelf renders one pack and there is no archive route, so a player could never
+          reach them. It also framed retention as "only the days you open", when pruning
+          is by age and identical whether or not you install. Restore a seven-day claim
+          when the archive lands. */}
       <p className="mb-3 text-[var(--lull-ink-muted)]">
-        Only the days you open stay on this device. Install Lull and the last seven days stay too — no connection
-        needed.
+        Install Lull and each day’s puzzles are waiting on your phone before you open it — no connection needed.
       </p>
       {steps === undefined ? (
         <button className={OFFER} onClick={onInstall} ref={installRef} type="button">

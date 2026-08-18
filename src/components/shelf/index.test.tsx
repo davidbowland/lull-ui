@@ -253,7 +253,7 @@ describe('Shelf', () => {
         window.dispatchEvent(new Event('beforeinstallprompt'))
       })
 
-      expect(await screen.findByRole('heading', { name: 'Take the week with you' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Have tomorrow ready' })).toBeInTheDocument()
     })
 
     // Chromium withholds beforeinstallprompt from an installed app, and jsdom is
@@ -264,7 +264,7 @@ describe('Shelf', () => {
 
       renderShelf()
 
-      expect(screen.queryByRole('heading', { name: 'Take the week with you' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Have tomorrow ready' })).not.toBeInTheDocument()
     })
   })
 

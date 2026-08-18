@@ -57,9 +57,19 @@ interface Snapshot {
 //     the device on purpose, and showing it would hand out a day early;
 //   east of UTC, the local date can run ahead of the newest pack the generator has made,
 //     and the shelf falls back to the most recent one rather than reporting an empty day.
+//
+// Walks the candidates rather than taking only the newest. readPack can return null for a
+// date cachedPackDates still lists -- the value failed validation or would not parse, and
+// it discards the key on the way out. With a single-shot `.find()` that one bad key
+// rendered "No puzzles on this device" while every other pack on the device sat unread.
 const shelfPack = (localToday: PackDate): Pack | null => {
-  const date = cachedPackDates().find((cached) => cached <= localToday)
-  return date === undefined ? null : readPack(date)
+  for (const date of cachedPackDates().filter((cached) => cached <= localToday)) {
+    const pack = readPack(date)
+    if (pack !== null) {
+      return pack
+    }
+  }
+  return null
 }
 
 interface ShelfRowProps {

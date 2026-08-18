@@ -20,7 +20,7 @@ describe('InstallCard', () => {
     it('says what installing buys', () => {
       renderCard()
 
-      expect(screen.getByRole('heading', { name: 'Take the week with you' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Have tomorrow ready' })).toBeInTheDocument()
     })
 
     // The reason the card exists at all: usePrefetch gates the whole seven-day window on
@@ -31,7 +31,7 @@ describe('InstallCard', () => {
 
       expect(
         screen.getByText(
-          'Only the days you open stay on this device. Install Lull and the last seven days stay too — no connection needed.',
+          'Install Lull and each day’s puzzles are waiting on your phone before you open it — no connection needed.',
         ),
       ).toBeInTheDocument()
     })
@@ -157,7 +157,7 @@ describe('InstallCard', () => {
         <InstallCard mode="card" onDismiss={onDismiss} onInstall={onInstall} onReopen={onReopen} platform="ios" />,
       )
 
-      expect(screen.getByRole('heading', { name: 'Take the week with you' })).toHaveFocus()
+      expect(screen.getByRole('heading', { name: 'Have tomorrow ready' })).toHaveFocus()
     })
 
     // A card that appears because the browser finally fired its event must not snatch

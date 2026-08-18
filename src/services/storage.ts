@@ -117,11 +117,19 @@ export const readPack = (date: PackDate): Pack | null => {
       // with no request able to replace it.
       console.error('discarding a malformed stored pack', { date })
       safeRemove(`${PACK_PREFIX}${date}`)
+      announce()
       return null
     }
     return parsed
   } catch (error: unknown) {
-    console.error('storage parse failed', { date, error })
+    // Removed, not just reported. cachedPackDates derives its index from the KEYS, so a
+    // key whose value will never parse keeps being listed and keeps being chosen -- and
+    // the shelf, which takes the newest candidate, would show "No puzzles on this
+    // device" permanently while six good packs sat beside it. Offline nothing can
+    // overwrite it, which is exactly when the offline promise is supposed to hold.
+    console.error('storage parse failed, discarding', { date, error })
+    safeRemove(`${PACK_PREFIX}${date}`)
+    announce()
     return null
   }
 }
