@@ -14,7 +14,7 @@ out/
 # AWS SAM
 .aws-sam/
 
-# Generated artifacts (next-sitemap output) — the Common Threads brand assets
+# Generated artifacts (next-sitemap output) — the Lull brand assets
 # below are checked in on purpose, see scripts/generate-favicons.js
 public/*
 !public/icon.svg

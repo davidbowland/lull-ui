@@ -1,0 +1,83 @@
+{
+  "name": "lull-ui",
+  "version": "1.0.0",
+  "description": "UI for Lull",
+  "author": "David Bowland",
+  "engines": {
+    "node": "^24.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidbowland/lull-ui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/davidbowland/lull-ui/issues"
+  },
+  "homepage": "https://github.com/davidbowland/lull-ui#readme",
+  "scripts": {
+    "build": "npm run clean && next build",
+    "postbuild": "node scripts/generate-dynamic-pages.js && next-sitemap && node scripts/generate-sw-manifest.js",
+    "clean": "rm -rf .next coverage out",
+    "deploy": "DEVELOPMENT=true npm run build && ./scripts/deploy.sh",
+    "generate:favicons": "node scripts/generate-favicons.js",
+    "lint": "prettier --write . && eslint --fix .",
+    "prepare": "husky || true",
+    "start": "next dev",
+    "serve": "next build && npx serve out",
+    "test": "TZ=UTC jest --colors",
+    "typecheck": "tsc --noEmit",
+    "update": "npx update-browserslist-db@latest && ncu --doctor --target minor --upgrade && npm audit fix --audit-level=none && npm run test && npm dedupe"
+  },
+  "dependencies": {
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@heroui/react": "^3.2.1",
+    "axios": "^1.19.0",
+    "framer-motion": "^12.43.0",
+    "next": "^15.5.23",
+    "next-sitemap": "^4.2.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.3",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/jest": "^29.5.14",
+    "@types/jest-axe": "^3.5.9",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jest": "^29.16.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^16.5.0",
+    "husky": "^9.1.7",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^29.7.0",
+    "jest-axe": "^10.0.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.9.6",
+    "sharp": "^0.35.3",
+    "tailwindcss": "^4.3.3",
+    "ts-node": "^10.9.2",
+    "typescript-eslint": "^8.66.0"
+  },
+  "lint-staged": {
+    "**/*.{js,jsx,ts,tsx}": [
+      "prettier --write --ignore-unknown",
+      "eslint --fix",
+      "npm test -- --findRelatedTests --coverageThreshold {} --passWithNoTests"
+    ],
+    "**/*": [
+      "prettier --write --ignore-unknown"
+    ]
+  }
+}
