@@ -1,7 +1,7 @@
 {
   "importOrder": [
     "<THIRD_PARTY_MODULES>",
-    "^(\\.+/|@assets|@components|@config|@hooks|@pages|@services|@test/|@types|@utils)"
+    "^(\\.+/|@assets|@components|@config|@hooks|@pages|@registry|@services|@test/|@types|@utils)"
   ],
   "importOrderCaseInsensitive": true,
   "importOrderSeparation": true,

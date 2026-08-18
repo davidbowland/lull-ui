@@ -12,8 +12,6 @@ export const relativeLuminance = ([red, green, blue]: Rgb): number => {
 
 // WCAG 2.1 relative-contrast ratio, 1:1 to 21:1. Order-independent.
 export const contrastRatio = (first: string, second: string): number => {
-  const [lighter, darker] = [hexToRgb(first), hexToRgb(second)]
-    .map(relativeLuminance)
-    .toSorted((a, b) => b - a)
+  const [lighter, darker] = [hexToRgb(first), hexToRgb(second)].map(relativeLuminance).toSorted((a, b) => b - a)
   return (lighter + 0.05) / (darker + 0.05)
 }
