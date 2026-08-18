@@ -297,4 +297,34 @@ describe('Shelf', () => {
       expect(await axe(container)).toHaveNoViolations()
     })
   })
+
+  // A real complete pack is five goFigures at 60/90/120/150/180 seconds, which round to
+  // 1, 2, 2, 3, 3 minutes -- so before difficulty was rendered, two pairs of rows had
+  // byte-identical accessible names. The old two-puzzle fixture could never collide, so
+  // the suite could not see it. This builds the real thing.
+  describe('a full five-puzzle pack', () => {
+    const fullPack = {
+      complete: true,
+      date: '2026-08-18',
+      puzzles: [1, 2, 3, 4, 5].map((difficulty) => ({
+        data: { acceptedSolutions: ['1+1'], bank: [1, 1], goal: 2, operators: ['+'] },
+        difficulty,
+        estimatedSeconds: 60 + 30 * (difficulty - 1),
+        id: `2026-08-18:gofigure:${difficulty}aa`,
+        type: 'gofigure',
+      })),
+    }
+
+    it('gives every row a distinct accessible name', async () => {
+      window.localStorage.clear()
+      writePack('2026-08-18', fullPack as never)
+
+      render(<Shelf now={() => Date.parse('2026-08-18T12:00:00.000Z')} />)
+
+      const names = (await screen.findAllByRole('button')).map((button) => button.textContent ?? '')
+      const rows = names.filter((name) => name.includes('goFigure'))
+      expect(rows).toHaveLength(5)
+      expect(new Set(rows).size).toEqual(rows.length)
+    })
+  })
 })

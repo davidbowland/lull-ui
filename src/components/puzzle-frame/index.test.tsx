@@ -84,7 +84,7 @@ describe('PuzzleFrame', () => {
       writePack('2026-08-18', pack)
 
       renderFrame()
-      await user.click(await screen.findByRole('button', { name: 'Use 6' }))
+      await user.click(await screen.findByRole('button', { name: /^Use 6/ }))
 
       expect(readProgress(puzzleId)).toEqual('6')
     })
@@ -96,9 +96,14 @@ describe('PuzzleFrame', () => {
 
       renderFrame()
       await screen.findByRole('heading', { name: 'Make 154' })
-      for (const name of ['Use 6', 'Add', 'Use 9', 'Add', 'Use 7', 'Multiply', 'Use 7']) {
+      // Tiles carry their position in the accessible name and are aria-disabled rather
+      // than disabled, so they stay focusable and a tap does not blur the button it just
+      // activated.
+      for (const name of [/^Use 6/, 'Add', /^Use 9/, 'Add', /^Use 7/, 'Multiply', /^Use 7/]) {
         await user.click(
-          screen.getAllByRole('button', { name }).filter((button) => !button.hasAttribute('disabled'))[0],
+          screen
+            .getAllByRole('button', { name })
+            .filter((button) => button.getAttribute('aria-disabled') !== 'true')[0],
         )
       }
 

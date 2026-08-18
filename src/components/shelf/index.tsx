@@ -36,6 +36,15 @@ const dayLabel = (date: PackDate, locale: string): string => {
 // estimate the backend already rounded once.
 const lengthLabel = (estimatedSeconds: number): string => `About ${Math.max(1, Math.round(estimatedSeconds / 60))} min`
 
+// Without this every row of a full pack reads the same. A complete pack is five goFigures
+// at 60/90/120/150/180 seconds, which round to 1, 2, 2, 3, 3 minutes -- so the label and
+// the length together left two pairs of buttons with byte-identical accessible names, and
+// "Solved" landed on one of two rows nobody could tell apart. Difficulty was in the
+// payload the whole time and is what estimatedSeconds is derived from anyway.
+const DIFFICULTY_LABELS = ['Gentle', 'Easy', 'Middling', 'Tricky', 'Hard'] as const
+
+const difficultyLabel = (difficulty: Puzzle['difficulty']): string => DIFFICULTY_LABELS[difficulty - 1]
+
 interface Snapshot {
   pack: Pack | null
   solved: string[]
@@ -89,7 +98,11 @@ const ShelfRow = ({ isSolved, onOpen, puzzle }: ShelfRowProps): React.ReactNode 
         >
           <path d={entry.icon} />
         </svg>
-        <span className="grow">{entry.label}</span>
+        <span className="grow">
+          {entry.label}
+          <span className="sr-only">, {difficultyLabel(puzzle.difficulty)}</span>
+        </span>
+        <span className="text-[var(--lull-ink-muted)]">{difficultyLabel(puzzle.difficulty)}</span>
         <span className="text-[var(--lull-ink-muted)]">{lengthLabel(puzzle.estimatedSeconds)}</span>
         {isSolved && <span className="text-[var(--lull-ink-muted)]">Solved</span>}
       </button>

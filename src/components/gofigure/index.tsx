@@ -24,8 +24,12 @@ const OPERATOR_SYMBOLS: Record<Operator, string> = {
 const isDigit = (token: string): boolean => /^\d$/.test(token)
 
 const TILE =
-  'flex h-14 min-w-14 items-center justify-center rounded-xl border text-xl disabled:opacity-40 ' +
-  'border-[var(--lull-border)] text-[var(--lull-ink)] enabled:cursor-pointer enabled:hover:bg-[var(--lull-accent)]/10'
+  // aria-disabled variants, not disabled:/enabled: -- the tiles stay genuinely enabled so
+  // that tapping one does not blur it, so those variants would never match and a spent
+  // tile would look identical to an available one.
+  'flex h-14 min-w-14 items-center justify-center rounded-xl border text-xl ' +
+  'border-[var(--lull-border)] text-[var(--lull-ink)] cursor-pointer hover:bg-[var(--lull-accent)]/10 ' +
+  'aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent'
 
 // The solved banner is formatted for reading -- spaces, and × rather than *. The live
 // region above it shows the raw token join instead, because that is the string the
@@ -136,29 +140,43 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
         {message()}
       </p>
 
+      {/* aria-disabled, NOT disabled, on both rows. A browser blurs an element that
+          becomes disabled while focused, and every tap disables the button just
+          activated -- so `disabled` drops focus to <body> and the next Tab restarts at
+          the top of the document. Playing one puzzle by keyboard meant fourteen
+          traversals from the page top, and at the final tile every tile disables at
+          once, so focus vanished exactly when the wrong-answer message appeared.
+          aria-disabled keeps the tile focusable and announced; the guard in commit()
+          is what actually refuses the tap. */}
       <div className="flex flex-wrap gap-2">
-        {bank.map((digit, index) => (
-          <button
-            aria-label={`Use ${digit}`}
-            className={TILE}
-            disabled={consumed[index] || !canTapDigit}
-            key={`${digit}-${index}`}
-            onClick={() => commit([...tokens, String(digit)])}
-            type="button"
-          >
-            {digit}
-          </button>
-        ))}
+        {bank.map((digit, index) => {
+          const isSpent = consumed[index] || !canTapDigit
+          return (
+            <button
+              aria-disabled={isSpent}
+              // Position included because a duplicated bank gives two tiles the same
+              // name: "Use 7" twice tells a screen-reader user nothing about which one
+              // they just spent.
+              aria-label={`Use ${digit}, tile ${index + 1} of ${bank.length}`}
+              className={TILE}
+              key={`${digit}-${index}`}
+              onClick={() => !isSpent && commit([...tokens, String(digit)])}
+              type="button"
+            >
+              {digit}
+            </button>
+          )
+        })}
       </div>
 
       <div className="flex flex-wrap gap-2">
         {operators.map((operator) => (
           <button
+            aria-disabled={!canTapOperator}
             aria-label={OPERATOR_NAMES[operator]}
             className={TILE}
-            disabled={!canTapOperator}
             key={operator}
-            onClick={() => commit([...tokens, operator])}
+            onClick={() => canTapOperator && commit([...tokens, operator])}
             type="button"
           >
             {OPERATOR_SYMBOLS[operator]}

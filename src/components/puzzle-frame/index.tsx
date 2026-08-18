@@ -32,7 +32,12 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // a puzzle solved last week reopens on an empty board. Frozen at arrival: winning
   // right now is the board's own news to announce, and a second banner appearing
   // underneath the first would say it twice.
-  const [wasSolved] = useState(() => readMeta().solved.includes(puzzle.id))
+  //
+  // Gated on there being no stored progress as well. Within the retention window a
+  // solved puzzle still holds its winning expression, so the board restores it and
+  // announces "Solved." itself -- rendering the banner too would say it twice, which is
+  // the doubling this freeze exists to avoid.
+  const [wasSolved] = useState(() => readMeta().solved.includes(puzzle.id) && readProgress(puzzle.id) === null)
 
   // The shell owns persistence; the board is handed two callbacks and no storage.
   const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])
@@ -69,10 +74,11 @@ export const PuzzleFrame = ({ puzzleId }: PuzzleFrameProps): React.ReactNode => 
     setResolution({ isSettled: false, pack: readPack(date) })
 
     const load = async (): Promise<void> => {
+      let fetched: Pack | null = null
       try {
         // Cache-first: a complete stored pack is answered without a request, and an
         // incomplete one is asked again because the day can still fill in.
-        await fetchPack(date)
+        fetched = await fetchPack(date)
       } catch (error: unknown) {
         // Offline, or a day that was never generated. Either way the cache below is
         // the last word, and there is nothing to show a reader that the missing-puzzle
@@ -80,9 +86,14 @@ export const PuzzleFrame = ({ puzzleId }: PuzzleFrameProps): React.ReactNode => 
         console.error('pack fetch failed', { date, error })
       }
       if (abandoned) return
-      // Re-read rather than trusting the return value: the request took real time, and
-      // the prefetch or another tab may have filled the day meanwhile.
-      setResolution({ isSettled: true, pack: readPack(date) })
+      // Re-read FIRST, because the request took real time and the prefetch or another
+      // tab may have filled the day meanwhile -- but fall back to what we just fetched.
+      // storage.ts swallows write failures on purpose, so when localStorage throws
+      // (cookies blocked, partitioned context, quota exhausted) writePack no-ops and
+      // readPack returns null. Trusting the re-read alone would answer a SUCCESSFUL
+      // fetch with "That puzzle isn't here" and leave the app permanently broken while
+      // blaming the link.
+      setResolution({ isSettled: true, pack: readPack(date) ?? fetched })
     }
     void load()
 

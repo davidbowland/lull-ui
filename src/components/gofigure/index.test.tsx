@@ -17,10 +17,15 @@ describe('GoFigureBoard', () => {
   ): ReturnType<typeof render> =>
     render(<GoFigureBoard onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />)
 
-  // The bank is 6,9,7,7, so "Use 7" names two buttons. Every helper here takes the
+  // The bank is 6,9,7,7, so two tiles show 7. Their accessible names now carry the tile
+  // position ("Use 7, tile 3 of 4"), so queries match by prefix, and availability is
+  // aria-disabled rather than disabled -- the tiles stay focusable so a tap does not
+  // blur the button it just activated. Every helper here takes the
   // first still-enabled one rather than a fixed index.
   const tap = async (user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> => {
-    const buttons = screen.getAllByRole('button', { name }).filter((button) => !button.hasAttribute('disabled'))
+    const buttons = screen
+      .getAllByRole('button', { name: new RegExp(`^${name}`) })
+      .filter((button) => button.getAttribute('aria-disabled') !== 'true')
     await user.click(buttons[0])
   }
 
@@ -48,7 +53,7 @@ describe('GoFigureBoard', () => {
     it('offers every bank digit as a button', () => {
       renderBoard()
 
-      expect(screen.getAllByRole('button', { name: 'Use 7' })).toHaveLength(2)
+      expect(screen.getAllByRole('button', { name: /^Use 7/ })).toHaveLength(2)
     })
 
     // Symbols, not names, is what a screen reader reads as "plus sign" at best and
@@ -81,7 +86,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add'])
 
-      expect(screen.getByRole('button', { name: 'Use 6' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'true')
     })
 
     // Duplicates are separate tiles. Spending one 7 must not spend the other.
@@ -92,7 +97,9 @@ describe('GoFigureBoard', () => {
       await tapAll(user, ['Use 7', 'Add'])
 
       expect(
-        screen.getAllByRole('button', { name: 'Use 7' }).filter((button) => !button.hasAttribute('disabled')),
+        screen
+          .getAllByRole('button', { name: /^Use 7/ })
+          .filter((button) => button.getAttribute('aria-disabled') !== 'true'),
       ).toHaveLength(1)
     })
 
@@ -103,7 +110,7 @@ describe('GoFigureBoard', () => {
       await tap(user, 'Use 6')
       await tap(user, 'Take back the last tile')
 
-      expect(screen.getByRole('button', { name: 'Use 6' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'false')
     })
 
     it('has nothing to take back on an empty board', () => {
@@ -120,13 +127,13 @@ describe('GoFigureBoard', () => {
 
       await tap(user, 'Use 6')
 
-      expect(screen.getByRole('button', { name: 'Use 9' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /^Use 9/ })).toHaveAttribute('aria-disabled', 'true')
     })
 
     it('refuses an operator on an empty board', () => {
       renderBoard()
 
-      expect(screen.getByRole('button', { name: 'Multiply' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Multiply' })).toHaveAttribute('aria-disabled', 'true')
     })
 
     it('refuses two operators in a row', async () => {
@@ -135,7 +142,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add'])
 
-      expect(screen.getByRole('button', { name: 'Multiply' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Multiply' })).toHaveAttribute('aria-disabled', 'true')
     })
 
     it('reports the expression as progress on every tap', async () => {
@@ -222,6 +229,17 @@ describe('GoFigureBoard', () => {
     })
 
     // Division has to come out whole at every step, so there is no number to name.
+    it('names what a subtraction made', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      // 6-9 = -3, then +7 = 4, then *7 = 28. The only test that exercises the minus
+      // branch of evaluate.ts at all.
+      await tapAll(user, ['Use 6', 'Subtract', 'Use 9', 'Add', 'Use 7', 'Multiply', 'Use 7'])
+
+      expect(screen.getByText('That makes 28, not 154. Take back a tile and try again.')).toBeInTheDocument()
+    })
+
     it('says so when a division does not come out whole', async () => {
       const user = userEvent.setup()
       renderBoard()
@@ -261,7 +279,7 @@ describe('GoFigureBoard', () => {
     it('restores which tiles were already spent', () => {
       renderBoard(goFigurePuzzle, '6+9')
 
-      expect(screen.getByRole('button', { name: 'Use 6' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'true')
     })
 
     // A solved puzzle reopens showing its solution. Replay is taking tiles back: solved
@@ -321,19 +339,51 @@ describe('GoFigureBoard', () => {
 
       await user.tab()
 
-      expect(screen.getAllByRole('button', { name: 'Use 6' })[0]).toHaveFocus()
+      expect(screen.getAllByRole('button', { name: /^Use 6/ })[0]).toHaveFocus()
+    })
+
+    // The regression test for the focus bug. Tiles used to be `disabled`, and a browser
+    // blurs an element that becomes disabled while focused -- so every tap dropped focus
+    // to <body> and the next Tab restarted at the top of the document. An earlier version
+    // of the playthrough test below called .focus() before each Enter, which is why it
+    // never noticed.
+    it('keeps focus on a tile after activating it', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      await user.tab()
+      const first = screen.getAllByRole('button', { name: /^Use 6/ })[0]
+      expect(first).toHaveFocus()
+
+      await user.keyboard('{Enter}')
+
+      expect(first).toHaveAttribute('aria-disabled', 'true')
+      expect(first).toHaveFocus()
     })
 
     it('plays through with the keyboard alone', async () => {
       const user = userEvent.setup()
       renderBoard()
 
-      for (const name of SOLUTION) {
-        screen
-          .getAllByRole('button', { name })
-          .filter((button) => !button.hasAttribute('disabled'))[0]
-          .focus()
+      // Tabs until the wanted control has focus, then activates it. No programmatic
+      // .focus() anywhere: if a tap destroyed focus, the search would restart from the
+      // document top and this would run out of tabs rather than quietly passing.
+      const tabToAndPress = async (name: RegExp | string): Promise<void> => {
+        const matches = (): boolean => {
+          const active = document.activeElement
+          const label = active?.getAttribute('aria-label') ?? ''
+          const available = active?.getAttribute('aria-disabled') !== 'true'
+          return available && (typeof name === 'string' ? label === name : name.test(label))
+        }
+        for (let step = 0; step < 40 && !matches(); step += 1) {
+          await user.tab()
+        }
+        expect(matches()).toBe(true)
         await user.keyboard('{Enter}')
+      }
+
+      for (const name of [/^Use 6/, 'Add', /^Use 9/, 'Add', /^Use 7/, 'Multiply', /^Use 7/]) {
+        await tabToAndPress(name)
       }
 
       expect(onSolved).toHaveBeenCalled()
