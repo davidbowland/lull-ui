@@ -83,6 +83,23 @@ describe('sw.js', () => {
     })
   })
 
+  // The fourth and fifth of the five pieces the dynamic route depends on. CloudFront
+  // runs its rewrite at the edge and the worker runs this one offline, onto the same
+  // exported file -- but the edge asks for it unencoded and the Cache API asks for it
+  // percent-encoded, so the two strings differ on purpose. This pins both halves of that
+  // asymmetry, which is the thing a well-meaning cleanup would "fix".
+  describe('the edge function it mirrors', () => {
+    const template = fs.readFileSync(path.join(__dirname, '..', 'template.yaml'), 'utf8')
+
+    it('rewrites onto the same shell, unencoded', () => {
+      expect(template).toContain("request.uri = '/p/[puzzleId]/index.html'")
+    })
+
+    it('rewrites the route data payload onto the same placeholder', () => {
+      expect(template).toContain("request.uri = dataMatch[1] + '/p/__placeholder__.json'")
+    })
+  })
+
   // Firefox fetches the manifest inside a requestIdleCallback with no try/catch, and
   // discards the whole thing on any non-2xx answer -- which silently degrades install to
   // a plain bookmark for the entire page load. The miss branch of this worker answers any
