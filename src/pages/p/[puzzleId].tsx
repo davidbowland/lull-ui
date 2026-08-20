@@ -41,7 +41,19 @@ const PuzzlePage = (): React.ReactNode => {
         <meta content="A puzzle to pass the time" name="twitter:description" />
         <meta content="https://lull.dbowland.com/og-image.png" name="twitter:image" />
       </Head>
-      <main className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-4 py-10">
+      {/* gap-6 and py-10 live in PuzzleFrame's own <Flowed> wrapper rather than here, so a docked
+          type can decline them: a keypad pinned to the bottom of the viewport needs the page to be
+          a full-height column with no vertical padding above it to spend. The page cannot make that
+          call itself -- the id is in the URL and the pack is on the device, so only the frame knows
+          what type this is. */}
+      {/* The horizontal padding is max(1rem, inset) rather than px-4, and that is the price of
+          viewport-fit=cover. This one document serves all three puzzle types, so the cover that
+          makes the docked column's bottom inset real also lets the flowed boards reach under a
+          notch in landscape. Floored at today's 16px: no device without a physical inset sees any
+          change, and only the side with the notch grows. Written here rather than on either branch
+          inside PuzzleFrame because the page cannot tell them apart -- the id is in the URL and the
+          pack is on the device -- and both branches want it. */}
+      <main className="mx-auto flex min-h-dvh w-full max-w-[720px] flex-col pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
         <PuzzleFrame puzzleId={puzzleId} />
       </main>
     </>

@@ -1,4 +1,5 @@
 import { entryFor, REGISTRY } from './index'
+import { CryptogramBoard } from '@components/cryptogram'
 import { GoFigureBoard } from '@components/gofigure'
 
 describe('registry', () => {
@@ -15,6 +16,28 @@ describe('registry', () => {
   // this app has to work for.
   it('gives the type an icon', () => {
     expect(REGISTRY.gofigure.icon).toEqual(expect.any(String))
+  })
+
+  it('maps cryptogram to its board', () => {
+    expect(REGISTRY.cryptogram.Component).toBe(CryptogramBoard)
+  })
+
+  it('gives cryptogram a name a reader can see', () => {
+    expect(REGISTRY.cryptogram.label).toBe('Cryptogram')
+  })
+
+  // Opt-in per entry. Absent means today's flow, which is what keeps goFigure and Missing Vowels
+  // untouched by a layout that exists for one type.
+  it('asks for the docked layout for cryptogram', () => {
+    expect(REGISTRY.cryptogram.layout).toBe('docked')
+  })
+
+  it('leaves goFigure on the default flow', () => {
+    expect(REGISTRY.gofigure.layout).toBeUndefined()
+  })
+
+  it('leaves missing vowels on the default flow', () => {
+    expect(REGISTRY.missingvowels.layout).toBeUndefined()
   })
 
   it('finds the entry for a known type', () => {

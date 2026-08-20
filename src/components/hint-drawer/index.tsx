@@ -4,6 +4,14 @@ import { readHints, writeHints } from '@services/storage'
 import { HintLadder } from '@types'
 
 export interface HintDrawerProps {
+  // Drops the visible "Hints" heading and tightens the stack, for a shell that has no vertical
+  // space to give -- Cryptogram docks a 26-key pad to the bottom of the viewport and the phrase cap
+  // between them is 98px at a 320 viewport. The heading plus its gap is 40px of that, spent on a
+  // word the reveal button underneath already says.
+  //
+  // Nothing accessible is lost: the section keeps aria-label="Hints", so the region is still named
+  // and still reachable by landmark. Absent means today's drawer, so Missing Vowels is untouched.
+  compact?: boolean
   hints: HintLadder
   puzzleId: string
 }
@@ -19,6 +27,15 @@ const REVEAL =
 // carried the same border as the reveal button would read as a second offer of equal weight beside
 // the one control this drawer exists to present.
 const TOGGLE = 'min-h-11 cursor-pointer text-[var(--lull-ink-muted)] hover:text-[var(--lull-ink)]'
+
+const LIST = 'flex list-decimal flex-col gap-2 pl-6 text-[var(--lull-ink)]'
+// COMPACT ONLY. A max-height binds whenever the content is taller than it, not only when the
+// surrounding layout is short -- that is what flex-basis and min-height do. Left ungated, this bound
+// applied to Missing Vowels too: at a 568x320 landscape viewport 40vh is 128px, three prose rungs
+// clear that easily, and the ladder became an internally scrolling box inside an already scrolling
+// page. Missing Vowels is supposed to be untouched by the docked layout, so the bound goes on with
+// it and comes off with it.
+const BOUNDED_LIST = `${LIST} max-h-[40vh] overflow-y-auto`
 
 /**
  * The ladder, rendered by the SHELL and never by a game component.
@@ -36,7 +53,7 @@ const TOGGLE = 'min-h-11 cursor-pointer text-[var(--lull-ink-muted)] hover:text-
  * bottom with ~326px between them -- so a permanently open ladder drops the phrase from four rows of
  * letters to two, and asking for help shrinks the thing you are trying to solve.
  */
-export const HintDrawer = ({ hints, puzzleId }: HintDrawerProps): React.ReactNode => {
+export const HintDrawer = ({ compact = false, hints, puzzleId }: HintDrawerProps): React.ReactNode => {
   // Read once, at mount. The frame keys the view on the puzzle id, so a different puzzle is a
   // different component rather than a prop change, and re-reading storage on every render would
   // hand this component back its own writes.
@@ -79,8 +96,8 @@ export const HintDrawer = ({ hints, puzzleId }: HintDrawerProps): React.ReactNod
   const toggle = (): void => setIsOpen(!isOpen)
 
   return (
-    <section aria-label="Hints" className="flex flex-col gap-3">
-      <h2 className="text-lg text-[var(--lull-ink)]">Hints</h2>
+    <section aria-label="Hints" className={`flex min-h-0 flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
+      {!compact && <h2 className="text-lg text-[var(--lull-ink)]">Hints</h2>}
 
       {/* Named with its count, so folded still says what is in there. "Show 2 revealed hints" next
           to "Reveal hint 3 of 3" cannot be mistaken for an offer of new ones. Not `disabled` in any
@@ -110,7 +127,18 @@ export const HintDrawer = ({ hints, puzzleId }: HintDrawerProps): React.ReactNod
           belongs. The wrapper carries no display utility, so the attribute stands on its own. */}
       <div aria-atomic="false" role="status">
         <div hidden={!isOpen} id={listId}>
-          <ol className="flex list-decimal flex-col gap-2 pl-6 text-[var(--lull-ink)]">
+          {/* Bounded and scrollable under the docked layout, and nowhere else. Cryptogram pins the
+              phrase to the top and docks a 26-key pad to the bottom, leaving a phrase cap of 98px
+              at a 320 viewport against a hard floor of 96px -- so three open rungs would push the
+              cap under its floor. The list gives up the space instead; the keypad never does.
+
+              tabIndex travels WITH the bound and is not decoration. Every rung is plain text, so a
+              scrollable list here has nothing focusable in it, and a scrollable region with no
+              focusable descendant must be focusable itself or a keyboard user cannot scroll to the
+              rungs below the fold (axe scrollable-region-focusable). jest-axe cannot catch that
+              pairing coming apart: jsdom lays nothing out, scrollHeight is always 0, and the rule
+              never fires -- so the tab order is asserted directly in the suite instead. */}
+          <ol className={compact ? BOUNDED_LIST : LIST} tabIndex={compact ? 0 : undefined}>
             {hints.slice(0, revealed).map((hint) => (
               <li key={hint}>{hint}</li>
             ))}

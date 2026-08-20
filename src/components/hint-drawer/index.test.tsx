@@ -27,6 +27,96 @@ describe('HintDrawer', () => {
     await user.click(screen.getByRole('button', { name: 'All hints revealed' }))
   }
 
+  // The compact variant, for a shell with no vertical space to give. Everything else about the
+  // drawer is identical, which is the point -- it is a layout switch, not a second drawer.
+  describe('compact', () => {
+    it('drops the visible heading', () => {
+      setup()
+
+      render(<HintDrawer compact hints={missingVowelsHints} puzzleId={missingVowelsPuzzleId} />)
+
+      expect(screen.queryByRole('heading', { name: 'Hints' })).not.toBeInTheDocument()
+    })
+
+    // The heading goes; the NAME does not. A landmark a screen-reader user can still jump to and
+    // still hear called "Hints" is what makes dropping the visible copy free.
+    it('keeps the region named', () => {
+      setup()
+
+      render(<HintDrawer compact hints={missingVowelsHints} puzzleId={missingVowelsPuzzleId} />)
+
+      expect(screen.getByRole('region', { name: 'Hints' })).toBeInTheDocument()
+    })
+
+    it('still offers the ladder', () => {
+      setup()
+
+      render(<HintDrawer compact hints={missingVowelsHints} puzzleId={missingVowelsPuzzleId} />)
+
+      expect(screen.getByRole('button', { name: 'Reveal hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    it('keeps the heading when it is not asked to drop it', () => {
+      setup()
+
+      renderDrawer()
+
+      expect(screen.getByRole('heading', { name: 'Hints' })).toBeInTheDocument()
+    })
+
+    // The compact list is the only one that scrolls, and every rung in it is plain text -- so
+    // nothing inside it can take focus and the list has to take focus itself, or the rungs below the
+    // fold are reachable with a mouse and with nothing else. jest-axe cannot stand in for this:
+    // jsdom lays nothing out, so scrollHeight is 0 and scrollable-region-focusable never fires.
+    it('puts the scrolling list in the tab order', async () => {
+      setup()
+      writeHints(missingVowelsPuzzleId, 3)
+      render(<HintDrawer compact hints={missingVowelsHints} puzzleId={missingVowelsPuzzleId} />)
+
+      // Opens the ladder and leaves focus on the toggle, so the next stop is the list itself.
+      await toggleFold()
+      await userEvent.tab()
+
+      expect(screen.getByRole('list')).toHaveFocus()
+    })
+
+    // The flowed drawer does not scroll, so the list must NOT be a tab stop: a focusable element
+    // that does nothing when focused is a stop a keyboard user pays for and gets nothing from.
+    // The tab stop is also the only observable half of the pair here -- the max-height cannot be
+    // asserted at all, since CLAUDE.md forbids style assertions and jsdom lays nothing out to
+    // measure -- and both come off the same `compact` condition on the same element, so this is
+    // what holds the bound to the docked layout too.
+    it('leaves the flowed list out of the tab order', async () => {
+      setup()
+      writeHints(missingVowelsPuzzleId, 3)
+      renderDrawer()
+
+      await toggleFold()
+      await userEvent.tab()
+
+      expect(screen.getByRole('list')).not.toHaveFocus()
+      expect(screen.getByRole('button', { name: 'All hints revealed' })).toHaveFocus()
+    })
+
+    it('has no axe violations', async () => {
+      setup()
+
+      const { container } = render(<HintDrawer compact hints={missingVowelsHints} puzzleId={missingVowelsPuzzleId} />)
+
+      expect(await axe(container)).toHaveNoViolations()
+    })
+
+    it('has no axe violations with every rung open', async () => {
+      setup()
+      writeHints(missingVowelsPuzzleId, 3)
+      const { container } = render(<HintDrawer compact hints={missingVowelsHints} puzzleId={missingVowelsPuzzleId} />)
+
+      await toggleFold()
+
+      expect(await axe(container)).toHaveNoViolations()
+    })
+  })
+
   // Matches the toggle in both its states -- "Show 2 revealed hints" and "Hide 2 revealed hints"
   // are the same control, and a test that had to name the state could not press it twice.
   const toggleFold = async (): Promise<void> => {
@@ -117,6 +207,22 @@ describe('HintDrawer', () => {
 
       expect(screen.getByText(missingVowelsHints[1])).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Reveal hint 3 of 3' })).toBeInTheDocument()
+    })
+
+    // Under the docked layout the list is bounded and scrolls, because Cryptogram's phrase cap is
+    // 98px at a 320 viewport against a 96px floor and three open rungs would push it under. What a
+    // test can hold is that a full ladder costs nothing either way: every revealed hint is still in
+    // the accessibility tree and still reachable, scrolled to or not. The height itself is
+    // unassertable here -- CLAUDE.md forbids style assertions, and jsdom lays nothing out anyway.
+    it('keeps every revealed hint reachable once the list is full', async () => {
+      setup()
+      writeHints(missingVowelsPuzzleId, 3)
+
+      renderDrawer()
+      await toggleFold()
+
+      expect(screen.getByRole('list')).toBeInTheDocument()
+      expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual(missingVowelsHints)
     })
 
     it('persists a reveal', async () => {

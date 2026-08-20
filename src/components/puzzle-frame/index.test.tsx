@@ -6,7 +6,15 @@ import React from 'react'
 import { PuzzleFrame } from './index'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readProgress, writePack, writeProgress } from '@services/storage'
-import { goFigurePuzzle, missingVowelsPuzzleId, pack, phrasePack, puzzleId } from '@test/__mocks__'
+import {
+  cryptogramPack,
+  cryptogramPuzzleId,
+  goFigurePuzzle,
+  missingVowelsPuzzleId,
+  pack,
+  phrasePack,
+  puzzleId,
+} from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios
 // request against a 35-second timeout for every deep link in this file.
@@ -289,6 +297,167 @@ describe('PuzzleFrame', () => {
       renderFrame(undefined)
 
       expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    })
+  })
+
+  // A docked keypad covers whatever is under it, and today's Back button sits under the board. The
+  // whole point of this layout is that nothing but the phrase gives up vertical space.
+  describe('the docked layout', () => {
+    // The shared fetch mock writes the goFigure pack over whatever date it is asked for, and the
+    // frame re-reads storage after the request -- so a docked case has to own the fetch too or its
+    // puzzle is gone by the time the frame looks for it.
+    const setupDocked = (): void => {
+      setup()
+      writePack('2026-08-18', cryptogramPack)
+      mockFetchPack.mockImplementationOnce(async (date: string) => {
+        writePack(date, cryptogramPack)
+        return cryptogramPack
+      })
+    }
+
+    const renderDocked = (): ReturnType<typeof render> => {
+      setupDocked()
+      return renderFrame(cryptogramPuzzleId)
+    }
+
+    it('puts the back control above the board rather than under it', async () => {
+      renderDocked()
+
+      const back = await screen.findByRole('button', { name: 'Back to today’s puzzles' })
+      const board = screen.getByRole('region', { name: 'Cryptogram' })
+
+      expect(back.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    // Shortened visible label, whole accessible name. WCAG 2.5.3 needs the accessible name to
+    // contain the visible text, and "Back to today's puzzles" contains "Back".
+    it('shortens the visible label to fit beside the title', async () => {
+      renderDocked()
+
+      expect(await screen.findByRole('button', { name: 'Back to today’s puzzles' })).toHaveTextContent('Back')
+    })
+
+    it('offers exactly one back control', async () => {
+      renderDocked()
+
+      await screen.findByRole('region', { name: 'Cryptogram' })
+
+      expect(screen.getAllByRole('button', { name: 'Back to today’s puzzles' })).toHaveLength(1)
+    })
+
+    it('still names the kind of puzzle', async () => {
+      renderDocked()
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Cryptogram' })).toBeInTheDocument()
+    })
+
+    // The drawer is rendered by PuzzleView and is reached through entry.layout, so it must survive
+    // the branch. A board that lost its hints to a layout change is a regression nothing else here
+    // would catch.
+    it('still renders the hint drawer', async () => {
+      renderDocked()
+
+      expect(await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // The compact drawer, threaded from entry.layout. The heading plus its gap is 40px, and the
+    // docked column is budgeting a 98px phrase cap at a 320 viewport against a 96px hard floor --
+    // so a word the button underneath already says is not worth the room.
+    it('gives the docked layout a drawer with no heading of its own', async () => {
+      renderDocked()
+
+      await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })
+
+      expect(screen.getByRole('region', { name: 'Hints' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Hints' })).not.toBeInTheDocument()
+    })
+
+    // Spec decision 7, verbatim: the keypad never moves -- "not when a hint opens". The keypad is
+    // the board's last child and the board fills what is left of the column, so a drawer BELOW the
+    // board pushes the keypad up by however much the revealed list grows. Above the board, the
+    // phrase box absorbs it instead and the keypad's bottom edge is genuinely pinned. DOM order is
+    // the whole mechanism, and it is the only part of it a test can hold: CLAUDE.md forbids style
+    // assertions, and jsdom lays nothing out to measure.
+    it('puts the hint drawer above the board so the keypad cannot be pushed', async () => {
+      renderDocked()
+
+      const drawer = await screen.findByRole('region', { name: 'Hints' })
+      const board = screen.getByRole('region', { name: 'Cryptogram' })
+
+      expect(drawer.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    // The banner PuzzleView renders on the default flow would cost a row the phrase cap cannot
+    // spare -- 98px at a 320 viewport -- so the header row says it in space it already occupies.
+    it('notes a prior solve in the header row instead of a banner', async () => {
+      setupDocked()
+      markSolved(cryptogramPuzzleId)
+
+      renderFrame(cryptogramPuzzleId)
+
+      expect(await screen.findByText('Solved earlier')).toBeInTheDocument()
+      expect(screen.queryByText('You solved this one. Play it again if you like.')).not.toBeInTheDocument()
+    })
+
+    it('says nothing about a prior solve on a puzzle that was never solved', async () => {
+      renderDocked()
+
+      await screen.findByRole('region', { name: 'Cryptogram' })
+
+      expect(screen.queryByText('Solved earlier')).not.toBeInTheDocument()
+    })
+
+    it('has no axe violations', async () => {
+      const { container } = renderDocked()
+
+      await screen.findByRole('region', { name: 'Cryptogram' })
+
+      expect(await axe(container)).toHaveNoViolations()
+    })
+  })
+
+  // The other two types must be provably untouched: the layout is opt-in, and every existing test
+  // in this file passing UNCHANGED is most of that proof. This is the rest of it.
+  describe('the default flow', () => {
+    // The mirror of the docked case. Nothing is pinned here, so the drawer stays where it has
+    // always been -- under the board, after the thing it is a hint about.
+    it('keeps the hint drawer below the board for a type that did not opt in', async () => {
+      setup()
+      mockFetchPack.mockImplementationOnce(async (date: string) => {
+        writePack(date, phrasePack)
+        return phrasePack
+      })
+
+      renderFrame(missingVowelsPuzzleId)
+
+      const board = await screen.findByRole('region', { name: 'Missing Vowels' })
+      const drawer = screen.getByRole('region', { name: 'Hints' })
+
+      expect(board.compareDocumentPosition(drawer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('keeps the drawer’s heading for a type that did not opt in', async () => {
+      setup()
+      mockFetchPack.mockImplementationOnce(async (date: string) => {
+        writePack(date, phrasePack)
+        return phrasePack
+      })
+
+      renderFrame(missingVowelsPuzzleId)
+
+      expect(await screen.findByRole('heading', { name: 'Hints' })).toBeInTheDocument()
+    })
+
+    it('keeps the back control below the board for a type that did not opt in', async () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderFrame()
+
+      const heading = await screen.findByRole('heading', { name: 'Make 154' })
+      const back = screen.getByRole('button', { name: 'Back to today’s puzzles' })
+
+      expect(heading.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
   })
 

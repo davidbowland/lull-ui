@@ -1,4 +1,4 @@
-import { GoFigureData, HintLadder, Meta, MissingVowelsData, Pack, PackDate, Puzzle } from '@types'
+import { CryptogramData, GoFigureData, HintLadder, Meta, MissingVowelsData, Pack, PackDate, Puzzle } from '@types'
 
 export const packDate: PackDate = '2026-08-18'
 
@@ -91,4 +91,47 @@ export const phrasePack: Pack = {
   complete: true,
   date: packDate,
   puzzles: [missingVowelsPuzzle],
+}
+
+// Cryptogram
+//
+// Deliberately tiny -- three cipher letters, nine squares, every letter repeated three times -- so a
+// test can assert on a named square without counting to twenty, and so "Every V is A now, 3 squares"
+// has something to count. It does NOT clear lull-api's twelve-letter structural floor and is not
+// meant to: this is a rendering fixture, and the floor is a generation rule.
+//
+// VZE VZE ZEV under { E: E, V: A, Z: T } spells ATE ATE TEA.
+export const cryptogramPuzzleId = '2026-08-18:cryptogram:7c6b5a49'
+
+export const cryptogramHints: HintLadder = [
+  'A saying about a meal',
+  'What you say when the plate is empty',
+  'Three words, and two of them are the same',
+]
+
+export const cryptogramPuzzle: Puzzle<CryptogramData> = {
+  data: {
+    answer: 'Ate ate tea',
+    category: 'Saying',
+    ciphertext: 'VZE VZE ZEV',
+    hints: cryptogramHints,
+  },
+  difficulty: 2,
+  estimatedSeconds: 210,
+  id: cryptogramPuzzleId,
+  type: 'cryptogram',
+}
+
+// Difficulty 3 hides the category outright. The board leaves it out of the meta line entirely --
+// no placeholder, no separator -- so a fixture without the key is the only way to cover it.
+export const hiddenCategoryCryptogram: Puzzle<CryptogramData> = {
+  ...cryptogramPuzzle,
+  data: { answer: 'Ate ate tea', ciphertext: 'VZE VZE ZEV', hints: cryptogramHints },
+  difficulty: 3,
+}
+
+export const cryptogramPack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [cryptogramPuzzle],
 }

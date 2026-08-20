@@ -1,5 +1,6 @@
 import '@fontsource/space-grotesk'
 import type { AppProps } from 'next/app'
+import Head from 'next/head'
 import React, { useEffect } from 'react'
 
 import '@assets/css/index.css'
@@ -53,6 +54,23 @@ export default function App({ Component, pageProps }: AppProps) {
 
   return (
     <ErrorBoundary>
+      {/* Here rather than _document.tsx: Next warns about a viewport meta in a custom document
+          ("viewport meta tags should not be used in _document.js's <Head>"), because the document
+          head is rendered once at build time and a page cannot amend it. _app is the documented
+          home for it in the Pages Router.
+
+          viewport-fit=cover is what makes env(safe-area-inset-*) resolve to anything. Without it
+          iOS insets the layout viewport itself, every inset reads 0, and the docked cryptogram
+          column's pb-[env(safe-area-inset-bottom)] reserves nothing -- so the bottom keypad row
+          renders inside the home indicator strip and the system swallows taps there.
+
+          It is page-wide and cannot be scoped to one puzzle type: /p/<id> is ONE exported document
+          serving all three. That is why the horizontal padding on every top-level <main> is written
+          as max(today's value, the inset) -- cover lets content reach the notch in landscape, and
+          those maxes are what keep it off. */}
+      <Head>
+        <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport" />
+      </Head>
       <Component {...pageProps} />
     </ErrorBoundary>
   )

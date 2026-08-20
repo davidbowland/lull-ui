@@ -1,3 +1,4 @@
+import { CryptogramBoard } from '@components/cryptogram'
 import { GoFigureBoard } from '@components/gofigure'
 import { MissingVowelsBoard } from '@components/missingvowels'
 import { PuzzleComponent, PuzzleType } from '@types'
@@ -9,12 +10,29 @@ export interface RegistryEntry {
   // -- decoration next to words, never a glyph standing alone.
   icon: string
   label: string
+  // Absent means today's flow: a page of stacked sections with the board somewhere in the middle.
+  // 'docked' means the board pins something to the bottom of the viewport and everything above it
+  // has to get out of the way -- which is a SHELL concern, so the board's four-prop contract does
+  // not change and it still never learns what is around it.
+  layout?: 'docked'
 }
 
 // Everything a type contributes to the shell. Adding a type is adding a line here and a
 // component: the shell owns routing, storage, and the network, and asks the registry
 // only what to render.
 export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
+  cryptogram: {
+    // Cast for the same reason the other two are: the shell carries a Puzzle<unknown> because it
+    // deliberately cannot know what any type's data looks like, and this is the single line
+    // asserting that Cryptogram's board gets Cryptogram's data.
+    Component: CryptogramBoard as PuzzleComponent,
+    // An arrow crossing into a wall -- one thing standing for another, which is the whole game.
+    icon: 'M4 12h9m0 0-3-3m3 3-3 3M18 5v14',
+    label: 'Cryptogram',
+    // The one type that asks for it. A 26-key pad docked to the bottom of the viewport covers
+    // whatever is under it, and today's Back button sits under the board.
+    layout: 'docked',
+  },
   gofigure: {
     // Cast once, here, where the pairing of the type tag to its component is declared.
     // The shell carries a Puzzle<unknown> because it deliberately cannot know what any

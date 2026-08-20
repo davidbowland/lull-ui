@@ -22,7 +22,12 @@ const Index = (): React.ReactNode => (
       <meta content="A puzzle to pass the time" name="twitter:description" />
       <meta content="https://lull.dbowland.com/og-image.png" name="twitter:image" />
     </Head>
-    <main className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-4 py-10">
+    {/* The horizontal padding is max(1rem, inset) rather than px-4 because _app.tsx now ships
+        viewport-fit=cover, which lets the page reach under a notch in landscape. The max floor is
+        today's 16px, so nothing moves on a device with no physical inset; it grows only where one
+        exists. The shelf is full-bleed rows against this padding, so it is the page that would
+        lose a tap target to the notch. */}
+    <main className="mx-auto flex w-full max-w-[720px] flex-col gap-6 py-10 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
       <div>
         <h1 className="text-3xl text-[var(--lull-ink)]">Lull</h1>
         <p className="text-[var(--lull-ink-muted)]">A puzzle to pass the time</p>

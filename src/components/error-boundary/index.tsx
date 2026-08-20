@@ -36,7 +36,9 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     // client-side navigation would keep. Copy says what to do, not what went wrong --
     // "an unexpected error occurred" gives a player nothing to act on.
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
+      // Horizontal padding is max(1.5rem, inset) rather than the p-6 shorthand: this boundary wraps
+      // every page in _app.tsx, and _app.tsx ships viewport-fit=cover. Floored at today's 24px.
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 py-6 pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))]">
         <h1 className="text-2xl text-[var(--lull-ink)]">Lull got stuck</h1>
         <p className="text-[var(--lull-ink-muted)]">
           Something went wrong drawing this page. Your solved puzzles are safe on this device.

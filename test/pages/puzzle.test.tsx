@@ -4,7 +4,15 @@ import React from 'react'
 
 import PuzzlePage, { getStaticPaths, getStaticProps } from '@pages/p/[puzzleId]'
 import { writePack } from '@services/storage'
-import { missingVowelsPuzzleId, pack, packDate, phrasePack, puzzleId } from '@test/__mocks__'
+import {
+  cryptogramPack,
+  cryptogramPuzzleId,
+  missingVowelsPuzzleId,
+  pack,
+  packDate,
+  phrasePack,
+  puzzleId,
+} from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios
 // request against a 35-second timeout.
@@ -46,6 +54,18 @@ describe('PuzzlePage', () => {
       render(<PuzzlePage />)
 
       expect(await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // The docked layout changes the page chrome itself -- <main> drops py-10 and becomes a
+    // full-height column -- so it has to be exercised through the real page and not only through
+    // the frame.
+    it('plays a docked puzzle inside the page chrome', async () => {
+      setup(`/p/${encodeURIComponent(cryptogramPuzzleId)}/`)
+      writePack(packDate, cryptogramPack)
+
+      render(<PuzzlePage />)
+
+      expect(await screen.findByRole('region', { name: 'Cryptogram' })).toBeInTheDocument()
     })
 
     it('asks for nothing when the path carries no id at all', () => {
