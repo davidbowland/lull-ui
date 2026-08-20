@@ -54,6 +54,7 @@
       "@hooks/*": ["src/hooks/*"],
       "@pages/*": ["src/pages/*"],
       "@registry": ["src/registry"],
+      "@rules/*": ["src/rules/*"],
       "@services/*": ["src/services/*"],
       "@test/*": ["test/*"],
       "@types": ["src/types"],

@@ -37,7 +37,12 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // solved puzzle still holds its winning expression, so the board restores it and
   // announces "Solved." itself -- rendering the banner too would say it twice, which is
   // the doubling this freeze exists to avoid.
-  const [wasSolved] = useState(() => readMeta().solved.includes(puzzle.id) && readProgress(puzzle.id) === null)
+  //
+  // Empty progress counts as none. Play again empties a solved board and stores that, so
+  // an empty string here means the player wiped it, not that they left one keystroke in:
+  // the board comes up blank and says nothing, and the banner is then the only thing that
+  // knows this puzzle is already in the bag.
+  const [wasSolved] = useState(() => readMeta().solved.includes(puzzle.id) && (readProgress(puzzle.id) ?? '') === '')
 
   // The shell owns persistence; the board is handed two callbacks and no storage.
   const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])

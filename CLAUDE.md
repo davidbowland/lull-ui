@@ -9,10 +9,16 @@ selection, and answers all arrive in the pack from `lull-api`. If you find yours
 that decides whether an answer is right, stop — either the backend should have shipped that as
 data, or it belongs in `src/rules/`.
 
-**`src/rules/` is vendored, not authored.** It is a byte-identical copy of `lull-api/src/rules/`,
-pinned by the commit recorded in `src/rules/.lull-api-ref`, and CI fails the build on any drift.
-Never edit it here. Change it in `lull-api`, then run `npm run sync-rules` and commit both the copy
-and the ref together.
+**`src/rules/` is vendored, not authored.** It is a copy of `lull-api/src/rules/`. Never edit it
+here — change it in `lull-api`, then copy the rule and its tests over in the same sitting.
+
+**Nothing verifies the copies match, on purpose.** CI here does not clone `lull-api`, there is no
+pinned commit, and no script owns the copy. Each of those made a two-file `cp` into a protocol, and
+the cross-repo check made this repo's build depend on another one being reachable and already
+pushed. What catches drift is the vendored tests running in this suite and a warning on the
+`lull-api` commit that changes the rules. A stale copy is a UX inconsistency, not a broken pack:
+`lull-api` uses `normalizeAnswer` for corpus entry ids and this app uses it to compare typing, and
+neither calls the other.
 
 **A puzzle component gets no router, no storage, and no API client.** It receives
 `{ puzzle, progress, onProgress, onSolved }` and nothing else. The shell owns routing, persistence,

@@ -1,4 +1,4 @@
-import { GoFigureData, Meta, Pack, PackDate, Puzzle } from '@types'
+import { GoFigureData, Meta, MissingVowelsData, Pack, PackDate, Puzzle } from '@types'
 
 export const packDate: PackDate = '2026-08-18'
 
@@ -53,3 +53,21 @@ export const incompletePack: Pack = {
 }
 
 export const meta: Meta = { installDismissed: false, solved: [], v: 1 }
+
+// Missing Vowels
+//
+// The catalog's own worked example, so the fixture and the specification cannot drift apart:
+// THE EMPIRE STRIKES BACK respaced 4|4|5 against the real 2|3|5|3.
+export const missingVowelsPuzzleId = '2026-08-18:missingvowels:9f8e7d6c'
+
+export const missingVowelsPuzzle: Puzzle<MissingVowelsData> = {
+  data: {
+    answer: 'The Empire Strikes Back',
+    category: 'Film',
+    displayed: 'THMP RSTR KSBCK',
+  },
+  difficulty: 3,
+  estimatedSeconds: 90,
+  id: missingVowelsPuzzleId,
+  type: 'missingvowels',
+}

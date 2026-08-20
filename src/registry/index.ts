@@ -1,4 +1,5 @@
 import { GoFigureBoard } from '@components/gofigure'
+import { MissingVowelsBoard } from '@components/missingvowels'
 import { PuzzleComponent, PuzzleType } from '@types'
 
 export interface RegistryEntry {
@@ -21,7 +22,16 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // gets goFigure's data.
     Component: GoFigureBoard as PuzzleComponent,
     icon: 'M5 12h14M12 5v14',
-    label: 'goFigure',
+    label: 'Go Figure!',
+  },
+  missingvowels: {
+    // Cast for the same reason goFigure is: the shell carries a Puzzle<unknown> because it
+    // deliberately cannot know what any type's data looks like, and this is the single line
+    // asserting that Missing Vowels' board gets Missing Vowels' data.
+    Component: MissingVowelsBoard as PuzzleComponent,
+    // A serifed capital T -- letters, which is what this type is made of.
+    icon: 'M5 7V5h14v2M12 5v14M9 19h6',
+    label: 'Missing Vowels',
   },
 }
 

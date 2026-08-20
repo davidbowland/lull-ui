@@ -43,7 +43,7 @@ describe('PuzzleFrame', () => {
 
       renderFrame()
 
-      expect(await screen.findByRole('heading', { level: 1, name: 'goFigure' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { level: 1, name: 'Go Figure!' })).toBeInTheDocument()
     })
 
     it('renders the board for the type the pack names', async () => {
@@ -117,6 +117,20 @@ describe('PuzzleFrame', () => {
       setup()
       writePack('2026-08-18', pack)
       markSolved(puzzleId)
+
+      renderFrame()
+
+      expect(await screen.findByText('You solved this one. Play it again if you like.')).toBeInTheDocument()
+    })
+
+    // Play again empties the board and stores that, so a solved puzzle can hold progress
+    // that is the empty string. Empty is not started: the banner is what tells the player
+    // this one is already in the bag, and the board below it has nothing to say so.
+    it('says the puzzle was already solved when playing again emptied the board', async () => {
+      setup()
+      writePack('2026-08-18', pack)
+      markSolved(puzzleId)
+      writeProgress(puzzleId, '')
 
       renderFrame()
 

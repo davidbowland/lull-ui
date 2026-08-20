@@ -99,7 +99,7 @@ describe('Shelf', () => {
 
       renderShelf()
 
-      expect(rows()[0]).toHaveTextContent('goFigure')
+      expect(rows()[0]).toHaveTextContent('Go Figure!')
     })
 
     // Never by colour alone, and never by a tick with no name.
@@ -322,7 +322,7 @@ describe('Shelf', () => {
       render(<Shelf now={() => Date.parse('2026-08-18T12:00:00.000Z')} />)
 
       const names = (await screen.findAllByRole('button')).map((button) => button.textContent ?? '')
-      const rows = names.filter((name) => name.includes('goFigure'))
+      const rows = names.filter((name) => name.includes('Go Figure!'))
       expect(rows).toHaveLength(5)
       expect(new Set(rows).size).toEqual(rows.length)
     })

@@ -11,7 +11,7 @@ import type { FC } from 'react'
 // A UTC calendar date, YYYY-MM-DD. Never derived from a local-time Date.
 export type PackDate = string
 
-export type PuzzleType = 'gofigure'
+export type PuzzleType = 'gofigure' | 'missingvowels'
 
 // Within-type: a 4 goFigure is hard for a goFigure and is not comparable to a 4 of another type.
 export type Difficulty = 1 | 2 | 3 | 4 | 5
@@ -41,6 +41,14 @@ export interface GoFigureData {
   bank: number[] // each digit used exactly once
   operators: Operator[] // reusable
   acceptedSolutions: string[] // e.g. "6+9+7*7"
+}
+
+// Missing Vowels
+
+export interface MissingVowelsData {
+  category: string
+  displayed: string // respaced consonant string -- the spacing deliberately lies
+  answer: string
 }
 
 // ============================================================================

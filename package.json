@@ -17,14 +17,14 @@
   "homepage": "https://github.com/davidbowland/lull-ui#readme",
   "scripts": {
     "build": "npm run clean && next build",
-    "postbuild": "node scripts/generate-dynamic-pages.js && next-sitemap && node scripts/generate-sw-manifest.js",
     "clean": "rm -rf .next coverage out",
     "deploy": "DEVELOPMENT=true npm run build && ./scripts/deploy.sh",
     "generate:favicons": "node scripts/generate-favicons.js",
     "lint": "prettier --write . && eslint --fix .",
+    "postbuild": "node scripts/generate-dynamic-pages.js && next-sitemap && node scripts/generate-sw-manifest.js",
     "prepare": "husky || true",
-    "start": "next dev",
     "serve": "next build && npx serve out",
+    "start": "next dev",
     "test": "TZ=UTC jest --colors",
     "typecheck": "tsc --noEmit",
     "update": "npx update-browserslist-db@latest && ncu --doctor --target minor --upgrade && npm audit fix --audit-level=none && npm run test && npm dedupe"

@@ -70,6 +70,78 @@ describe('GoFigureBoard', () => {
     })
   })
 
+  describe('the running total', () => {
+    // The whole point of showing it: a player who expects PEMDAS sees the total move the
+    // way the game actually counts, on the tap that would have surprised them.
+    it('explains that the signs run left to right', () => {
+      renderBoard()
+
+      expect(
+        screen.getByText('Signs apply left to right, not by PEMDAS. So 2 + 3 × 4 makes 20, not 14.'),
+      ).toBeInTheDocument()
+    })
+
+    it('shows the total of the tiles tapped so far', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      await tapAll(user, ['Use 6', 'Add', 'Use 9'])
+
+      expect(screen.getByText('Running total: 15')).toBeInTheDocument()
+    })
+
+    it('counts left to right rather than by PEMDAS', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      // 6+9=15, +7=22, *7=154. PEMDAS would make it 64.
+      await tapAll(user, SOLUTION)
+
+      expect(screen.getByText('Running total: 154')).toBeInTheDocument()
+    })
+
+    it('holds the total while an operator waits for its digit', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      await tapAll(user, ['Use 6', 'Add'])
+
+      expect(screen.getByText('Running total: 6')).toBeInTheDocument()
+    })
+
+    it('has no total to show before the first tile', () => {
+      renderBoard()
+
+      expect(screen.queryByText(/Running total/)).not.toBeInTheDocument()
+    })
+
+    it('recounts the total after a tile is taken back', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      await tapAll(user, ['Use 6', 'Add', 'Use 9', 'Take back the last tile', 'Take back the last tile'])
+
+      expect(screen.getByText('Running total: 6')).toBeInTheDocument()
+    })
+
+    it('shows the total of restored progress', () => {
+      renderBoard(goFigurePuzzle, '6+9')
+
+      expect(screen.getByText('Running total: 15')).toBeInTheDocument()
+    })
+
+    // Division has to come out whole at every step, so there is no number to show -- and
+    // saying so on the tap that broke it beats waiting for the last tile.
+    it('says there is no total when a division does not come out even', async () => {
+      const user = userEvent.setup()
+      renderBoard()
+
+      await tapAll(user, ['Use 6', 'Divide', 'Use 9'])
+
+      expect(screen.getByText("Running total: none. That division doesn't come out even.")).toBeInTheDocument()
+    })
+  })
+
   describe('building an expression', () => {
     it('shows the tapped tokens joined, exactly as the pack writes them', async () => {
       const user = userEvent.setup()
@@ -101,6 +173,38 @@ describe('GoFigureBoard', () => {
           .getAllByRole('button', { name: /^Use 7/ })
           .filter((button) => button.getAttribute('aria-disabled') !== 'true'),
       ).toHaveLength(1)
+    })
+
+    // A bank of 9,3,9,9 has three tiles that all write "9", so the expression alone cannot
+    // say which one was tapped. Spending the tile the player did not touch is visible: the
+    // tapped tile stays bright and a tile across the row goes dim.
+    const repeatedBank: Puzzle<GoFigureData> = {
+      ...goFigurePuzzle,
+      data: { ...goFigurePuzzle.data, acceptedSolutions: ['9+3+9*9'], bank: [9, 3, 9, 9], goal: 189 },
+    }
+
+    it('spends the tile that was tapped, not the first one showing that digit', async () => {
+      const user = userEvent.setup()
+      renderBoard(repeatedBank)
+
+      await user.click(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' }))
+      await tap(user, 'Add')
+
+      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('returns the tile that was tapped when it is taken back', async () => {
+      const user = userEvent.setup()
+      renderBoard(repeatedBank)
+
+      await user.click(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' }))
+      await tap(user, 'Add')
+      await user.click(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' }))
+      await tap(user, 'Take back the last tile')
+
+      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
     })
 
     it('returns the tile to the bank on backspace', async () => {
@@ -216,6 +320,86 @@ describe('GoFigureBoard', () => {
     })
   })
 
+  // A solved board is finished. Nothing on it edits the winning expression -- the way
+  // back in is Play again, which empties the board rather than unpicking it one tile at
+  // a time.
+  describe('once solved', () => {
+    const SOLVED = '6+9+7*7'
+
+    const playAgain = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+    }
+
+    it('offers Play again in place of Take back', () => {
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      expect(screen.getByRole('button', { name: 'Play again' })).toBeEnabled()
+      expect(screen.queryByRole('button', { name: 'Take back the last tile' })).not.toBeInTheDocument()
+    })
+
+    it('refuses every tile in the bank', () => {
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      const spent = screen
+        .getAllByRole('button', { name: /^Use / })
+        .filter((tile) => tile.getAttribute('aria-disabled') === 'true')
+
+      expect(spent).toHaveLength(4)
+    })
+
+    it('refuses every operator', () => {
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      expect(screen.getByRole('button', { name: 'Multiply' })).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('empties the board when the player plays again', async () => {
+      const user = userEvent.setup()
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      await playAgain(user)
+
+      expect(screen.getByText('Tap the numbers and signs to build a sum.')).toBeInTheDocument()
+    })
+
+    it('takes back the solved message when the player plays again', async () => {
+      const user = userEvent.setup()
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      await playAgain(user)
+
+      expect(screen.queryByText(/^Solved\./)).not.toBeInTheDocument()
+    })
+
+    it('returns the whole bank when the player plays again', async () => {
+      const user = userEvent.setup()
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      await playAgain(user)
+
+      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('forgets the winning expression when the player plays again', async () => {
+      const user = userEvent.setup()
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      await playAgain(user)
+
+      expect(onProgress).toHaveBeenLastCalledWith('')
+    })
+
+    it('offers Take back again once the emptied board has a tile on it', async () => {
+      const user = userEvent.setup()
+      renderBoard(goFigurePuzzle, SOLVED)
+
+      await playAgain(user)
+      await tap(user, 'Use 6')
+
+      expect(screen.getByRole('button', { name: 'Take back the last tile' })).toBeEnabled()
+    })
+  })
+
   describe('a wrong answer', () => {
     // Says what the expression DID make, not "incorrect". The number is computed for
     // display; it takes no part in the decision above.
@@ -294,15 +478,6 @@ describe('GoFigureBoard', () => {
       renderBoard(goFigurePuzzle, '6+9+7*7')
 
       expect(onSolved).not.toHaveBeenCalled()
-    })
-
-    it('lets a solved puzzle be replayed by taking a tile back', async () => {
-      const user = userEvent.setup()
-      renderBoard(goFigurePuzzle, '6+9+7*7')
-
-      await tap(user, 'Take back the last tile')
-
-      expect(screen.queryByText(/^Solved\./)).not.toBeInTheDocument()
     })
 
     // Progress outlives nothing here -- the pack it belongs to could have been pruned

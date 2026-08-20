@@ -23,6 +23,11 @@ const OPERATOR_SYMBOLS: Record<Operator, string> = {
 
 const isDigit = (token: string): boolean => /^\d$/.test(token)
 
+// The board's one button, whichever of the two it currently is.
+const ACTION =
+  'min-h-11 rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)] ' +
+  'disabled:opacity-40 enabled:cursor-pointer'
+
 const TILE =
   // aria-disabled variants, not disabled:/enabled: -- the tiles stay genuinely enabled so
   // that tapping one does not blur it, so those variants would never match and a spent
@@ -37,16 +42,35 @@ const TILE =
 const forReading = (tokens: string[]): string =>
   tokens.map((token) => (isDigit(token) ? token : OPERATOR_SYMBOLS[token as Operator])).join(' ')
 
-// Which bank slot each spent digit came from. Duplicates are separate tiles: the bank
-// 6,9,7,7 has two sevens, and spending one must leave the other tappable.
-const consumedSlots = (bank: number[], tokens: string[]): boolean[] => {
-  const consumed = bank.map(() => false)
-  for (const token of tokens.filter(isDigit)) {
-    const slot = bank.findIndex((digit, index) => !consumed[index] && digit === Number(token))
-    consumed[slot] = true
-  }
-  return consumed
+// DISPLAY ONLY, like evaluate.ts itself. The total is on screen from the first tap
+// because the left-to-right rule is the one thing about this game a player cannot guess:
+// seeing 6+9+7 stand at 22 and then jump to 154 on ×7 teaches it in one tap, where a
+// number shown only at the end teaches it after the puzzle is already lost.
+//
+// A trailing operator has no digit yet, so it is dropped and the total is the complete
+// prefix -- 6+ stands at 6, and moves when the next tile lands.
+const runningTotal = (tokens: string[]): string => {
+  const operands = tokens.filter(isDigit).map(Number)
+  if (operands.length === 0) return ''
+
+  const operators = tokens.filter((token) => !isDigit(token)).slice(0, operands.length - 1) as Operator[]
+  const value = evaluateLeftToRight(operands, operators)
+  return value === null ? "Running total: none. That division doesn't come out even." : `Running total: ${value}`
 }
+
+// A tap, not the character it writes. Duplicates are separate tiles -- a bank of 9,3,9,9
+// has three that all write "9" -- so the expression alone cannot say which tile paid for
+// a digit, and the board has to remember the slot the player actually touched. Deriving
+// it by finding the first unspent tile showing that digit dimmed tile 1 when tile 4 was
+// tapped: the tile under the finger stayed bright and one across the row went dark.
+type Move = { slot: number } | { operator: Operator }
+
+const isSlotMove = (move: Move): move is { slot: number } => 'slot' in move
+
+// The expression the pack is written in. Moves are this component's business; the string
+// is the contract -- it is what progress stores and what acceptedSolutions is matched on.
+const tokensOf = (bank: number[], moves: Move[]): string[] =>
+  moves.map((move) => (isSlotMove(move) ? String(bank[move.slot]) : move.operator))
 
 // Stored progress is not trusted. A pack can be pruned and refetched, and a regenerated
 // puzzle keeps neither its bank nor its id, so an expression that the bank cannot pay
@@ -66,9 +90,21 @@ const fitsPuzzle = (data: GoFigureData, tokens: string[]): boolean => {
   })
 }
 
-const restore = (data: GoFigureData, progress: string | null): string[] => {
+const restore = (data: GoFigureData, progress: string | null): Move[] => {
   const tokens = progress?.match(/\d|[+\-*/]/g) ?? []
-  return tokens.join('') === progress && fitsPuzzle(data, tokens) ? tokens : []
+  if (tokens.join('') !== progress || !fitsPuzzle(data, tokens)) return []
+
+  // Restored, not tapped. A stored expression carries digits and not tiles, so a repeated
+  // digit is assigned the first tile that can pay for it -- which of three identical 9s
+  // was spent is not something the string ever held, and no tile is under a finger here
+  // for the choice to contradict.
+  const taken = data.bank.map(() => false)
+  return tokens.map((token) => {
+    if (!isDigit(token)) return { operator: token as Operator }
+    const slot = data.bank.findIndex((digit, index) => !taken[index] && digit === Number(token))
+    taken[slot] = true
+    return { slot }
+  })
 }
 
 export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: PuzzleComponentProps<GoFigureData>) => {
@@ -76,7 +112,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
 
   // Restored once, at mount. The shell keys this component on the puzzle id, so a
   // different puzzle is a different component rather than a prop change.
-  const [tokens, setTokens] = useState<string[]>(() => restore(puzzle.data, progress))
+  const [moves, setMoves] = useState<Move[]>(() => restore(puzzle.data, progress))
 
   // A set lookup, and nothing else. The component never evaluates arithmetic to decide
   // whether an answer is right: the backend enumerated every accepted expression and
@@ -85,17 +121,23 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // wrong-answer message can name what the tiles made.
   const accepted = useMemo(() => new Set(acceptedSolutions), [acceptedSolutions])
 
+  const tokens = tokensOf(bank, moves)
   const expression = tokens.join('')
+  const total = runningTotal(tokens)
   const isSolved = accepted.has(expression)
-  const consumed = consumedSlots(bank, tokens)
-  const spent = tokens.filter(isDigit).length
+  const consumed = bank.map((_, index) => moves.some((move) => isSlotMove(move) && move.slot === index))
+  const spent = moves.filter(isSlotMove).length
   const lastToken = tokens.at(-1)
-  const canTapDigit = lastToken === undefined || !isDigit(lastToken)
-  const canTapOperator = lastToken !== undefined && isDigit(lastToken) && spent < bank.length
+  // Solved locks the board. A winning expression is not edited back down a tile at a
+  // time -- the way in is Play again, which empties it. Stated here rather than left to
+  // the arithmetic: a solved board happens to have spent its whole bank, so the tiles
+  // would go quiet on their own, and a rule this load-bearing should not rest on that.
+  const canTapDigit = !isSolved && (lastToken === undefined || !isDigit(lastToken))
+  const canTapOperator = !isSolved && lastToken !== undefined && isDigit(lastToken) && spent < bank.length
 
-  const commit = (next: string[]): void => {
-    setTokens(next)
-    const joined = next.join('')
+  const commit = (next: Move[]): void => {
+    setMoves(next)
+    const joined = tokensOf(bank, next).join('')
     onProgress(joined)
     if (accepted.has(joined)) onSolved()
   }
@@ -120,9 +162,16 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   }
 
   return (
-    <section aria-label="goFigure" className="flex flex-col gap-5">
+    <section aria-label="Go Figure!" className="flex flex-col gap-5">
       <h2 className="text-2xl text-[var(--lull-ink)]">Make {goal}</h2>
 
+      {/* A fixed example rather than one drawn from the bank: the rule has to be shown
+          with real numbers, and these are not the player's, so nothing is given away. */}
+      <p className="text-[var(--lull-ink)]">Signs apply left to right, not by PEMDAS. So 2 + 3 × 4 makes 20, not 14.</p>
+
+      {/* The total lives inside the expression's live region rather than beside it. Two
+          regions would announce twice on every tap, and the pair reads as one fact:
+          "6+9, running total 15". */}
       <p
         aria-label="Your expression"
         aria-live="polite"
@@ -130,6 +179,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
         role="status"
       >
         {expression === '' ? 'Tap the numbers and signs to build a sum.' : expression}
+        {total === '' ? null : <span className="block text-base">{total}</span>}
       </p>
 
       {/* Always mounted, empty until there is something to say. A role="status" element
@@ -160,7 +210,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
               aria-label={`Use ${digit}, tile ${index + 1} of ${bank.length}`}
               className={TILE}
               key={`${digit}-${index}`}
-              onClick={() => !isSpent && commit([...tokens, String(digit)])}
+              onClick={() => !isSpent && commit([...moves, { slot: index }])}
               type="button"
             >
               {digit}
@@ -176,7 +226,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
             aria-label={OPERATOR_NAMES[operator]}
             className={TILE}
             key={operator}
-            onClick={() => canTapOperator && commit([...tokens, operator])}
+            onClick={() => canTapOperator && commit([...moves, { operator }])}
             type="button"
           >
             {OPERATOR_SYMBOLS[operator]}
@@ -184,16 +234,26 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
         ))}
       </div>
 
+      {/* Two buttons rather than one that changes its mind, because they do not do the
+          same thing to the board -- and the swap is safe from the focus problem that
+          governs the tiles: solving is always a tile tap, so this control is never the
+          focused element at the moment it is replaced. */}
       <div>
-        <button
-          aria-label="Take back the last tile"
-          className="min-h-11 rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)] disabled:opacity-40 enabled:cursor-pointer"
-          disabled={tokens.length === 0}
-          onClick={() => commit(tokens.slice(0, -1))}
-          type="button"
-        >
-          Take back
-        </button>
+        {isSolved ? (
+          <button className={ACTION} onClick={() => commit([])} type="button">
+            Play again
+          </button>
+        ) : (
+          <button
+            aria-label="Take back the last tile"
+            className={ACTION}
+            disabled={moves.length === 0}
+            onClick={() => commit(moves.slice(0, -1))}
+            type="button"
+          >
+            Take back
+          </button>
+        )}
       </div>
     </section>
   )

@@ -7,7 +7,7 @@ describe('registry', () => {
   })
 
   it('gives the type a name a reader can see', () => {
-    expect(REGISTRY.gofigure.label).toBe('goFigure')
+    expect(REGISTRY.gofigure.label).toBe('Go Figure!')
   })
 
   // The icon is decoration. It is rendered inside an aria-hidden <svg> beside the label

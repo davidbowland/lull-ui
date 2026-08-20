@@ -34,6 +34,7 @@ const config: Config = {
     '^@hooks/(.*)$': '<rootDir>/src/hooks/$1',
     '^@pages/(.*)$': '<rootDir>/src/pages/$1',
     '^@registry$': '<rootDir>/src/registry',
+    '^@rules/(.*)$': '<rootDir>/src/rules/$1',
     '^@services/(.*)$': '<rootDir>/src/services/$1',
     '^@test/(.*)$': '<rootDir>/test/$1',
     '^@types$': '<rootDir>/src/types',

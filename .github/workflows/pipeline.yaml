@@ -43,6 +43,26 @@ jobs:
         run: npm ci && npm audit --audit-level=critical
         env:
           NODE_ENV: test
+
+      # No cross-repo verification step here, deliberately.
+      #
+      # An earlier design had this job clone lull-api at a pinned commit and diff the vendored copy
+      # against it. It was dropped because it buys less than it costs:
+      #
+      # It makes this repo's build depend on another repo being reachable and on a specific commit
+      # already being pushed there -- so a rules change could not be developed across both repos at
+      # once, and an outage or a rename in lull-api reds every build here for reasons that have
+      # nothing to do with this code.
+      #
+      # And the drift it guards against is not a protocol break. lull-api uses normalizeAnswer to
+      # derive corpus entry ids; this app uses it to compare what the player typed. Neither calls
+      # the other, so a stale copy means the board accepts a slightly different set of answers than
+      # intended -- not a broken pack, not a failed request.
+      #
+      # What replaces it: the vendored tests run in this suite, so the copy is proven to behave, and
+      # lull-api's own pipeline warns whenever src/rules changes, which puts the reminder on the
+      # commit that actually causes drift.
+
       - name: Run tests
         run: npm run test
 
