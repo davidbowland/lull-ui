@@ -1,4 +1,4 @@
-import { GoFigureData, Meta, MissingVowelsData, Pack, PackDate, Puzzle } from '@types'
+import { GoFigureData, HintLadder, Meta, MissingVowelsData, Pack, PackDate, Puzzle } from '@types'
 
 export const packDate: PackDate = '2026-08-18'
 
@@ -60,14 +60,35 @@ export const meta: Meta = { installDismissed: false, solved: [], v: 1 }
 // THE EMPIRE STRIKES BACK respaced 4|4|5 against the real 2|3|5|3.
 export const missingVowelsPuzzleId = '2026-08-18:missingvowels:9f8e7d6c'
 
+export const missingVowelsHints: HintLadder = [
+  'A space opera sequel',
+  'The middle chapter, where the heroes lose',
+  'The one where a lightsaber duel ends with a revelation about parentage',
+]
+
 export const missingVowelsPuzzle: Puzzle<MissingVowelsData> = {
   data: {
     answer: 'The Empire Strikes Back',
     category: 'Film',
     displayed: 'THMP RSTR KSBCK',
+    hints: missingVowelsHints,
   },
   difficulty: 3,
   estimatedSeconds: 90,
   id: missingVowelsPuzzleId,
   type: 'missingvowels',
+}
+
+// Difficulty 3 and 5 hide the category outright. The board renders no <h2> at all -- no
+// placeholder, no empty element -- so a fixture without the key is the only way to cover it.
+export const hiddenCategoryPuzzle: Puzzle<MissingVowelsData> = {
+  ...missingVowelsPuzzle,
+  data: { answer: 'The Empire Strikes Back', displayed: 'THMP RSTR KSBCK', hints: missingVowelsHints },
+}
+
+// A pack whose puzzle carries a hint ladder, so the frame's drawer branch has something to render.
+export const phrasePack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [missingVowelsPuzzle],
 }

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { fetchPack } from '@services/lull'
-import { cachedPackDates, cachedProgressIds, removePack, removeProgress } from '@services/storage'
+import {
+  cachedHintIds,
+  cachedPackDates,
+  cachedProgressIds,
+  removeHints,
+  removePack,
+  removeProgress,
+} from '@services/storage'
 import { PackDate } from '@types'
 import { packDateOf, toPackDate, utcPackDate } from '@utils/pack-dates'
 
@@ -90,6 +97,14 @@ const pruneOutsideWindow = (localToday: PackDate): void => {
   cachedProgressIds()
     .filter((puzzleId) => packDateOf(puzzleId)! < floor)
     .forEach(removeProgress)
+
+  // A third lull: prefix, and the only one that would otherwise grow without bound: reveal state is
+  // written on every reveal and deliberately never cleared by solving, so nothing but this collects
+  // it. cachedHintIds has already rejected anything without a valid date prefix, which is why the
+  // parse cannot fail here.
+  cachedHintIds()
+    .filter((puzzleId) => packDateOf(puzzleId)! < floor)
+    .forEach(removeHints)
 }
 
 export const usePrefetch = (now = Date.now): void => {

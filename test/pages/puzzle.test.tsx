@@ -4,7 +4,7 @@ import React from 'react'
 
 import PuzzlePage, { getStaticPaths, getStaticProps } from '@pages/p/[puzzleId]'
 import { writePack } from '@services/storage'
-import { pack, puzzleId } from '@test/__mocks__'
+import { missingVowelsPuzzleId, pack, packDate, phrasePack, puzzleId } from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios
 // request against a 35-second timeout.
@@ -37,6 +37,15 @@ describe('PuzzlePage', () => {
       render(<PuzzlePage />)
 
       expect(await screen.findByRole('heading', { name: 'Make 10' })).toBeInTheDocument()
+    })
+
+    it('shows the hint drawer on a phrase puzzle', async () => {
+      setup(`/p/${encodeURIComponent(missingVowelsPuzzleId)}/`)
+      writePack(packDate, phrasePack)
+
+      render(<PuzzlePage />)
+
+      expect(await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })).toBeInTheDocument()
     })
 
     it('asks for nothing when the path carries no id at all', () => {

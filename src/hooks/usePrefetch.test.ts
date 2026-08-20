@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 
 import { isInstalled, prefetchTargets, retentionFloor, usePrefetch } from './usePrefetch'
 import { fetchPack } from '@services/lull'
-import { readPack, readProgress, writePack, writeProgress } from '@services/storage'
+import { readHints, readPack, readProgress, writeHints, writePack, writeProgress } from '@services/storage'
 import { pack } from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked hook fires real axios
@@ -330,6 +330,28 @@ describe('usePrefetch', () => {
       await renderPrefetch()
 
       expect(readProgress('2026-08-14:gofigure:9f3a1c02')).toEqual('6+9')
+    })
+
+    // The one lull: prefix nothing else collects. Reveal state is written on every reveal and
+    // deliberately never cleared by solving, so without this it grows without bound. Puzzle ids
+    // carry a random shortId, so a regenerated pack never reuses one -- a stale hint key orphans
+    // rather than collides, and pruning is what collects it.
+    it('drops hint counts for a puzzle older than the window', async () => {
+      setup()
+      writeHints('2026-08-10:missingvowels:9f8e7d6c', 2)
+
+      await renderPrefetch()
+
+      expect(readHints('2026-08-10:missingvowels:9f8e7d6c', 3)).toBe(0)
+    })
+
+    it('keeps hint counts for a puzzle inside the window', async () => {
+      setup()
+      writeHints('2026-08-14:missingvowels:9f8e7d6c', 2)
+
+      await renderPrefetch()
+
+      expect(readHints('2026-08-14:missingvowels:9f8e7d6c', 3)).toBe(2)
     })
 
     // Solved ids live in lull:meta and are a few bytes each. History outlives the pack

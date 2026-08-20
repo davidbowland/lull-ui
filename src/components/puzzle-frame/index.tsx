@@ -1,10 +1,12 @@
 import { useRouter } from 'next/router'
 import React, { useCallback, useEffect, useState } from 'react'
 
+import { HintDrawer } from '@components/hint-drawer'
 import { entryFor, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readPack, readProgress, writeProgress } from '@services/storage'
 import { Pack, Puzzle, PuzzleProgress } from '@types'
+import { hintsOf } from '@utils/hints'
 import { packDateOf } from '@utils/pack-dates'
 
 export interface PuzzleFrameProps {
@@ -48,10 +50,15 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])
   const onSolved = useCallback(() => markSolved(puzzle.id), [puzzle.id])
 
+  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist, and
+  // PuzzleProgress stays an opaque per-type string.
+  const hints = hintsOf(puzzle)
+
   return (
     <>
       {wasSolved && <p className="text-[var(--lull-ink-muted)]">You solved this one. Play it again if you like.</p>}
       <Component onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />
+      {hints !== null && <HintDrawer hints={hints} puzzleId={puzzle.id} />}
     </>
   )
 }

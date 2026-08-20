@@ -1,18 +1,22 @@
 import {
+  cachedHintIds,
   cachedPackDates,
   cachedProgressIds,
   markSolved,
+  readHints,
   readMeta,
   readPack,
   readProgress,
+  removeHints,
   removePack,
   removeProgress,
   setInstallDismissed,
   STORAGE_EVENT,
+  writeHints,
   writePack,
   writeProgress,
 } from './storage'
-import { pack, packDate, puzzleId } from '@test/__mocks__'
+import { missingVowelsPuzzleId, pack, packDate, puzzleId } from '@test/__mocks__'
 
 describe('storage', () => {
   const setup = (): void => {
@@ -215,6 +219,76 @@ describe('storage', () => {
       const listener = announcementsDuring(() => writeProgress(puzzleId, '6+9'))
 
       expect(listener).toHaveBeenCalled()
+    })
+  })
+
+  describe('hints', () => {
+    it('reads zero when nothing was ever revealed', () => {
+      setup()
+
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(0)
+    })
+
+    it('round-trips a reveal count', () => {
+      setup()
+
+      writeHints(missingVowelsPuzzleId, 2)
+
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(2)
+    })
+
+    // Progress is a bare safeRead because any string is a state its own input could have reached.
+    // A reveal count is an integer the shell indexes a ladder with, so NaN or 7 would open rungs
+    // that do not exist.
+    it.each([
+      ['not a number', 'two'],
+      ['negative', '-1'],
+      ['beyond the ladder', '7'],
+    ])('treats a %s stored count as zero', (_description, raw) => {
+      setup()
+      window.localStorage.setItem(`lull:hints:${missingVowelsPuzzleId}`, raw)
+
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(0)
+    })
+
+    // Self-healing, exactly as readPack does: the bad value is on disk, so leaving it means every
+    // later load re-reads it.
+    it('rewrites the key when it discards a malformed count', () => {
+      setup()
+      window.localStorage.setItem(`lull:hints:${missingVowelsPuzzleId}`, 'two')
+
+      readHints(missingVowelsPuzzleId, 3)
+
+      expect(window.localStorage.getItem(`lull:hints:${missingVowelsPuzzleId}`)).toBe('0')
+    })
+
+    // localStorage tells this tab nothing about its own writes, so anything rendering off these
+    // keys has to be told.
+    it('announces a write', () => {
+      setup()
+
+      const listener = announcementsDuring(() => writeHints(missingVowelsPuzzleId, 1))
+
+      expect(listener).toHaveBeenCalled()
+    })
+
+    it('removes a reveal count', () => {
+      setup()
+      writeHints(missingVowelsPuzzleId, 2)
+
+      removeHints(missingVowelsPuzzleId)
+
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(0)
+    })
+
+    // Same derived-index rule as packs and progress, validated by the one part of a puzzle id a
+    // client may read.
+    it('lists only ids carrying a valid date prefix', () => {
+      setup()
+      writeHints(missingVowelsPuzzleId, 1)
+      window.localStorage.setItem('lull:hints:nonsense', '1')
+
+      expect(cachedHintIds()).toEqual([missingVowelsPuzzleId])
     })
   })
 

@@ -43,10 +43,52 @@ export interface GoFigureData {
   acceptedSolutions: string[] // e.g. "6+9+7*7"
 }
 
+// Phrase puzzles
+
+// Tagged by shape because the consumers want different things from one call. The tool schema
+// requires the tag and ajv rejects a response missing it.
+//
+//   title   -- a recognizable title of a work. Missing Vowels' preferred shape.
+//   idiom   -- a common saying or expression.
+//   quote   -- a witty or aphoristic line. Cryptogram's preferred shape.
+//   compact -- two or three short words sharing letters. Phrazle's preferred shape.
+//
+// A consumer PREFERS a shape; it does not require one. Requiring one would make a call that came
+// back light on a single tag produce zero puzzles of a type.
+export type PhraseShape = 'compact' | 'idiom' | 'quote' | 'title'
+
+// Exactly three, ordered least to most revealing. The count is checked once, at the parse boundary
+// in phrase-checks; the tuple carries that guarantee to every read site downstream.
+export type HintLadder = [string, string, string]
+
+// 5 = a general audience recognizes it instantly, 1 = obscure but fair. Set by the REVIEWER, never
+// by the generator: a generator asked to rate its own output is grading its own work. Defaults to 3
+// when review did not run.
+//
+// Direction matters and is easy to get backwards: high familiarity makes a Cryptogram EASIER.
+export type Familiarity = 1 | 2 | 3 | 4 | 5
+
+export interface Phrase {
+  text: string
+  shape: PhraseShape
+  // ONE label -- the general kind of thing. Rung 1 of the ladder is what the old `categorySpecific`
+  // used to be, so keeping both would squeeze the ladder into the narrow band between them and make
+  // rung 1 duplicate whatever is already on screen.
+  category: string
+  hints: HintLadder
+  familiarity: Familiarity
+}
+
+// What every phrase-derived puzzle carries, so the UI shell can find hints without knowing the
+// type. `category` is optional because difficulty hides it.
+export interface PhrasePuzzleData {
+  category?: string
+  hints: HintLadder
+}
+
 // Missing Vowels
 
-export interface MissingVowelsData {
-  category: string
+export interface MissingVowelsData extends PhrasePuzzleData {
   displayed: string // respaced consonant string -- the spacing deliberately lies
   answer: string
 }

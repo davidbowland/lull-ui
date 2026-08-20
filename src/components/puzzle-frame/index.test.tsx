@@ -6,7 +6,7 @@ import React from 'react'
 import { PuzzleFrame } from './index'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readProgress, writePack, writeProgress } from '@services/storage'
-import { goFigurePuzzle, pack, puzzleId } from '@test/__mocks__'
+import { goFigurePuzzle, missingVowelsPuzzleId, pack, phrasePack, puzzleId } from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios
 // request against a 35-second timeout for every deep link in this file.
@@ -237,6 +237,45 @@ describe('PuzzleFrame', () => {
       expect(
         await screen.findByText('A newer kind of puzzle. Reload while you’re online to play it.'),
       ).toBeInTheDocument()
+    })
+  })
+
+  describe('the hint drawer', () => {
+    // Hints belong to the shell. Game components never learn they exist, and every future phrase
+    // type gets the drawer for free.
+    it('renders the drawer under a puzzle that carries hints', async () => {
+      setup()
+      mockFetchPack.mockImplementationOnce(async (date: string) => {
+        writePack(date, phrasePack)
+        return phrasePack
+      })
+
+      render(<PuzzleFrame puzzleId={missingVowelsPuzzleId} />)
+
+      expect(await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // goFigure has no phrase in it, so hintsOf returns null and nothing renders.
+    it('renders no drawer under a puzzle that carries none', async () => {
+      setup()
+
+      renderFrame()
+
+      expect(await screen.findByRole('heading', { name: 'Make 154' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^Reveal hint/ })).not.toBeInTheDocument()
+    })
+
+    it('has no axe violations with the drawer present', async () => {
+      setup()
+      mockFetchPack.mockImplementationOnce(async (date: string) => {
+        writePack(date, phrasePack)
+        return phrasePack
+      })
+
+      const { container } = render(<PuzzleFrame puzzleId={missingVowelsPuzzleId} />)
+      await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })
+
+      expect(await axe(container)).toHaveNoViolations()
     })
   })
 

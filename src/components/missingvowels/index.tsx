@@ -59,7 +59,7 @@ export const MissingVowelsBoard = ({
 
   return (
     <section aria-label="Missing Vowels" className="flex flex-col gap-5">
-      <h2 className="text-2xl text-[var(--lull-ink)]">{category}</h2>
+      {category !== undefined && <h2 className="text-2xl text-[var(--lull-ink)]">{category}</h2>}
 
       {/* The consonants are the puzzle. Read as one string by a screen reader they would be
           gibberish, so the visible run is aria-hidden and an explicit label spells it out with the

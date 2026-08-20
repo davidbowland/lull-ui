@@ -10,6 +10,7 @@ import { packDateOf } from '@utils/pack-dates'
 const PACK_PREFIX = 'lull:pack:'
 const PACK_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const PROGRESS_PREFIX = 'lull:progress:'
+const HINTS_PREFIX = 'lull:hints:'
 const META_KEY = 'lull:meta'
 const VERSION = 1
 
@@ -172,6 +173,49 @@ export const removeProgress = (puzzleId: string): void => safeRemove(`${PROGRESS
 // may read. Pruning walks this list and keys on that date prefix.
 export const cachedProgressIds = (): string[] =>
   keysWithPrefix(PROGRESS_PREFIX).filter((puzzleId) => packDateOf(puzzleId) !== null)
+
+// Hints
+
+// The REVEALED COUNT, not a set: reveal is strictly sequential, so one integer says everything a
+// set would.
+//
+// Written independently of solve state and never cleared by solving, so reopening a solved puzzle
+// shows the rungs the player opened. That is also why usePrefetch has to prune this prefix -- it is
+// the one lull: key nothing else collects.
+export const writeHints = (puzzleId: string, revealed: number): void => {
+  safeWrite(`${HINTS_PREFIX}${puzzleId}`, `${revealed}`)
+  announce()
+}
+
+// Validated the way readPack is -- parse, validate, self-heal -- and NOT the way readProgress is,
+// which is a bare safeRead with no validation at all. Progress is free text a board wrote and any
+// string is a state its own input could have reached; a reveal count is an integer the shell
+// indexes a ladder with, so a NaN or a 7 would open rungs that do not exist.
+export const readHints = (puzzleId: string, hintCount: number): number => {
+  const raw = safeRead(`${HINTS_PREFIX}${puzzleId}`)
+  if (raw === null) return 0
+
+  const revealed = Number.parseInt(raw, 10)
+  const isUsable = Number.isInteger(revealed) && revealed >= 0 && revealed <= hintCount
+  if (isUsable) return revealed
+
+  // Rewritten, not just reported. The bad value is on disk, so leaving it means every later load
+  // re-reads it, offline included.
+  console.error('discarding a malformed stored hint count', { puzzleId, raw })
+  writeHints(puzzleId, 0)
+  return 0
+}
+
+export const removeHints = (puzzleId: string): void => {
+  safeRemove(`${HINTS_PREFIX}${puzzleId}`)
+  announce()
+}
+
+// Same derived-index rule as packs and progress. Puzzle ids carry a random shortId, so a
+// regenerated pack never reuses one -- a stale hint key orphans rather than collides, and pruning
+// is what collects it.
+export const cachedHintIds = (): string[] =>
+  keysWithPrefix(HINTS_PREFIX).filter((puzzleId) => packDateOf(puzzleId) !== null)
 
 // Meta
 

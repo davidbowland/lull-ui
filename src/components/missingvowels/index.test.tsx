@@ -4,7 +4,7 @@ import { axe } from 'jest-axe'
 import React from 'react'
 
 import { MissingVowelsBoard } from './index'
-import { missingVowelsPuzzle } from '@test/__mocks__'
+import { hiddenCategoryPuzzle, missingVowelsPuzzle } from '@test/__mocks__'
 import { MissingVowelsData, Puzzle } from '@types'
 
 describe('MissingVowelsBoard', () => {
@@ -23,10 +23,19 @@ describe('MissingVowelsBoard', () => {
   }
 
   describe('the board', () => {
-    it('shows the category', () => {
+    it('shows the category when the difficulty allows it', () => {
       renderBoard()
 
       expect(screen.getByRole('heading', { name: 'Film' })).toBeInTheDocument()
+    })
+
+    // Hiding the category removes a free tier rather than weakening one. The <h2> is not rendered
+    // at all: no placeholder, no empty element. The section keeps its aria-label and PuzzleFrame
+    // still emits the <h1> above it, so the board is headingless but not unlabeled. Deliberate.
+    it('renders no heading at all when the category is hidden', () => {
+      renderBoard(hiddenCategoryPuzzle)
+
+      expect(screen.queryByRole('heading')).not.toBeInTheDocument()
     })
 
     it('shows the respaced consonants', () => {
@@ -228,6 +237,12 @@ describe('MissingVowelsBoard', () => {
 
     it('has no axe violations once solved', async () => {
       const { container } = renderBoard(missingVowelsPuzzle, 'The Empire Strikes Back')
+
+      expect(await axe(container)).toHaveNoViolations()
+    })
+
+    it('has no axe violations with the category hidden', async () => {
+      const { container } = renderBoard(hiddenCategoryPuzzle)
 
       expect(await axe(container)).toHaveNoViolations()
     })
