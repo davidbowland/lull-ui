@@ -1,10 +1,11 @@
 import { DEFAULT_AVAILABLE, MAX_SQUARE, MIN_SQUARE, squareSize } from './layout'
 
 // The two widths the spec works through: the phrase box's CONTENT width at a 390 viewport and at a
-// 320 one, after the page's px-4 and the box's own px-3. Measured with a ResizeObserver in the
-// board, never derived from the viewport -- so these are inputs, not assumptions about a device.
-const AT_390 = 334
-const AT_320 = 264
+// 320 one, after the bench column's 16px gutter a side and the plate's own 16px a side. Measured
+// with a ResizeObserver in the board, never derived from the viewport -- so these are inputs, not
+// assumptions about a device.
+const AT_390 = 326
+const AT_320 = 256
 
 // Pinned to literals, not to the constants themselves. Every assertion below compares against
 // MIN_SQUARE and MAX_SQUARE, which is self-referential: set them to 26 and 36 and the whole file
@@ -21,9 +22,11 @@ describe('the sizes themselves', () => {
   })
 
   // The board paints with this before its first ResizeObserver measurement lands, so a typo here
-  // is a first paint at the wrong size on every phrase.
+  // is a first paint at the wrong size on every phrase. 390 less the plate's own 16px a side, and
+  // nothing else: the bench column carries no page gutter any more -- every band pays for its own
+  // inset, and the board's plate is one of the bands that reaches the screen edge.
   it('guesses the phrase box at a 390 viewport before it has been measured', () => {
-    expect(DEFAULT_AVAILABLE).toEqual(334)
+    expect(DEFAULT_AVAILABLE).toEqual(358)
   })
 })
 
@@ -33,16 +36,16 @@ describe('squareSize', () => {
   // gets large squares and more rows, and scrolls. That is deliberate -- shrinking a whole phrase to
   // avoid a scroll that already works costs legibility for nothing.
   it.each([
-    [9, 35],
-    [10, 31],
-    [12, 26],
+    [9, 34],
+    [10, 30],
+    [12, 25],
     [13, MIN_SQUARE],
   ])('fits a %i-letter word at a 390 viewport in %ipx squares', (longest, expected) => {
     expect(squareSize(AT_390, longest)).toEqual(expected)
   })
 
   it.each([
-    [9, 27],
+    [9, 26],
     [10, MIN_SQUARE],
     [12, MIN_SQUARE],
     [13, MIN_SQUARE],

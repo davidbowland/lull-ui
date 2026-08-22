@@ -39,6 +39,23 @@ describe('ErrorBoundary', () => {
     expect(screen.getByRole('button', { name: 'Reload Lull' })).toBeInTheDocument()
   })
 
+  // Reloading is not an exit on its own. A render that throws because of what is on the device --
+  // a malformed stored value, a pack this build cannot parse -- throws again on the next render,
+  // so reload is a loop. The manifest is display: standalone, which means no browser back button
+  // and no address bar to escape through either, so this link is the only thing that changes what
+  // gets rendered.
+  it('offers a way home, not only a way to try the same render again', () => {
+    setup()
+
+    render(
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    )
+
+    expect(screen.getByRole('link', { name: 'Back to today’s puzzles' })).toHaveAttribute('href', '/')
+  })
+
   it('reassures the player their record survived', () => {
     setup()
 

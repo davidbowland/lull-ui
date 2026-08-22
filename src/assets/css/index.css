@@ -1,49 +1,393 @@
 @import '@heroui/styles';
 
-/* PROVISIONAL. These must stay in step with src/config/colors.ts — that file records
-   the measured contrast ratio of every pair, and src/config/contrast.test.ts fails the
-   build if one drops under AA. Changing a value here without changing it there makes
-   those recorded numbers a lie. */
+/* These must stay in step with src/config/colors.ts — that file records the measured
+   contrast ratio of every pair, and src/config/contrast.test.ts fails the build if one
+   drops under AA. Changing a value here without changing it there makes those recorded
+   numbers a lie.
+
+   `--lull-hair` is the one token with no recorded ratio, and that is deliberate: it is
+   decorative — section separators and the outer bezel of a nested enclosure — and must
+   never draw a boundary that identifies a control or its state. Those use
+   `--lull-rule` or `--lull-accent`. */
 :root {
-  --lull-page: #f5f5f3;
-  --lull-surface: #ffffff;
-  --lull-ink: #1b1b18;
-  --lull-ink-muted: #56564e;
-  --lull-border: #8a8a82;
-  --lull-accent: #2f5d8a;
-  --lull-accent-ink: #ffffff;
+  --lull-ground: #dcd8d3;
+  --lull-plate: #ebe9e6;
+  --lull-raised: #f5f3f1;
+  --lull-ink: #201d1e;
+  --lull-muted: #56504f;
+  --lull-accent: #8e3438;
+  --lull-on-accent: #f5f3f1;
+  --lull-rule: #7a7371;
+  --lull-hair: #c9c3bd;
+  --lull-floor: #2a2628;
+  --lull-floor-ink: #f2efec;
+  --lull-floor-muted: #b4adaa;
+  --lull-floor-accent: #e7a0a2;
+  --lull-floor-rule: #7c7476;
+
+  --lull-s1: 4px;
+  --lull-s2: 8px;
+  --lull-s3: 12px;
+  --lull-s4: 16px;
+  --lull-s5: 24px;
+  --lull-s6: 32px;
+  --lull-s7: 48px;
+  --lull-s8: 64px;
+
+  /* Concentric: an inner radius is the outer minus the padding between them, so the two
+     curves stay parallel instead of the inner one looking pinched. */
+  --lull-r-xl: 22px;
+  --lull-r-lg: 16px;
+  --lull-r-md: 11px;
+  --lull-r-sm: 7px;
+  --lull-pill: 999px;
+
+  --lull-float: cubic-bezier(0.22, 0.68, 0.12, 1);
+  --lull-press: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* The page gutter, as a token so the one band that must escape it can say so exactly
+     rather than guessing with a magic number.
+
+     max(16px, inset) rather than a flat 16px because _app.tsx ships viewport-fit=cover,
+     which lets the page reach under a notch in landscape. Floored at today's value, so
+     nothing moves on a device with no physical inset and only the side with the notch
+     grows. Left and right are separate because in landscape only one of them is real. */
+  --lull-gutter-left: max(var(--lull-s4), env(safe-area-inset-left));
+  --lull-gutter-right: max(var(--lull-s4), env(safe-area-inset-right));
+
+  /* THE CONSTANT. The instrument is this tall, measured up from the bottom edge, on
+     every bench, at every viewport height, in every state — not when a hint opens, not
+     when the phrase scrolls, not when a message appears. A keypad whose position is
+     constant becomes muscle memory within a puzzle or two and the player stops needing
+     to look at it.
+
+     It is a token rather than a per-bench number because that is the whole claim: one
+     edit here moves the seam on all three benches at once, and no bench can drift from
+     the other two by accident.
+
+     The budget it has to cover, measured rather than assumed:
+
+       ribbon      52  (TWO reserved lines of text-[13px]/1.35, plus py-2 and a hairline)
+       instrument 179  (7 x 4 keys at 44px with 1px gridlines -- 26 letters + Undo +
+                        Delete is exactly 28, which is exactly 7 x 4, which is why the
+                        pad never reflows and never orphans a row)
+       safe strip   9
+       ----------------
+                  240
+
+     TWO reserved lines, not three. Three was measured against the longest message the
+     product can produce and it was right about the text and wrong about the cost: the
+     ribbon is empty until the first keystroke, so every board opened with 77px of unbroken
+     near-black between the phrase and the pad, paid for by the board — the one band that
+     flexes and therefore the one band that pays for everything.
+
+     Two lines at 13px is about 88 characters at a 320 viewport and well over 200 on a
+     desktop measure. The two messages that overrun it are clamped rather than grown, and
+     FloorBar records why that is the right half to lose.
+
+     The safe-area inset is ADDED to this in the floor bar, never taken out of it. */
+  --lull-seam: 240px;
+
+  /* How tall a bench is allowed to get once the window stops being a phone. Derived, not picked:
+
+       fixed chrome 408  (spine 44 + title 64 + hint bar 60 + seam 240)
+       board        460
+       -----------------
+                    868
+
+     460 for the board because the board has to hold two things at once. The phrase is about 250px
+     on a desktop measure, and an open hint sheet is drawn upward from the hint bar and is at most
+     420 but typically 170 — so 460 is what keeps a three-rung ladder sitting UNDER the squares
+     rather than over them, which is the whole reason the cap is a number rather than `none`.
+
+     Only a ceiling. Below it the bench is whatever the window is, so nothing changes on a phone,
+     and a bench whose board wants more than 460 scrolls that band exactly as it always did. */
+  --lull-bench-max: 868px;
 }
 
 html.dark {
-  --lull-page: #111214;
-  --lull-surface: #1b1c1f;
-  --lull-ink: #ebeae5;
-  --lull-ink-muted: #9d9d96;
-  --lull-border: #6f6f68;
-  --lull-accent: #8fbcea;
-  --lull-accent-ink: #111214;
+  --lull-ground: #191718;
+  --lull-plate: #201e1f;
+  --lull-raised: #292627;
+  --lull-ink: #eee9e6;
+  --lull-muted: #a79f9d;
+  --lull-accent: #e7a0a2;
+  --lull-on-accent: #191718;
+  --lull-rule: #7c7476;
+  --lull-hair: #3b3638;
+  --lull-floor: #141314;
+  --lull-floor-ink: #eee9e6;
+  --lull-floor-muted: #a79f9d;
+  --lull-floor-accent: #e7a0a2;
+  --lull-floor-rule: #6e686a;
 }
 
 html {
-  background-color: var(--lull-page);
+  background-color: var(--lull-ground);
   color: var(--lull-ink);
   scroll-behavior: smooth;
 }
 
+/* The working cut. Two transitional serifs carry the whole system — deliberately not a
+   serif paired with a sans. */
 body {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, serif;
+}
+
+/* The sign cut, one weight only, so hierarchy is built from size and space the way a
+   wayfinding system builds it. */
+.lull-sign {
+  font-family: 'Baskervville', Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+}
+
+/* Back to the working cut, for the annotations that sit INSIDE something set in the sign cut --
+   the "Used" stamp on a Go Figure tile, whose digit is a sign and whose label is not. Without it
+   the annotation inherits Baskervville, and a 10px uppercase word in a display face set at one
+   weight is the one place this pairing looks like an accident. */
+.lull-work {
+  font-family: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, serif;
+}
+
+/* The band order, declared in one place because that is the only place the whole order
+   can be read. The board and the instrument both come out of the SAME puzzle component —
+   which is what keeps its four-prop contract intact — but they belong in different bands,
+   with the shell's own hint bar between them. The frame gives the component's wrapper
+   `display: contents`, so both become flex items of the screen column directly and `order`
+   puts them in their bands. Neither side learns anything about the other.
+
+   Every band is numbered, including the three the frame renders itself. A band left on the
+   default 0 would sit wherever the DOM happened to put it — ahead of all of these, since 0
+   sorts before 1 — so the next reordering would move it without touching this rule. */
+.lull-spine {
+  flex: 0 0 auto;
+  order: 1;
+}
+
+/* THE GUTTER IS ON THE BANDS, NEVER ON A COLUMN ABOVE THEM.
+
+   Every band on a bench is full width, and each one pays for its own text inset with
+   `--lull-gutter-*` — the same max(16px, inset) the page used to carry. That is not a
+   preference; it is the only arrangement in which a band whose GROUND has to reach the edge
+   of the screen can also have text 16px in from it.
+
+   The alternative, tried and removed: the gutter on the column, and a band that wants the
+   full width cancels it with a negative margin. It works for exactly one band — the
+   instrument, which is the last child and wants no inset of its own — and it fails silently
+   for every other. A column with `overflow-y: auto` computes `overflow-x` to `auto` too, so a
+   child with a negative LEFT margin hangs outside the scrollable region entirely (in LTR,
+   scrollable overflow only ever extends right and down) and is simply clipped; the same
+   child's negative RIGHT margin becomes real horizontal overflow the whole bench can be
+   dragged sideways by. The board's own plate would have lost 16px off its left edge and
+   grown a scrollbar on its right, and neither would have shown up in a test — style
+   assertions are forbidden here and jsdom lays nothing out.
+
+   So the bands are the full width, nothing is negative anywhere, and the overflow is zero
+   because there is nothing to overflow. The bench's field is the RAISED plate, with strips of
+   the darker ground ruled across it — the breadcrumb, the sign row, the hint bar. That is the
+   inversion the day directory does not make: there you are choosing between things that sit ON
+   a surface, so the surface recedes; here you are working ON the surface, so it comes forward
+   and the chrome sinks. */
+.lull-bench {
+  background-color: var(--lull-plate);
+}
+
+/* The title row carries the bench name and, opposite it, the difficulty and the length -- the two
+   facts the day directory's row already stated, so the surface you chose from and the surface you
+   landed on describe the puzzle identically.
+
+   It is drawn on the bench's own plate with NO rule under it, which is what keeps the working
+   surface continuous. The bands that are ruled off are the ones drawn in the darker ground -- the
+   breadcrumb above and, on the two benches that have one, the sign row below. They are told apart
+   by their ground, not by a border on their neighbour.
+
+   The sign row belongs to the PUZZLE COMPONENT rather than to this file, because both facts on it
+   (the category, and how much of the board is filled) are read off the puzzle's own data, which
+   the shell deliberately cannot see. Its band is `.lull-signrow`. */
+.lull-title {
+  flex: 0 0 auto;
+  order: 2;
+}
+
+/* The ONE band that flexes, and the only one that may. Everything below it is fixed, so a
+   longer phrase, a third line of status, or an opened hint is absorbed here instead of
+   pushing the instrument down — which is what makes --lull-seam a constant rather than a
+   hope. The min-height is the floor the band arithmetic is checked against, and the
+   tightest case in the product clears it comfortably: the fixed chrome is spine 44 +
+   title 64 + hint bar 60 + seam 240 = 408, so the cipher bench at 320×568 gives the board
+   160px, of which the component spends 34 on its own sign row. Below 504px of viewport the
+   bands cannot all fit at all, and the frame's column switches from clipping to scrolling
+   rather than amputating the seam — see the comment on that column.
+
+   The geometry is the SHELL's even though the content is the component's. A board that
+   forgot to flex would take the seam with it, and no board can be trusted with a promise
+   the other two benches also depend on. */
+.lull-board {
+  flex: 1 1 0%;
+  min-height: 96px;
+  order: 3;
+  overflow-y: auto;
+}
+
+.lull-hintbar {
+  flex: 0 0 auto;
+  order: 4;
+}
+
+/* The sign row: a 34px strip of the darker ground ruled across the raised working surface, holding
+   what this phrase IS on the left and where the player stands on the right.
+
+   It is a class here rather than a string in one component because two benches draw it and it is
+   the same band on both -- the shared grammar this design is built out of, as opposed to a shared
+   container. What changes between benches is the two facts in it; the band never does. It stays
+   inside the puzzle components because both facts are read off the puzzle's own data, which the
+   shell deliberately cannot see. */
+.lull-signrow {
+  align-items: center;
+  background-color: var(--lull-ground);
+  border-bottom: 1px solid var(--lull-hair);
+  border-top: 1px solid var(--lull-hair);
+  color: var(--lull-muted);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  gap: var(--lull-s3);
+  height: 34px;
+  justify-content: space-between;
+  padding-left: var(--lull-gutter-left);
+  padding-right: var(--lull-gutter-right);
+}
+
+/* The one band that escapes the page gutter, and it has to.
+
+   The keypad is 7 columns of 44px keys, sized so that 26 letters plus Undo and Delete make
+   exactly 28 and exactly 7 x 4 -- no reflow, no orphan row. That arithmetic assumes the
+   full viewport width: at 320px a full-bleed key is (320 - 6 gaps) / 7 = 44.86px. Inside
+   the page's 16px-a-side gutter it is 40.3px, which is under the 44x44 touch target this
+   project holds itself to, on the narrowest device and for every key on the board.
+
+   Cancelled with the gutter token rather than a literal, so the two can never drift: if
+   the page's inset changes, this follows it. The board and every other band keep the
+   gutter, because text against a screen edge is a different and worse problem. */
+/* The one band that takes NO gutter, only the physical inset. The keypad is 7 columns sized so
+   that 26 letters plus Undo and Delete make exactly 28 and exactly 7 x 4 — no reflow, no orphan
+   row — and that arithmetic assumes the full width: at 320px a full-bleed key is
+   (320 - 6 gaps) / 7 = 44.86px, where inside a 16px-a-side gutter it is 40.3px, under the 44x44
+   touch target on the narrowest device and for every key. So the band goes edge to edge and puts
+   back only env(safe-area-inset-*), which is zero in portrait and in landscape on a notched phone
+   is what keeps the end keys out from under the cutout. Nothing sets a horizontal padding utility
+   on this element, so the unlayered declarations below have nothing to override. */
+.lull-instrument {
+  /* The floor's own ground, on the WRAPPER and not only on FloorBar inside it. The inset padding
+     below belongs to this element, so without a background here that strip paints the bench's
+     plate — a light band down one side of a near-black instrument, on exactly the devices the
+     inset exists for. */
+  background-color: var(--lull-floor);
+  flex: 0 0 auto;
+  order: 5;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* THE DESKTOP BENCH.
+
+   Everything above this is a phone layout, and it was served unchanged to every viewport: the
+   column fills the window, the seam is pinned to the window's bottom edge, and the board — the one
+   band that flexes — swallows whatever is left. On a phone that IS the design. On a 1280x900 window
+   it put a 500px board around 110px of content and hung the keypad off the bottom of the screen
+   with a third of the window empty between the two.
+
+   So the bench is CAPPED rather than stretched, and the surplus above the cap becomes margin. The
+   board still flexes, exactly as it does on a phone — it simply stops growing at
+   --lull-bench-max, and the window's leftover height is centred around the whole bench instead of
+   being poured into one band.
+
+   The first attempt sized the board by its content and let auto margins do the centring, and it was
+   wrong twice over. The margins ate everything the board did not use, so a 900px window opened with
+   135px of nothing above the breadcrumb; and a board with no slack in it left the hint sheet — which
+   is out of flow and drawn UPWARD from the hint bar — nowhere to land but on top of the phrase. Both
+   are the same mistake: space the reader needs went to the margins. Capping the bench gives it back
+   to the board, where an open hint has room to sit under the squares rather than over them.
+
+   Centring is `justify-content` on the page, NOT `margin-block: auto` on the bench, and the two are
+   not interchangeable. Per flexbox, free space distributed to auto margins is taken BEFORE flex
+   growth — an item with `margin: auto` does not grow at all — so auto margins here would pin the
+   board back to its content size and undo the cap.
+
+   The seam survives all of it, which is the point. It is measured from the bottom edge OF THE
+   BENCH, and the bench still ends at the instrument, so the pad sits --lull-seam up from the bottom
+   of the thing the player is looking at exactly as it does on a phone.
+
+   Scoped by width rather than by a pointer or hover query: a tablet held in portrait has the same
+   surplus height and wants the same answer, and `hover: none` would send it the phone layout. */
+@media (min-width: 768px) {
+  .lull-page {
+    justify-content: center;
+  }
+
+  /* min() with 100dvh restated, not left to the bench's own max-h-dvh: these rules are unlayered
+     and Tailwind's utilities are not, so this declaration outranks that one and would otherwise
+     let the bench outgrow a short window. */
+  .lull-bench {
+    max-height: min(100dvh, var(--lull-bench-max));
+  }
 }
 
 /* A visible focus ring is a WCAG AA requirement and the one accessibility fact this
    repo's rules forbid asserting in a test (no style assertions), so it is declared
    once, globally, rather than per component where it can be forgotten. */
 :focus-visible {
-  outline: 3px solid var(--lull-accent);
-  outline-offset: 2px;
+  outline: 2px solid var(--lull-accent);
+  outline-offset: 3px;
+}
+
+/* The floor is dark in BOTH themes, so the ring above -- keyed to an accent chosen to
+   read on a light ground -- is dark madder on near-black there: 1.92:1 in light mode,
+   against the 3:1 that 1.4.11 and 2.4.11 require. That is every key of every bench's
+   instrument, in the theme most people use, with no visible focus at all.
+
+   --lull-floor-accent exists for exactly this and measures 7.07:1 on the light floor and
+   8.78:1 on the dark one. Scoped to the band rather than fixed globally, because the ring
+   on every other surface is correct as it stands. */
+.lull-floor :focus-visible {
+  outline-color: var(--lull-floor-accent);
+}
+
+/* Weightless float: things rise and settle without apparent mass. The resting state is
+   authored VISIBLE and the rise is enhancement, so a page whose animation never runs —
+   JS disabled, reduced motion, an observer that never fires — renders complete rather
+   than blank. */
+@keyframes lull-rise {
+  from {
+    opacity: 0.001;
+    transform: translate3d(0, 14px, 0) scale(0.994);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lull-rise {
+  animation: lull-rise 0.74s var(--lull-float) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .lull-rise {
+    animation: none;
+  }
+
+  /* Every cinematic reveal degrades, and every press still acknowledges itself — 1ms
+     rather than 0 so a transitionend listener still fires. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
   }
 }

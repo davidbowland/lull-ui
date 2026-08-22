@@ -3,12 +3,99 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import React from 'react'
 
-import { Shelf } from './index'
+import { orderPuzzles, Shelf } from './index'
+import { REGISTRY } from '@registry'
 import { markSolved, STORAGE_EVENT, writePack } from '@services/storage'
-import { goFigurePuzzle, incompletePack, pack, puzzleId } from '@test/__mocks__'
+import { goFigurePuzzle, incompletePack, pack, puzzleId, quickPuzzleId } from '@test/__mocks__'
+import { Difficulty, Puzzle } from '@types'
 
-const mockPush = jest.fn()
-jest.mock('next/router', () => ({ useRouter: () => ({ push: mockPush }) }))
+// Built here rather than taken from a real pack: this is an ordering function, and the
+// fixtures exist to make two puzzles differ in exactly one key at a time. A real pack
+// varies in all three at once and could not tell which key did the work.
+const puzzleFixture = (id: string, difficulty: Difficulty, type: string): Puzzle => ({
+  data: {},
+  difficulty,
+  estimatedSeconds: 60,
+  id,
+  type: type as Puzzle['type'],
+})
+
+const ids = (puzzles: Puzzle[]): string[] => puzzles.map((puzzle) => puzzle.id)
+
+describe('orderPuzzles', () => {
+  // Gentlest first is the on-ramp, and every id here would sort the other way, so a
+  // passthrough or an id-only sort fails this.
+  it('puts the gentlest puzzle first', () => {
+    const hard = puzzleFixture('a', 5, 'gofigure')
+    const gentle = puzzleFixture('z', 1, 'gofigure')
+
+    expect(ids(orderPuzzles([hard, gentle]))).toEqual(['z', 'a'])
+  })
+
+  // The bug that started this. toSorted is stable, so before the order was total, rows
+  // that compared equal kept whatever order the pack arrived in -- and that order changed
+  // between refetches.
+  it('gives one day the same order whatever order it arrives in', () => {
+    const day = [
+      puzzleFixture('d1', 1, 'cryptogram'),
+      puzzleFixture('d2', 1, 'gofigure'),
+      puzzleFixture('d3', 1, 'missingvowels'),
+      puzzleFixture('d4', 3, 'cryptogram'),
+      puzzleFixture('d5', 3, 'gofigure'),
+      puzzleFixture('d6', 3, 'missingvowels'),
+    ]
+    const shuffled = [day[4], day[0], day[5], day[2], day[3], day[1]]
+
+    expect(ids(orderPuzzles(shuffled))).toEqual(ids(orderPuzzles(day)))
+  })
+
+  // Every id here would sort the other way, so only the bench order can produce this.
+  it('breaks a tie in difficulty with the registry order of the benches', () => {
+    const cipher = puzzleFixture('z', 2, 'cryptogram')
+    const writing = puzzleFixture('m', 2, 'missingvowels')
+    const tile = puzzleFixture('a', 2, 'gofigure')
+
+    expect(ids(orderPuzzles([tile, writing, cipher]))).toEqual(['z', 'm', 'a'])
+  })
+
+  // The tiebreak of last resort, and what makes the order TOTAL: ids are unique, so the
+  // comparator can never return 0 for two different puzzles and stability stops mattering.
+  it('breaks a full tie on the puzzle id', () => {
+    const second = puzzleFixture('b', 2, 'gofigure')
+    const first = puzzleFixture('a', 2, 'gofigure')
+    const third = puzzleFixture('c', 2, 'gofigure')
+
+    expect(ids(orderPuzzles([second, third, first]))).toEqual(['a', 'b', 'c'])
+  })
+
+  // A pack is JSON off the network and lull-api can ship a generator before the UI that
+  // draws it, so entryFor returns undefined. The row still has to have a place, and it is
+  // after every row the day can actually draw.
+  it('sorts a type this build has never heard of last', () => {
+    const unknown = puzzleFixture('a', 2, 'crossword')
+    const known = puzzleFixture('z', 2, 'gofigure')
+
+    expect(ids(orderPuzzles([unknown, known]))).toEqual(['z', 'a'])
+  })
+
+  // Ids are unique by construction, so this is the one comparison the order cannot break
+  // any further. It answers 0 rather than picking a side, because a comparator that said
+  // "first is greater" for two equal ids would disagree with itself the moment a malformed
+  // pack off the network repeated one.
+  it('answers a repeated id with a tie', () => {
+    const twin = puzzleFixture('a', 2, 'gofigure')
+
+    expect(ids(orderPuzzles([twin, { ...twin }]))).toEqual(['a', 'a'])
+  })
+
+  it('leaves the pack it was handed alone', () => {
+    const day = [puzzleFixture('z', 5, 'gofigure'), puzzleFixture('a', 1, 'gofigure')]
+
+    orderPuzzles(day)
+
+    expect(ids(day)).toEqual(['z', 'a'])
+  })
+})
 
 describe('Shelf', () => {
   // Noon, so the local date under TZ=UTC is unambiguous.
@@ -27,9 +114,13 @@ describe('Shelf', () => {
 
   const renderShelf = (): ReturnType<typeof render> => render(<Shelf locale="en-US" now={now} />)
 
-  const rows = (): HTMLElement[] => within(screen.getByRole('list')).getAllByRole('button')
+  // The rows are the only links inside the region: the breadcrumb is a landmark of its
+  // own outside it, and the install card offers buttons rather than links.
+  const rows = (): HTMLElement[] => within(screen.getByRole('region', { name: 'Puzzles' })).getAllByRole('link')
 
-  describe('the day', () => {
+  const spine = (): HTMLElement => screen.getByRole('navigation', { name: 'Breadcrumb' })
+
+  describe('the date plate', () => {
     it('names the day the puzzles belong to', () => {
       setup()
       writePack('2026-08-18', pack)
@@ -37,6 +128,24 @@ describe('Shelf', () => {
       renderShelf()
 
       expect(screen.getByRole('heading', { name: 'Tuesday, August 18' })).toBeInTheDocument()
+    })
+
+    it('calls the day today when it is', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(screen.getByText('Today')).toBeInTheDocument()
+    })
+
+    it('says how the rows are ordered', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(screen.getByText('Gentlest first. Pick any one.')).toBeInTheDocument()
     })
 
     // The generator works to UTC, so east of it a local date can run ahead of the newest
@@ -49,6 +158,16 @@ describe('Shelf', () => {
       renderShelf()
 
       expect(screen.getByRole('heading', { name: 'Monday, August 17' })).toBeInTheDocument()
+    })
+
+    // "Today" over a fallback pack would contradict the sentence directly beneath it.
+    it('does not call a fallback day today', () => {
+      setup()
+      writePack('2026-08-17', { ...pack, date: '2026-08-17' })
+
+      renderShelf()
+
+      expect(screen.getByText('Most recent')).toBeInTheDocument()
     })
 
     it('says why the day on screen is not today', () => {
@@ -73,15 +192,44 @@ describe('Shelf', () => {
     })
   })
 
-  describe('the puzzles', () => {
-    // The fixture pack lists the long puzzle first, so a passthrough would fail here.
-    it('puts the quickest puzzle first', () => {
+  describe('the spine', () => {
+    it('names the day it is showing', () => {
       setup()
       writePack('2026-08-18', pack)
 
       renderShelf()
 
-      expect(rows()[0]).toHaveTextContent('About 1 min')
+      expect(within(spine()).getByText('Tue, Aug 18')).toBeInTheDocument()
+    })
+
+    it('names the product', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(within(spine()).getByRole('link', { name: 'Lull' })).toHaveAttribute('href', '/')
+    })
+
+    // An empty device knows no day, so there is nothing true to put after Lull.
+    it('names no day when the device holds no pack', () => {
+      setup()
+
+      renderShelf()
+
+      expect(within(spine()).queryByRole('link')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the rows', () => {
+    // The fixture pack lists the harder puzzle first, so a passthrough would fail here.
+    it('puts the gentlest puzzle first', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(rows()[0]).toHaveTextContent('Gentle')
     })
 
     it('says how long each puzzle takes', () => {
@@ -102,6 +250,26 @@ describe('Shelf', () => {
       expect(rows()[0]).toHaveTextContent('Go Figure!')
     })
 
+    it('names how hard each puzzle is', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(rows()[1]).toHaveTextContent('Tricky')
+    })
+
+    // The thesis of the surface: each row shows the shape of the BENCH it opens, so
+    // choosing here is visibly choosing between three different rooms.
+    it('draws the bench glyph of the puzzle it opens', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(rows()[0].querySelector(`path[d="${REGISTRY.gofigure.glyph}"]`)).toBeInTheDocument()
+    })
+
     // Never by colour alone, and never by a tick with no name.
     it('marks a solved puzzle in words', () => {
       setup()
@@ -113,25 +281,32 @@ describe('Shelf', () => {
       expect(within(rows()[1]).getByText('Solved')).toBeInTheDocument()
     })
 
-    it('leaves an unsolved puzzle unmarked', () => {
+    it('marks an unsolved puzzle in words too', () => {
       setup()
       writePack('2026-08-18', pack)
       markSolved(puzzleId)
 
       renderShelf()
 
-      expect(within(rows()[0]).queryByText('Solved')).not.toBeInTheDocument()
+      expect(within(rows()[0]).getByText('Not started')).toBeInTheDocument()
     })
 
-    it('opens a puzzle by its id', async () => {
-      const user = userEvent.setup()
+    it('opens a puzzle by its id', () => {
       setup()
       writePack('2026-08-18', pack)
 
       renderShelf()
-      await user.click(rows()[1])
 
-      expect(mockPush).toHaveBeenCalledWith(`/p/${encodeURIComponent(puzzleId)}`)
+      expect(rows()[1]).toHaveAttribute('href', `/p/${encodeURIComponent(puzzleId)}`)
+    })
+
+    it('encodes the colons an id carries', () => {
+      setup()
+      writePack('2026-08-18', pack)
+
+      renderShelf()
+
+      expect(rows()[0]).toHaveAttribute('href', `/p/${encodeURIComponent(quickPuzzleId)}`)
     })
   })
 
@@ -188,6 +363,17 @@ describe('Shelf', () => {
 
       expect(screen.queryByText('More puzzles for this day are still on the way.')).not.toBeInTheDocument()
     })
+
+    // A day holds a day, so a pack with nothing in it collapses to the plate, the status
+    // line and the install notice rather than to an apology.
+    it('keeps the day on screen when the pack is empty', () => {
+      setup()
+      writePack('2026-08-18', { ...pack, puzzles: [] })
+
+      renderShelf()
+
+      expect(screen.getByRole('heading', { name: 'Tuesday, August 18' })).toBeInTheDocument()
+    })
   })
 
   describe('being offline', () => {
@@ -227,7 +413,7 @@ describe('Shelf', () => {
       expect(await screen.findByRole('heading', { name: 'Tuesday, August 18' })).toBeInTheDocument()
     })
 
-    it('removes the exact listeners it added on unmount', () => {
+    it('removes the exact storage listener it added on unmount', () => {
       setup()
       const addEventListener = jest.spyOn(window, 'addEventListener')
       const removeEventListener = jest.spyOn(window, 'removeEventListener')
@@ -237,6 +423,48 @@ describe('Shelf', () => {
 
       expect(storageCalls(addEventListener.mock.calls)).toHaveLength(1)
       expect(storageCalls(removeEventListener.mock.calls)).toEqual(storageCalls(addEventListener.mock.calls))
+    })
+
+    // Resume, not merely visibility. An installed app keeps its JS context across days,
+    // so without this the shelf still names yesterday the next morning.
+    it('removes the exact resume listener it added on unmount', () => {
+      setup()
+      const addEventListener = jest.spyOn(document, 'addEventListener')
+      const removeEventListener = jest.spyOn(document, 'removeEventListener')
+      const resumeCalls = (calls: unknown[][]): unknown[][] => calls.filter(([type]) => type === 'visibilitychange')
+
+      renderShelf().unmount()
+
+      expect(resumeCalls(addEventListener.mock.calls)).toHaveLength(1)
+      expect(resumeCalls(removeEventListener.mock.calls)).toEqual(resumeCalls(addEventListener.mock.calls))
+    })
+
+    // The device can fill without this tab hearing the custom event -- another tab's
+    // write, or a service worker's -- so the shelf re-reads on reconnect and on install
+    // as well. Written straight to localStorage here, which is exactly what a write this
+    // tab never announced looks like.
+    it('re-reads the device when the app is installed', async () => {
+      setup()
+
+      renderShelf()
+      window.localStorage.setItem('lull:pack:2026-08-18', JSON.stringify(pack))
+      act(() => {
+        window.dispatchEvent(new Event('appinstalled'))
+      })
+
+      expect(await screen.findByRole('heading', { name: 'Tuesday, August 18' })).toBeInTheDocument()
+    })
+
+    it('re-reads the device on a reconnect', async () => {
+      setup()
+
+      renderShelf()
+      window.localStorage.setItem('lull:pack:2026-08-18', JSON.stringify(pack))
+      act(() => {
+        window.dispatchEvent(new Event('online'))
+      })
+
+      expect(await screen.findByRole('heading', { name: 'Tuesday, August 18' })).toBeInTheDocument()
     })
   })
 
@@ -269,12 +497,15 @@ describe('Shelf', () => {
   })
 
   describe('accessibility', () => {
+    // The spine's one link comes first, which is the point of it: the way back is the
+    // first thing the keyboard meets on every surface.
     it('reaches the first puzzle with the keyboard alone', async () => {
-      const user = userEvent.setup()
+      const user = userEvent.setup({ delay: null })
       setup()
       writePack('2026-08-18', pack)
 
       renderShelf()
+      await user.tab()
       await user.tab()
 
       expect(rows()[0]).toHaveFocus()
@@ -291,6 +522,28 @@ describe('Shelf', () => {
 
     it('has no accessibility violations with an empty device', async () => {
       setup()
+
+      const { container } = renderShelf()
+
+      expect(await axe(container)).toHaveNoViolations()
+    })
+
+    // Rendered with no props at all, which is how the page renders it: the clock and the
+    // language come off the device, and neither may be read before the effect has run.
+    // The assertion is date-free on purpose -- an empty device says the same thing on
+    // every day there has ever been.
+    it('reads the clock and the language off the device by default', () => {
+      setup()
+
+      render(<Shelf />)
+
+      expect(screen.getByRole('heading', { name: 'No puzzles on this device' })).toBeInTheDocument()
+    })
+
+    it('has no accessibility violations while offline', async () => {
+      setup()
+      setNavigatorOnLine(false)
+      writePack('2026-08-18', pack)
 
       const { container } = renderShelf()
 
@@ -316,15 +569,32 @@ describe('Shelf', () => {
     }
 
     it('gives every row a distinct accessible name', async () => {
-      window.localStorage.clear()
+      setup()
       writePack('2026-08-18', fullPack as never)
 
-      render(<Shelf now={() => Date.parse('2026-08-18T12:00:00.000Z')} />)
+      renderShelf()
 
-      const names = (await screen.findAllByRole('button')).map((button) => button.textContent ?? '')
-      const rows = names.filter((name) => name.includes('Go Figure!'))
-      expect(rows).toHaveLength(5)
-      expect(new Set(rows).size).toEqual(rows.length)
+      const names = (await screen.findAllByRole('link')).map((link) => link.textContent ?? '')
+      const puzzleRows = names.filter((name) => name.includes('Go Figure!'))
+      expect(puzzleRows).toHaveLength(5)
+      expect(new Set(puzzleRows).size).toEqual(puzzleRows.length)
+    })
+
+    // The same five puzzles, handed over in a different order, land on the screen in the
+    // same order -- which is the whole of the fix.
+    it('renders the same day identically whatever order the pack arrived in', () => {
+      setup()
+      writePack('2026-08-18', fullPack as never)
+      const arrived = renderShelf()
+      const first = rows().map((row) => row.textContent)
+      arrived.unmount()
+
+      setup()
+      writePack('2026-08-18', { ...fullPack, puzzles: fullPack.puzzles.toReversed() } as never)
+      renderShelf()
+      const second = rows().map((row) => row.textContent)
+
+      expect(second).toEqual(first)
     })
   })
 })

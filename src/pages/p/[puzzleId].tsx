@@ -46,14 +46,15 @@ const PuzzlePage = (): React.ReactNode => {
           a full-height column with no vertical padding above it to spend. The page cannot make that
           call itself -- the id is in the URL and the pack is on the device, so only the frame knows
           what type this is. */}
-      {/* The horizontal padding is max(1rem, inset) rather than px-4, and that is the price of
-          viewport-fit=cover. This one document serves all three puzzle types, so the cover that
-          makes the docked column's bottom inset real also lets the flowed boards reach under a
-          notch in landscape. Floored at today's 16px: no device without a physical inset sees any
-          change, and only the side with the notch grows. Written here rather than on either branch
-          inside PuzzleFrame because the page cannot tell them apart -- the id is in the URL and the
-          pack is on the device -- and both branches want it. */}
-      <main className="mx-auto flex min-h-dvh w-full max-w-[720px] flex-col pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+      {/* The gutter is NOT here, and it is not on the bench column inside either. Every band of a
+          bench is full width and pays for its own text inset out of --lull-gutter-*, because the
+          breadcrumb, the sign row and the hint bar are strips of ground whose rules have to reach
+          both edges, and the board's own plate is the working surface rather than a card laid on
+          one. A column that padded them would stop every one of those rules 16px short. So this
+          element carries only the measure. See index.css, where the alternative -- padding the
+          column and cancelling it with a negative margin -- is recorded along with why it cannot
+          work inside a scroll container. */}
+      <main className="lull-page mx-auto flex min-h-dvh w-full max-w-[720px] flex-col">
         <PuzzleFrame puzzleId={puzzleId} />
       </main>
     </>

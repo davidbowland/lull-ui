@@ -17,6 +17,14 @@ describe('InstallCard', () => {
     )
 
   describe('what the card offers', () => {
+    // The word is read rather than drawn, so a listener learns this is the shelf speaking
+    // and not one of the day's puzzles.
+    it('names itself a notice', () => {
+      renderCard()
+
+      expect(screen.getByText('Notice')).toBeInTheDocument()
+    })
+
     it('says what installing buys', () => {
       renderCard()
 
@@ -37,7 +45,7 @@ describe('InstallCard', () => {
     })
 
     it('asks the browser to install when pressed', async () => {
-      const user = userEvent.setup()
+      const user = userEvent.setup({ delay: null })
       renderCard()
 
       await user.click(screen.getByRole('button', { name: 'Install' }))
@@ -45,8 +53,18 @@ describe('InstallCard', () => {
       expect(onInstall).toHaveBeenCalledTimes(1)
     })
 
+    // The chevron rides inside the control rather than beside it, and WCAG 2.5.3 wants
+    // the name to be the words a speaking user would say -- nobody says "Install right
+    // arrow". getByRole matches the name exactly, so this fails the moment the glyph
+    // leaks into it.
+    it('leaves the accessible name to the label alone', () => {
+      renderCard()
+
+      expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument()
+    })
+
     it('collapses when turned down', async () => {
-      const user = userEvent.setup()
+      const user = userEvent.setup({ delay: null })
       renderCard()
 
       await user.click(screen.getByRole('button', { name: 'Not now' }))
@@ -82,6 +100,12 @@ describe('InstallCard', () => {
       expect(screen.getByText('Tap Share, then Add to Home Screen.')).toBeInTheDocument()
     })
 
+    it('names the Firefox menu without claiming where it sits', () => {
+      renderCard('card', 'firefox-android')
+
+      expect(screen.getByText('Open the Firefox menu.')).toBeInTheDocument()
+    })
+
     // Firefox lists Add to Home screen as a SEPARATE item that makes an ordinary
     // shortcut -- it opens in a tab and Android never counts it as installed -- so a
     // step naming only that would send the reader to the one item that cannot work.
@@ -98,6 +122,17 @@ describe('InstallCard', () => {
 
       expect(screen.queryByRole('button', { name: /^(Install|Add to home screen)$/ })).not.toBeInTheDocument()
     })
+
+    // The steps replace the button, never the way out: a card with no dismissal on the
+    // one platform that can never re-fire an install event would be a permanent fixture.
+    it.each(['firefox-android', 'ios'])('still offers a way out on %s', async (platform: string) => {
+      const user = userEvent.setup({ delay: null })
+      renderCard('card', platform as InstallPlatform)
+
+      await user.click(screen.getByRole('button', { name: 'Not now' }))
+
+      expect(onDismiss).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('collapsing and reopening', () => {
@@ -105,7 +140,7 @@ describe('InstallCard', () => {
     // beforeinstallprompt, so this link is the only route back and a one-way door would
     // make installing unreachable after a stray tap.
     it('reopens from the collapsed link', async () => {
-      const user = userEvent.setup()
+      const user = userEvent.setup({ delay: null })
       renderCard('link')
 
       await user.click(screen.getByRole('button', { name: 'Install' }))

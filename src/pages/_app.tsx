@@ -1,4 +1,5 @@
-import '@fontsource/space-grotesk'
+import '@fontsource-variable/source-serif-4'
+import '@fontsource/baskervville'
 import type { AppProps } from 'next/app'
 import Head from 'next/head'
 import React, { useEffect } from 'react'

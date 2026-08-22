@@ -1,6 +1,9 @@
 import { normalizeAnswer } from '@rules/normalize-answer'
 import React, { useState } from 'react'
 
+import { Button } from '@components/button'
+import { Plate, Shell } from '@components/enclosure'
+import { FloorBar } from '@components/floor-bar'
 import { MissingVowelsData, PuzzleComponentProps } from '@types'
 
 // The one rule this component applies, and it is vendored rather than authored: the backend
@@ -9,10 +12,32 @@ import { MissingVowelsData, PuzzleComponentProps } from '@types'
 const isCorrect = (guess: string, answer: string): boolean =>
   normalizeAnswer(guess) !== '' && normalizeAnswer(guess) === normalizeAnswer(answer)
 
-// The board's one button, whichever of the two it currently is.
-const ACTION =
-  'min-h-11 rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)] ' +
-  'disabled:opacity-40 enabled:cursor-pointer'
+// The plate's accessible name. Read as one string by a screen reader the consonants are gibberish,
+// so the visible run is hidden and the name spells the groups out instead -- a blind player gets
+// the same information sighted players get from the gaps, rather than word-shaped noise.
+const spellOut = (displayed: string): string =>
+  `The letters are ${displayed
+    .split(' ')
+    .map((chunk) => chunk.split('').join(' '))
+    .join(', then ')}`
+
+// The hero. Sign cut, one weight, sized off the viewport so a short phrase fills the plate on a
+// phone without a long one needing three lines.
+//
+// The left padding is the tracking, and it is not a fudge: letter-spacing is applied AFTER every
+// glyph including the last, so a centred run carries one full space of air on its right that it
+// does not carry on its left, and the phrase sits visibly off-centre in its own plate. One
+// tracking unit of padding on the left puts it back, on every line rather than only the first,
+// which is why this is padding and not a text-indent.
+const PHRASE =
+  'lull-sign pl-[0.32em] text-center text-[clamp(1.75rem,9vw,2.75rem)] leading-[1.4] ' +
+  'tracking-[0.32em] break-words text-[var(--lull-ink)]'
+
+// --lull-rule, never --lull-hair: this border is the whole of what tells a player where the box
+// they type into begins, and hair is decoration that must never identify a control.
+const FIELD =
+  'min-h-11 w-full rounded-[var(--lull-r-md)] border border-[var(--lull-rule)] bg-[var(--lull-raised)] ' +
+  'px-[var(--lull-s3)] py-[var(--lull-s2)] text-lg text-[var(--lull-ink)]'
 
 export const MissingVowelsBoard = ({
   onProgress,
@@ -54,72 +79,105 @@ export const MissingVowelsBoard = ({
     // An unfinished guess is not a wrong one, so nothing is said until the player asks.
     if (!checked) return ''
     if (normalizeAnswer(guess) === '') return 'Type your answer first.'
-    return 'Not it. The letters are all there, but the spaces are in the wrong places.'
+    // NOT "the letters are all there, but the spaces are in the wrong places" -- that described a
+    // state this board cannot reach. normalizeAnswer discards spacing on purpose (its own docstring
+    // says so: the displayed run is respaced to lie, so a player who recovers the phrase must not
+    // also have to reproduce the real boundaries). So a guess whose letters are all there WINS,
+    // whatever the spacing. The old line could only ever appear when the letters were wrong, and it
+    // sent the player to re-check the one thing that could not be the problem.
+    return 'Not it. Check the letters — where the spaces fall doesn’t count.'
   }
 
   return (
-    <section aria-label="Missing Vowels" className="flex flex-col gap-5">
-      {category !== undefined && <h2 className="text-2xl text-[var(--lull-ink)]">{category}</h2>}
-
-      {/* The consonants are the puzzle. Read as one string by a screen reader they would be
-          gibberish, so the visible run is aria-hidden and an explicit label spells it out with the
-          groups named -- a blind player gets the same information sighted players get from the
-          gaps, rather than a word-shaped noise. */}
-      <p
-        aria-label={`The letters are ${displayed
-          .split(' ')
-          .map((chunk) => chunk.split('').join(' '))
-          .join(', then ')}`}
-        className="rounded-xl border border-[var(--lull-border)] px-4 py-3 text-center text-2xl tracking-[0.3em] text-[var(--lull-ink)]"
-        role="img"
-      >
-        <span aria-hidden="true">{displayed}</span>
-      </p>
-
-      <p className="text-[var(--lull-ink)]">The vowels are gone and the spaces have moved. What is it?</p>
-
-      <label className="flex flex-col gap-2 text-[var(--lull-ink)]" htmlFor={`answer-${puzzle.id}`}>
-        Your answer
-        <input
-          autoCapitalize="none"
-          autoComplete="off"
-          autoCorrect="off"
-          className="min-h-11 rounded-xl border border-[var(--lull-border)] px-4 text-lg text-[var(--lull-ink)]"
-          id={`answer-${puzzle.id}`}
-          onChange={(event) => change(event.target.value)}
-          // readOnly, NOT disabled. A solved board takes no more keystrokes, but a disabled input
-          // is dropped from the tab order and is skipped by a screen reader's forms mode -- so the
-          // answer the player just won with would become unreachable and unreadable. readOnly
-          // stays focusable, stays announced, and still refuses the keystroke.
-          readOnly={solved}
-          spellCheck={false}
-          type="text"
-          value={guess}
-        />
-      </label>
-
-      {/* Always mounted, empty until there is something to say. A role="status" element inserted
-          with its message already in it is routinely missed by NVDA and JAWS, which announce
-          changes inside a region they are already watching. Solved and wrong are both carried in
-          text -- never by colour alone. */}
-      <p className="min-h-6 text-[var(--lull-ink)] empty:min-h-0" role="status">
-        {message()}
-      </p>
-
-      {/* Two buttons rather than one that changes its mind, because they do not do the same thing
-          to the board. Focus is safe across the swap: the winning keystroke is typed in the box, so
-          this control is never the focused element at the moment it is replaced. */}
-      <div>
-        {solved ? (
-          <button className={ACTION} onClick={playAgain} type="button">
-            Play again
-          </button>
-        ) : (
-          <button className={ACTION} onClick={check} type="button">
-            Check
-          </button>
+    <>
+      {/* Exactly two siblings, and the frame's wrapper is `display: contents`, so this element and
+          the floor below become flex items of the screen column and index.css orders them into
+          their bands. Nothing but the band class and its own column layout goes on it: the SHELL
+          owns this box's flex, min-height and vertical overflow, because a board that forgot to
+          flex would take the floor down with it. */}
+      <div className="lull-board flex flex-col overflow-x-hidden">
+        {/* The same 34px strip of ground the cipher bench draws, holding the same kind of fact.
+            Two benches that look nothing alike still say what this phrase IS in the same place, in
+            the same band -- that is the shared grammar, as against a shared container. */}
+        {category !== undefined && (
+          <h2 className="lull-signrow">
+            <span className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</span>
+          </h2>
         )}
+
+        <div className="flex flex-1 flex-col gap-[var(--lull-s5)] bg-[var(--lull-plate)] pt-[var(--lull-s5)] pr-[var(--lull-gutter-right)] pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]">
+          {/* The bezel goes here and nowhere else on this bench. One raised plate reads as raised;
+              a board of them reads as texture, which is the failure Enclosure warns about. The
+              phrase IS the puzzle, so it is the thing that carries the weight. */}
+          <Shell>
+            <Plate className="px-[var(--lull-s4)] py-[var(--lull-s5)]">
+              <p aria-label={spellOut(displayed)} className={PHRASE} role="img">
+                <span aria-hidden="true">{displayed}</span>
+              </p>
+            </Plate>
+          </Shell>
+
+          <p className="text-[var(--lull-ink)]">The vowels are gone and the spaces have moved. What is it?</p>
+
+          <label
+            className="flex flex-col gap-[var(--lull-s2)] text-[12.5px] text-[var(--lull-muted)]"
+            htmlFor={`answer-${puzzle.id}`}
+          >
+            Your answer
+            <input
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              className={FIELD}
+              // The OS keyboard is about to cover the floor this bench yields to it, and Check can
+              // end up underneath it. The keyboard's own action key is then the only control still
+              // on screen, so it has to do what the button does -- and it is named for the job so
+              // the key reads "Go" rather than "return".
+              enterKeyHint="go"
+              id={`answer-${puzzle.id}`}
+              onChange={(event) => change(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && check()}
+              // readOnly, NOT disabled. A solved board takes no more keystrokes, but a disabled
+              // input is dropped from the tab order and is skipped by a screen reader's forms mode
+              // -- so the answer the player just won with would become unreachable and unreadable.
+              // readOnly stays focusable, stays announced, and still refuses the keystroke.
+              readOnly={solved}
+              spellCheck={false}
+              type="text"
+              value={guess}
+            />
+          </label>
+        </div>
       </div>
-    </section>
+
+      {/* The band class rides a wrapper rather than FloorBar itself because FloorBar takes only
+          `children`, `message` and `variant`, and this component may not edit it. The wrapper is
+          what the screen column sees, so it is what has to carry the order.
+
+          THE ONE BENCH WITHOUT THE SEAM, and it is stated here rather than left to be discovered.
+          This floor used to reserve the full 228px on the grounds that an OS keyboard was about to
+          cover it and a floor that collapsed would move the layout when the keyboard opened. Both
+          halves turned out to be wrong. The OS keyboard does not sit inside the layout at all -- it
+          resizes the visual viewport over the top of it -- so reserving room for it reserved room
+          for nothing; and on a laptop, where there is no OS keyboard in the first place, the bench
+          opened with 228px of near-black holding one button.
+
+          What the seam is actually a promise about is where the INSTRUMENT is, and this bench's
+          instrument is a single control. So the floor is exactly as tall as the ribbon plus that
+          control, and it is still the same floor: same ground, same ribbon, same live region, same
+          place on the screen. The constant that survives is the one worth keeping -- the floor is
+          where you operate the bench from -- rather than a number the bench had no use for. */}
+      <div className="lull-instrument">
+        <FloorBar message={message()} variant="compact">
+          <div className="flex shrink-0 pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
+            {/* Two buttons rather than one that changes its mind, because they do not do the same
+                thing to the board. The swap is safe from the focus problem that governs Go
+                Figure!'s tiles: the winning keystroke is typed in the box, so this control is
+                never the focused element at the moment it is replaced. */}
+            {solved ? <Button onClick={playAgain}>Play again</Button> : <Button onClick={check}>Check</Button>}
+          </div>
+        </FloorBar>
+      </div>
+    </>
   )
 }

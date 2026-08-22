@@ -1,116 +1,107 @@
 #!/usr/bin/env node
 'use strict'
 
-// PROVISIONAL MARK. Everything about the shape below is a placeholder chosen to be
-// valid rather than designed -- a single calm wave, one stroke, no type inside the
-// icon -- and it is expected to be replaced by a real identity. What is NOT
-// provisional is the set of files and their sizes: Chromium will not fire
-// beforeinstallprompt without icons at both 192 and 512, and Firefox for Android's
-// install gate is one icon of at least 192 with purpose `any` or `maskable`. Change
-// the drawing freely; change the list only against ~/Projects/pwa-requirements.md.
+// THE MARK. Baskervville's capital L set into a plate, with its flared tail deleted so
+// the foot runs on as the product's seam -- the same constant band the app docks every
+// instrument to -- carrying the you-are-here pip that the breadcrumb uses.
+//
+// The drawings live beside this file in scripts/marks/ rather than inline, so the
+// identity stays editable without touching the pipeline, and a change to the mark is a
+// diff of a drawing rather than a diff of a script.
 //
 // Run by hand (`npm run generate:favicons`), not by the build: the outputs are checked
-// in, so a redesign is a reviewable diff rather than something that appears at deploy.
+// in, so a change to the identity is a reviewable diff rather than something that
+// appears at deploy time.
+//
+// WHAT IS NOT NEGOTIABLE is the set of files and their sizes. Chromium will not fire
+// beforeinstallprompt without icons at BOTH 192 and 512, so the install card cannot
+// appear on any Chromium platform unless those two exist -- and the whole seven-day
+// offline window is gated on installing. Firefox for Android's install gate is one icon
+// of at least 192 with purpose `any` or `maskable`. Change the drawings freely; change
+// the list only against ~/Projects/pwa-requirements.md.
+//
+// ----------------------------------------------------------------------------------
+// Three things about these drawings are load-bearing and easy to undo by accident.
+//
+// 1. EVERY GLYPH IS PATH DATA, never <text>. sharp rasterizes through librsvg, which
+//    substitutes a missing font SILENTLY -- Baskervville is not installed on any machine
+//    this runs on, so a <text> element would ship the wordmark in whatever serif the box
+//    happened to have, with no warning and no error. The letterforms in marks/ were
+//    converted from the real Baskervville and Source Serif 4 files with fontTools.
+//
+// 2. NO prefers-color-scheme INSIDE ANYTHING sharp TOUCHES. It does not evaluate media
+//    queries, so a themed SVG would rasterize to whichever branch librsvg happened to
+//    take. Every rasterized source is one fixed, opaque scene.
+//
+// 3. ONE SCENE SERVES BOTH BROWSER CHROMES, which is the reason this mark carries its
+//    own opaque plate instead of being a transparent glyph. The plate reads 13.29:1
+//    against Chrome's dark strip (#202124) and the seam band reads 11.39:1 against its
+//    light one (#dee1e6), so neither half of the mark can dissolve into the tab it was
+//    not drawn for. A transparent mark has to pick a chrome and lose the other.
+// ----------------------------------------------------------------------------------
 
 const fs = require('fs')
 const path = require('path')
 const sharp = require('sharp')
 
 const publicDir = path.join(__dirname, '..', 'public')
+const marksDir = path.join(__dirname, 'marks')
 
-// Keep these in step with src/config/colors.ts. THEME_COLOR there is the same #111214,
-// and the manifest's theme_color and background_color both carry it.
-const GROUND = '#111214'
-const STROKE = '#8fbcea'
-const INK = '#ebeae5'
-const INK_MUTED = '#9d9d96'
+const mark = (name) => fs.readFileSync(path.join(marksDir, name))
 
-// A lull: the flat part of a wave. One stroke in a 0 0 100 100 box.
-const WAVE = 'M14,62 C30,62 30,38 50,38 C70,38 70,62 86,62'
+// TWO CUTS, not one drawing resized, and this is the whole reason the mark survives a
+// tab strip.
+//
+// The large cut is the real Baskervville outline: bracketed serifs, a tapering stem, and
+// a 1.1-unit hairline where the foot meets the band. At 16px that hairline rasterizes to
+// 0.18px and disappears, taking the seam -- the one idea the mark is about -- with it.
+//
+// The small cut is a different drawing on a 16x16 grid: 3px stem, 3px foot, no curves at
+// all, every edge on a whole device pixel, and the seam redrawn as the boundary between
+// two opaque grounds rather than as a stroke. A boundary between two fills has no
+// minimum width, so it survives at any size a stroke would vanish at.
+const LARGE = mark('icon-large.svg')
+const SMALL = mark('icon-small.svg')
+const MASKABLE = mark('icon-maskable.svg')
+const OG = mark('og.svg')
 
-const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Lull">
-  <style>
-    .wave { stroke: #2f5d8a; }
-    @media (prefers-color-scheme: dark) {
-      .wave { stroke: ${STROKE}; }
-    }
-  </style>
-  <path class="wave" d="${WAVE}" fill="none" stroke-width="9" stroke-linecap="round"/>
-</svg>
-`
+// The live icon, which browsers render themselves rather than through sharp. It is the
+// large cut and it carries NO media query, deliberately: the mark holds both chromes on
+// one scene, so a query here would only let the live icon disagree with the five rasters
+// beside it -- the same identity rendering two ways depending on which file a surface
+// happened to ask for.
+const iconSvg = LARGE
 
-// sharp's SVG rasterizer does not evaluate prefers-color-scheme, so raster output
-// cannot reuse the theme-reactive icon.svg above -- it needs a fixed, opaque scene.
-const markOnGround = (strokeWidth) => `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" fill="${GROUND}"/>
-  <path d="${WAVE}" fill="none" stroke="${STROKE}" stroke-width="${strokeWidth}" stroke-linecap="round"/>
-</svg>`
-
-// A maskable icon is cropped to whatever shape the platform likes -- a circle on
-// Android -- and only the central 80% is guaranteed to survive. The mark is drawn at
-// 80% scale on a full-bleed ground so nothing lands outside that safe zone; the `any`
-// icons keep it full size, because they are never cropped.
-const maskableMark = (strokeWidth) => `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" fill="${GROUND}"/>
-  <g transform="translate(10,10) scale(0.8)">
-    <path d="${WAVE}" fill="none" stroke="${STROKE}" stroke-width="${strokeWidth}" stroke-linecap="round"/>
-  </g>
-</svg>`
-
-// The tagline here is the same string as the manifest description, the meta
-// description, and the og/twitter descriptions. A product that describes itself
-// differently in each place reads as four products.
-const ogImage = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
-  <rect width="1200" height="630" fill="${GROUND}"/>
-  <g transform="translate(480,90) scale(2.4)">
-    <path d="${WAVE}" fill="none" stroke="${STROKE}" stroke-width="9" stroke-linecap="round"/>
-  </g>
-  <text x="600" y="440" font-family="Arial, Helvetica, sans-serif" font-size="72" font-weight="700" fill="${INK}" text-anchor="middle" letter-spacing="4">Lull</text>
-  <text x="600" y="490" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="${INK_MUTED}" text-anchor="middle">A puzzle to pass the time</text>
-</svg>`
+const targets = [
+  // 16 and 32 take the small cut. 32 is exactly 2 device pixels per grid unit, so the
+  // pixel-snapped drawing lands clean there too.
+  { file: 'favicon-16x16.png', size: 16, source: SMALL },
+  { file: 'favicon-32x32.png', size: 32, source: SMALL },
+  // 180 and up take the real letterform, where the serifs and the taper are visible and
+  // are the point.
+  { file: 'apple-touch-icon.png', size: 180, source: LARGE },
+  { file: 'icon-192.png', size: 192, source: LARGE },
+  { file: 'icon-512.png', size: 512, source: LARGE },
+  // Android crops a maskable icon to whatever shape it likes -- a circle, a squircle --
+  // and only the central 80% is guaranteed to survive. The mark is drawn at 80% inside a
+  // full-bleed ground so nothing that carries meaning lands in the croppable margin.
+  { file: 'icon-maskable-512.png', size: 512, source: MASKABLE },
+]
 
 async function generate() {
   fs.writeFileSync(path.join(publicDir, 'icon.svg'), iconSvg)
+  console.log('✓ public/icon.svg')
 
-  await sharp(Buffer.from(markOnGround(14)))
-    .resize(32, 32)
-    .png()
-    .toFile(path.join(publicDir, 'favicon-32x32.png'))
-  await sharp(Buffer.from(markOnGround(16)))
-    .resize(16, 16)
-    .png()
-    .toFile(path.join(publicDir, 'favicon-16x16.png'))
-  await sharp(Buffer.from(markOnGround(9)))
-    .resize(180, 180)
-    .png()
-    .toFile(path.join(publicDir, 'apple-touch-icon.png'))
-  // Chromium will not fire beforeinstallprompt without icons at BOTH 192 and 512, so
-  // the install card cannot appear on any Chromium platform unless these two exist.
-  await sharp(Buffer.from(markOnGround(9)))
-    .resize(192, 192)
-    .png()
-    .toFile(path.join(publicDir, 'icon-192.png'))
-  await sharp(Buffer.from(markOnGround(9)))
-    .resize(512, 512)
-    .png()
-    .toFile(path.join(publicDir, 'icon-512.png'))
-  await sharp(Buffer.from(maskableMark(9)))
-    .resize(512, 512)
-    .png()
-    .toFile(path.join(publicDir, 'icon-maskable-512.png'))
-  await sharp(Buffer.from(ogImage)).resize(1200, 630).png().toFile(path.join(publicDir, 'og-image.png'))
+  for (const { file, size, source } of targets) {
+    await sharp(source, { density: 384 }).resize(size, size).png().toFile(path.join(publicDir, file))
+    console.log(`✓ public/${file}  ${size}x${size}`)
+  }
 
-  console.log('✓ Generated public/icon.svg')
-  console.log('✓ Generated public/favicon-32x32.png')
-  console.log('✓ Generated public/favicon-16x16.png')
-  console.log('✓ Generated public/apple-touch-icon.png')
-  console.log('✓ Generated public/icon-192.png')
-  console.log('✓ Generated public/icon-512.png')
-  console.log('✓ Generated public/icon-maskable-512.png')
-  console.log('✓ Generated public/og-image.png')
+  // 1200x630 is what every scraper expects, and the type sits inside a margin wide
+  // enough to survive a square crop as well -- iMessage and some Slack layouts do not
+  // honour 1.91:1.
+  await sharp(OG, { density: 192 }).resize(1200, 630).png().toFile(path.join(publicDir, 'og-image.png'))
+  console.log('✓ public/og-image.png  1200x630')
 }
 
 generate().catch((error) => {

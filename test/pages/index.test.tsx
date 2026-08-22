@@ -16,20 +16,27 @@ describe('Index', () => {
     window.localStorage.clear()
   }
 
-  it('names the app', () => {
+  // The page no longer carries a wordmark heading and a tagline of its own. The product
+  // name is the first crumb of the breadcrumb -- one name, in the same place, on every
+  // surface -- and the h1 is now the thing the reader actually came for. The tagline
+  // survives where it always mattered, in the document head and the manifest, which is
+  // not this component's to render.
+  it('names the app in the trail', () => {
     setup()
 
     render(<Index />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Lull' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Lull')
   })
 
-  it('says what it is', () => {
+  // Deliberately the empty-device path: it is the one branch that does not read the clock,
+  // so this asserts the heading without depending on what day the suite runs on.
+  it('leads with the state of the device, not with itself', () => {
     setup()
 
     render(<Index />)
 
-    expect(screen.getByText('A puzzle to pass the time')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'No puzzles on this device' })).toBeInTheDocument()
   })
 
   it('shows the shelf', () => {

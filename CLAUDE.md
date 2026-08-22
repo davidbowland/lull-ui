@@ -68,6 +68,28 @@ default.
 `afterAll`) when the code under test calls `setTimeout`, `setInterval`, or `Date` internally
 without injection.
 
+**`userEvent`: always `userEvent.setup({ delay: null })`, once per test, and drive every interaction
+through that instance.** Never call `userEvent.click(...)` / `userEvent.keyboard(...)` directly off
+the default export.
+
+The direct calls are the v13 API. Under v14 each one builds a throwaway instance carrying the
+default `delay: 0`, which inserts a **real `setTimeout` between every event in the sequence** — and
+one click is several events (`pointerover`, `pointerdown`, `mousedown`, `focus`, `pointerup`,
+`mouseup`, `click`, …). Those timers measure fine on an idle machine and get starved under parallel
+workers, where the suite is silently leaning on the undeclared 5000ms default timeout.
+
+Measured on this repo, converting `cryptogram`'s 104 call sites took the suite from **30.9s to
+21.8s** — about 30%, so the timers are a real cost but not the dominant one. The reason this is a
+rule is the tail, not the mean: `cryptogram` and `puzzle-frame` pass in isolation and fail under
+load, and every real `setTimeout` between events is machine-load-dependent slack that eats the
+timeout margin. A test whose result depends on how busy the machine is is exactly what
+"deterministic above all" forbids, so this is a determinism rule that happens to also be faster.
+
+```ts
+const user = userEvent.setup({ delay: null })
+await user.click(screen.getByRole('button', { name: 'Undo' }))
+```
+
 **No CSS or style assertions.** Test observable behavior: return values, thrown errors, calls to
 collaborators.
 

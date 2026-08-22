@@ -47,19 +47,19 @@ describe('PuzzlePage', () => {
       expect(await screen.findByRole('heading', { name: 'Make 10' })).toBeInTheDocument()
     })
 
-    it('shows the hint drawer on a phrase puzzle', async () => {
+    it('shows the hint bar on a phrase puzzle', async () => {
       setup(`/p/${encodeURIComponent(missingVowelsPuzzleId)}/`)
       writePack(packDate, phrasePack)
 
       render(<PuzzlePage />)
 
-      expect(await screen.findByRole('button', { name: 'Reveal hint 1 of 3' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
     })
 
-    // The docked layout changes the page chrome itself -- <main> drops py-10 and becomes a
-    // full-height column -- so it has to be exercised through the real page and not only through
-    // the frame.
-    it('plays a docked puzzle inside the page chrome', async () => {
+    // The bench is a full-height column with a fixed seam at the bottom of it, and the page's
+    // <main> is what it is measured against -- so it has to be exercised through the real page
+    // and not only through the frame.
+    it('plays a cipher puzzle inside the page chrome', async () => {
       setup(`/p/${encodeURIComponent(cryptogramPuzzleId)}/`)
       writePack(packDate, cryptogramPack)
 

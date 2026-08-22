@@ -10,10 +10,12 @@ export const GAP = 2
 export const MIN_SQUARE = 24
 export const MAX_SQUARE = 44
 
-// What the phrase box is worth at a 390 viewport, after the page's px-4 and the box's own px-3.
-// Used only until the first ResizeObserver measurement lands, so the first paint is not a guess of
-// zero.
-export const DEFAULT_AVAILABLE = 334
+// What the phrase box is worth at a 390 viewport, after the plate's own 16px a side. The bench
+// column carries no gutter -- every band pays for its own inset, and the board's plate is one of the
+// bands that reaches the screen edge -- so this is 390 - 32 rather than the 326 it was when the
+// column was padded too. Used only until the first ResizeObserver measurement lands, so the first
+// paint is not a guess of zero.
+export const DEFAULT_AVAILABLE = 358
 
 /**
  * One square size for every letter of the phrase, large enough that the longest word fits one line.

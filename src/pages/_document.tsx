@@ -41,7 +41,7 @@ export default function Document() {
             before any stylesheet exists, so it cannot react to a media query. */}
         <meta content={THEME_COLOR} name="theme-color" />
       </Head>
-      <body className="bg-[var(--lull-page)] text-[var(--lull-ink)]">
+      <body className="bg-[var(--lull-ground)] text-[var(--lull-ink)]">
         <Main />
         <NextScript />
       </body>

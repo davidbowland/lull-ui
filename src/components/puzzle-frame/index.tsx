@@ -1,15 +1,17 @@
-import { useRouter } from 'next/router'
 import React, { useCallback, useEffect, useState } from 'react'
 
-import { HintDrawer } from '@components/hint-drawer'
+import { HintBar } from '@components/hint-bar'
+import { Crumb, Spine } from '@components/spine'
 import { entryFor, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readPack, readProgress, writeProgress } from '@services/storage'
-import { Pack, Puzzle, PuzzleProgress } from '@types'
+import { Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
 import { hintsOf } from '@utils/hints'
+import { difficultyLabel, lengthLabel } from '@utils/labels'
 import { packDateOf } from '@utils/pack-dates'
 
 export interface PuzzleFrameProps {
+  locale?: string
   puzzleId?: string
 }
 
@@ -23,87 +25,200 @@ interface PuzzleViewProps {
   puzzle: Puzzle
 }
 
-// Today's page flow, moved off <main> so the docked branch below can decline it. Every non-docked
-// return is wrapped in this, which is what makes "goFigure and Missing Vowels are untouched" true
-// of the rendered page and not just of the code.
-// gap-4, which is what this container has always used -- the page's own gap-6 sat on a <main> with
-// a single child and so never applied to anything. Taking gap-6 here would have quietly moved
-// goFigure and Missing Vowels 8px further apart, and "the other two types are untouched" has to be
-// true of the rendered page, not only of the code.
-const Flowed = ({ children }: { children: React.ReactNode }): React.ReactNode => (
-  <div className="flex w-full flex-col gap-4 py-10">{children}</div>
-)
+interface DeadEndProps {
+  children: React.ReactNode
+  trail: Crumb[]
+}
 
-// Said in one place because it is now read in two. Solved ids are never pruned, but progress is
+// Node 24 defines globalThis.navigator, so the export build reads the build machine's ICU
+// default rather than throwing. That is still the wrong language for everyone else, which is
+// why nothing formatted with it survives the first render: the frame paints a placeholder
+// until an effect has run on the device.
+const defaultLocale = (): string => globalThis.navigator?.language ?? 'en-US'
+
+// A PackDate is a plain YYYY-MM-DD string, and `new Date()` on one depends on the runtime
+// zone, so the fields are read out and rebuilt in UTC -- the shelf's method, so a crumb can
+// never name a different day than the key it was read from.
+//
+// The cut is shorter than the shelf's. There it is a heading with the row to itself; here it
+// is the middle crumb of "Lull > ... > Missing Vowels" in a 40px bar that has to survive a
+// 320px viewport, and "Tuesday, August 18" spends the whole bar on the one crumb nobody came
+// for.
+const dayLabel = (date: PackDate, locale: string): string => {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+    weekday: 'short',
+  })
+}
+
+// The breadcrumb, in place of the Back button every surface used to carry. A crumb with no
+// href is the page you are on, so the trail stops at the last thing actually known: a dead end
+// names the day but never the puzzle, because not knowing what the puzzle was is the whole
+// reason it is a dead end.
+//
+// Lull and the day point at the same address on purpose. The day directory IS Lull's home --
+// there is exactly one day, and it is today -- so giving the day crumb an href of its own would
+// be advertising a page that does not exist.
+const trailFor = (date: PackDate | null, locale: string, here?: string): Crumb[] => {
+  // An id with no date prefix names no day, so there is nothing true to put after Lull -- but
+  // Lull itself still gets its href, and that is the only way off this surface.
+  //
+  // Without it the trail rendered a single href-less crumb, which Spine draws as an
+  // aria-current span rather than a link. A mistyped or truncated share link like
+  // /p/cryptogram:abc123 then painted "That puzzle isn't here" above a breadcrumb containing no
+  // links, no buttons, and no router push -- and the manifest is display: standalone, so there
+  // is no browser back button and no address bar either. The reader was stuck in the app with
+  // no way back to the day, which is a worse outcome than the missing puzzle they arrived for.
+  if (date === null) return [{ href: '/', label: 'Lull' }]
+
+  const day = dayLabel(date, locale)
+  if (here === undefined) return [{ href: '/', label: 'Lull' }, { label: day }]
+
+  return [{ href: '/', label: 'Lull' }, { href: '/', label: day }, { label: here }]
+}
+
+// Said in one place because it is read in two. Solved ids are never pruned, but progress is
 // pruned with the pack it belongs to, so a puzzle solved last week reopens on an empty board.
 // Empty progress counts as none: Play again empties a solved board and stores that.
 const wasSolvedBefore = (puzzleId: string): boolean =>
   readMeta().solved.includes(puzzleId) && (readProgress(puzzleId) ?? '') === ''
 
-// Mounted fresh per puzzle -- the frame keys it on the id -- so everything read at
-// arrival can be read in a state initializer and stay put while the board is played.
+// A surface with nothing to operate, so it has no seam and no floor -- the instrument exists if
+// and only if there is a puzzle to play. It keeps the spine, which is the only way back now
+// that no surface carries a Back button.
+const DeadEnd = ({ children, trail }: DeadEndProps): React.ReactNode => (
+  <div className="flex min-h-0 flex-1 flex-col">
+    <Spine trail={trail} />
+    {/* The gutter is on THIS box and not on the column, for the same reason it is on the bands of
+        a real bench: the spine above is a strip of ground that has to reach both edges, and a
+        column that padded it would stop the rule 16px short at each end. */}
+    <div className="flex w-full flex-col items-start gap-[var(--lull-s4)] py-[var(--lull-s7)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
+      {children}
+    </div>
+  </div>
+)
+
+// Mounted fresh per puzzle -- the frame keys it on the id -- so everything read at arrival can
+// be read in a state initializer and stay put while the board is played.
+//
+// It returns a FRAGMENT, and that is structural rather than stylistic: every element below is a
+// band of the screen column, and a wrapper here would collapse four bands into one and take the
+// board's `order` with it.
 const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   const { Component } = entry
-  // Read once. The board restores from it at mount and owns it from then on; re-reading
-  // storage on every render would hand the board back its own writes.
+  // Read once. The board restores from it at mount and owns it from then on; re-reading storage
+  // on every render would hand the board back its own writes.
   const [progress] = useState(() => readProgress(puzzle.id))
-  // Solved ids are never pruned, but progress is pruned with the pack it belongs to, so
-  // a puzzle solved last week reopens on an empty board. Frozen at arrival: winning
-  // right now is the board's own news to announce, and a second banner appearing
-  // underneath the first would say it twice.
+  // Solved ids are never pruned, but progress is pruned with the pack it belongs to, so a puzzle
+  // solved last week reopens on an empty board. Frozen at arrival: winning right now is the
+  // board's own news to announce, and a second line appearing above it would say it twice.
   //
-  // Gated on there being no stored progress as well. Within the retention window a
-  // solved puzzle still holds its winning expression, so the board restores it and
-  // announces "Solved." itself -- rendering the banner too would say it twice, which is
-  // the doubling this freeze exists to avoid.
+  // Gated on there being no stored progress as well. Within the retention window a solved puzzle
+  // still holds its winning answer, so the board restores it and says "Solved." itself -- and
+  // this line too would be the same news, twice, on one screen.
   //
-  // Empty progress counts as none. Play again empties a solved board and stores that, so
-  // an empty string here means the player wiped it, not that they left one keystroke in:
-  // the board comes up blank and says nothing, and the banner is then the only thing that
-  // knows this puzzle is already in the bag.
-  //
-  // Not rendered at all under the docked layout, where the header row says it in the space it
-  // already occupies -- the phrase cap is 224px at a 390 viewport and 98px at 320, and a banner row
-  // would come straight out of it.
+  // Empty progress counts as none. Play again empties a solved board and stores that, so an empty
+  // string here means the player wiped it rather than left one keystroke in: the board comes up
+  // blank and says nothing, and this line is then the only thing that knows the puzzle is already
+  // in the bag.
   const [wasSolved] = useState(() => wasSolvedBefore(puzzle.id))
 
   // The shell owns persistence; the board is handed two callbacks and no storage.
   const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])
   const onSolved = useCallback(() => markSolved(puzzle.id), [puzzle.id])
 
-  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist, and
-  // PuzzleProgress stays an opaque per-type string.
+  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist,
+  // and PuzzleProgress stays an opaque per-type string.
   const hints = hintsOf(puzzle)
-  const isDocked = entry.layout === 'docked'
 
-  // Rendered once and placed twice, because WHERE it goes is a layout decision and WHAT it is is
-  // not. Under the docked layout it goes ABOVE the board: the keypad is the board's last child and
-  // the board fills what is left of the column, so a drawer underneath would push the keypad up by
-  // however much the revealed list grows -- and spec decision 7 says the keypad never moves, "not
-  // when a hint opens". Above it, the phrase box absorbs the growth instead, which is what the
-  // budget's phrase cap is for. Everywhere else it stays where it has always been, under the thing
-  // it is a hint about.
-  const drawer = hints === null ? null : <HintDrawer compact={isDocked} hints={hints} puzzleId={puzzle.id} />
+  // The tile bench drops the docked hint bar and spends its 60px on the goal plate and the worked
+  // example. Read off the bench rather than off the type, so a second type that plays on the same
+  // surface inherits the decision instead of repeating it.
+  //
+  // It is stated as its own condition rather than shared with anything else. It used to ride on the
+  // sign row's flag, which read as one decision and was two: when the sign row went away the hint
+  // bar would have gone with it on all three benches.
+  const hasHintBar = entry.bench !== 'tile'
 
   return (
     <>
-      {wasSolved && !isDocked && (
-        <p className="text-[var(--lull-ink-muted)]">You solved this one. Play it again if you like.</p>
-      )}
-      {isDocked && drawer}
-      <Component onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />
-      {!isDocked && drawer}
+      {/* The sign over the bench, read the way a wayfinding sign is read: what this is on the left,
+          what it costs you on the right. Both facts were already on the day directory's row, in
+          these words, from @utils/labels -- a player who picked "Middling · About 4 min" off the
+          directory finds the same two words at the top of the board rather than a paraphrase.
+          Stacked rather than run together with a middot because the row is 64px tall and two short
+          lines fit where one long one would have crowded the name beside it.
+
+          NO rule under the band, and that is the whole reason the bench reads as one surface: the
+          title sits on the same raised plate the board does, so a line here would cut the working
+          surface in half at its widest point. The bands that ARE ruled off are the ones drawn in
+          the darker ground -- the breadcrumb above and the sign row below -- and they are told
+          apart by their ground, not by a border on their neighbour.
+
+          Baseline-aligned rather than centred, and NOT `leading-none`. Line-height 1 gives a line
+          box exactly one em tall, and a serif descender hangs below that -- so with `truncate`'s
+          `overflow: hidden` on the same element, the tail of the g in "Missing Vowels" was sliced
+          off flat. Every bench name in the registry is one line, so the clipping bought nothing
+          even when it worked. */}
+      <div className="lull-title flex h-16 items-end justify-between gap-[var(--lull-s4)] pr-[var(--lull-gutter-right)] pb-[var(--lull-s3)] pl-[var(--lull-gutter-left)]">
+        <div className="flex min-w-0 flex-col gap-[var(--lull-s1)]">
+          <h1 className="lull-sign truncate text-[22px] leading-[1.25] text-[var(--lull-ink)]">{entry.label}</h1>
+          {wasSolved && (
+            <p className="text-[12.5px] leading-[1.35] text-[var(--lull-muted)]">
+              You solved this one. Play it again if you like.
+            </p>
+          )}
+        </div>
+        <p className="flex shrink-0 flex-col items-end text-[12.5px] leading-[1.35] text-[var(--lull-muted)]">
+          <span>{difficultyLabel(puzzle.difficulty)}</span>
+          <span>{lengthLabel(puzzle.estimatedSeconds)}</span>
+        </p>
+      </div>
+
+      {/* The board and the instrument both come out of the SAME component -- that is what keeps
+          its four-prop contract intact -- but they belong in different bands, with the shell's
+          own hint bar between them. `display: contents` dissolves this wrapper, so the two
+          elements the component marks `.lull-board` and `.lull-instrument` become flex items of
+          the screen column directly and index.css orders them into their bands. Neither side
+          learns anything about the other.
+
+          It goes on a semantically neutral <div>, never on an element carrying a role or a
+          label: several engines drop such elements from the accessibility tree.
+
+          The FLOOR comes out of the same element. `.lull-instrument` is the component's own
+          <FloorBar>, and the frame renders none of its own -- not a preference, a consequence.
+          CSS can remove a box (`display: contents`) but it cannot move one into a different
+          parent, so the only way an element the component renders can sit INSIDE FloorBar is
+          for the component to render FloorBar around it. The alternative -- the frame renders
+          FloorBar and the instrument is ordered in beside it -- cannot be built: the instrument
+          would be FloorBar's sibling, not its child, and putting it in the band anyway needs
+          either a negative margin or absolute positioning, both of which break the moment the
+          viewport changes height. And splitting the floor into three ordered siblings would
+          trade away the one thing the single box buys: a fixed h-[seam] with overflow-y-auto,
+          under which an oversized instrument scrolls inside its band instead of pushing the
+          seam down. That box IS the seam, so it stays whole and the component owns it. The
+          frame owns the order it appears in, which is the whole of what a shell needs to own. */}
+      <div className="contents">
+        <Component onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />
+      </div>
+
+      {/* Ordered BETWEEN two elements this frame does not own and cannot reach into. The bar
+          itself is a fixed 60px strip that neither gives nor takes a pixel, and its opened hints
+          are drawn in a sheet out of flow -- so no length of hint text can move the seam. */}
+      {hasHintBar && hints !== null && <HintBar hints={hints} puzzleId={puzzle.id} />}
     </>
   )
 }
 
-export const PuzzleFrame = ({ puzzleId }: PuzzleFrameProps): React.ReactNode => {
-  const router = useRouter()
+export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameProps): React.ReactNode => {
   const [resolution, setResolution] = useState<Resolution | null>(null)
 
   // The date prefix is the ONE part of a puzzle id a client may read. The rest
-  // (`${type}:${shortId}`) is opaque: it is matched against the pack's own ids and
-  // never taken apart, indexed with, or ordered by.
+  // (`${type}:${shortId}`) is opaque: it is matched against the pack's own ids and never taken
+  // apart, indexed with, or ordered by.
   const date = puzzleId === undefined ? null : packDateOf(puzzleId)
 
   useEffect(() => {
@@ -115,30 +230,29 @@ export const PuzzleFrame = ({ puzzleId }: PuzzleFrameProps): React.ReactNode => 
 
     let abandoned = false
 
-    // Painted from the device first, so a puzzle already here appears without waiting
-    // on a request that cannot change the answer.
+    // Painted from the device first, so a puzzle already here appears without waiting on a
+    // request that cannot change the answer.
     setResolution({ isSettled: false, pack: readPack(date) })
 
     const load = async (): Promise<void> => {
       let fetched: Pack | null = null
       try {
-        // Cache-first: a complete stored pack is answered without a request, and an
-        // incomplete one is asked again because the day can still fill in.
+        // Cache-first: a complete stored pack is answered without a request, and an incomplete
+        // one is asked again because the day can still fill in.
         fetched = await fetchPack(date)
       } catch (error: unknown) {
-        // Offline, or a day that was never generated. Either way the cache below is
-        // the last word, and there is nothing to show a reader that the missing-puzzle
-        // message does not already say.
+        // Offline, or a day that was never generated. Either way the cache below is the last
+        // word, and there is nothing to show a reader that the missing-puzzle message does not
+        // already say.
         console.error('pack fetch failed', { date, error })
       }
       if (abandoned) return
-      // Re-read FIRST, because the request took real time and the prefetch or another
-      // tab may have filled the day meanwhile -- but fall back to what we just fetched.
-      // storage.ts swallows write failures on purpose, so when localStorage throws
-      // (cookies blocked, partitioned context, quota exhausted) writePack no-ops and
-      // readPack returns null. Trusting the re-read alone would answer a SUCCESSFUL
-      // fetch with "That puzzle isn't here" and leave the app permanently broken while
-      // blaming the link.
+      // Re-read FIRST, because the request took real time and the prefetch or another tab may
+      // have filled the day meanwhile -- but fall back to what we just fetched. storage.ts
+      // swallows write failures on purpose, so when localStorage throws (cookies blocked,
+      // partitioned context, quota exhausted) writePack no-ops and readPack returns null.
+      // Trusting the re-read alone would answer a SUCCESSFUL fetch with "That puzzle isn't here"
+      // and leave the app permanently broken while blaming the link.
       setResolution({ isSettled: true, pack: readPack(date) ?? fetched })
     }
     void load()
@@ -148,12 +262,10 @@ export const PuzzleFrame = ({ puzzleId }: PuzzleFrameProps): React.ReactNode => 
     }
   }, [date, puzzleId])
 
-  const goHome = (): void => void router.push('/')
-
-  // Rendered in Node at build time and shipped as HTML to everyone, so nothing above
-  // this line may read the device. The page resolves the id out of window.location in
-  // an effect of its own, so this is also the frame before the id arrives -- painting
-  // "not here" there would accuse every deep link of being broken.
+  // Rendered in Node at build time and shipped as HTML to everyone, so nothing above this line
+  // may read the device. The page resolves the id out of window.location in an effect of its
+  // own, so this is also the frame before the id arrives -- painting "not here" there would
+  // accuse every deep link of being broken.
   if (resolution === null) return <div aria-hidden="true" className="min-h-[420px]" />
 
   const puzzle = resolution.pack?.puzzles.find((candidate) => candidate.id === puzzleId)
@@ -161,126 +273,94 @@ export const PuzzleFrame = ({ puzzleId }: PuzzleFrameProps): React.ReactNode => 
   if (puzzle === undefined) {
     if (!resolution.isSettled) {
       return (
-        <Flowed>
-          <p className="text-[var(--lull-ink-muted)]" role="status">
+        <DeadEnd trail={trailFor(date, locale)}>
+          {/* KNOWN GAP, left deliberately rather than half-fixed. This paragraph is mounted WITH
+              its text, which is the case the rest of this codebase documents as routinely missed --
+              NVDA and JAWS announce changes inside a region they are already watching, and a region
+              that appears with its message already in it never changes. So the role is closer to a
+              claim than a fact here.
+
+              Dropping the role was tried and is worse: nothing then announces the loading ->
+              "isn't here" transition either. The real fix is one live region that outlives both
+              branches, which means restructuring what this component returns, and that is a change
+              worth making on its own rather than inside a review round. */}
+          <p className="text-[var(--lull-muted)]" role="status">
             Looking for this puzzle…
           </p>
-        </Flowed>
+        </DeadEnd>
       )
     }
 
     return (
-      <Flowed>
-        <section className="flex flex-col items-start gap-4">
-          <h1 className="text-2xl text-[var(--lull-ink)]">That puzzle isn’t here</h1>
-          <p className="text-[var(--lull-ink-muted)]">
-            It may have been cleared to make room for newer ones, or the link may be wrong.
-          </p>
-          <button
-            className="min-h-11 cursor-pointer rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)]"
-            onClick={goHome}
-            type="button"
-          >
-            Back to today’s puzzles
-          </button>
-        </section>
-      </Flowed>
+      <DeadEnd trail={trailFor(date, locale)}>
+        <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">That puzzle isn’t here</h1>
+        <p className="text-[var(--lull-muted)]">
+          It may have been cleared to make room for newer ones, or the link may be wrong.
+        </p>
+      </DeadEnd>
     )
   }
 
   const entry = entryFor(puzzle.type)
 
+  // lull-api can ship a generator before the UI that draws it, so a pack off the network can
+  // name a type this build has never heard of. Destructuring the missing registry entry would
+  // throw during a render with no error boundary above it.
   if (entry === undefined) {
     return (
-      <Flowed>
-        <section className="flex flex-col items-start gap-4">
-          <h1 className="text-2xl text-[var(--lull-ink)]">{UNKNOWN_TYPE_MESSAGE}</h1>
-          <button
-            className="min-h-11 cursor-pointer rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)]"
-            onClick={goHome}
-            type="button"
-          >
-            Back to today’s puzzles
-          </button>
-        </section>
-      </Flowed>
-    )
-  }
-
-  if (entry.layout === 'docked') {
-    return (
-      // max-h-dvh is the CEILING this column never had. The page's <main> is min-h-dvh, which is a
-      // floor: it makes the column at least the viewport and lets it become max(viewport, content),
-      // so content taller than the viewport grew the page and scrolled it instead of the phrase cap
-      // absorbing the growth. At 320x568 with the drawer open on three rungs the column computes to
-      // ~783px in a 568px viewport, and the keypad rides down with it -- which defeats spec decision
-      // 7, "the keypad never moves... not when a hint opens", the load-bearing property of this
-      // whole layout. Capping HERE rather than on <main> is what keeps the flowed path untouched:
-      // the page cannot tell the two apart, because the id is in the URL and the pack is on the
-      // device, so only this branch knows.
-      //
-      // overflow-hidden is the other half and not a tidy-up. Children that overflow a visible box
-      // still add scrollable overflow to the viewport, so the cap alone would stop the column
-      // growing and leave the page scrolling anyway. Clipped, the pressure has nowhere to go but
-      // into the phrase box's flex-1 overflow-y-auto and the drawer's own bound, which is what
-      // those were written to absorb.
-      //
-      // pb-[env(safe-area-inset-bottom)] is the 34px the budget in spec decision 13 reserves and
-      // nothing in this repo had ever spent -- the fixed totals of 440 and 470 only add up once it
-      // exists. The flowed path clears the iOS home indicator incidentally, through its py-10; this
-      // branch has pt-3 and no bottom padding at all, and the keypad is the last flex child, so its
-      // bottom row sat under the indicator.
-      //
-      // It only reserves anything because _app.tsx sends viewport-fit=cover. Without cover iOS
-      // insets the layout viewport itself and every env(safe-area-inset-*) resolves to 0 -- which
-      // is what this padding did for the whole of its first commit. Cover is page-wide and cannot
-      // be scoped to one type (/p/<id> is ONE exported document for all three), so it also lets the
-      // flowed path reach the notch in landscape; the page's max(1rem, inset) horizontal padding is
-      // the other half of the same change.
-      <div className="flex max-h-dvh min-h-0 flex-1 flex-col gap-3 overflow-hidden pt-3 pb-[env(safe-area-inset-bottom)]">
-        {/* One compact row instead of an h1 above the board and a Back button below it. Roughly
-            180px of chrome the board cannot see, on a page whose phrase cap is 98px at 320. */}
-        <div className="flex shrink-0 items-center gap-3">
-          {/* Visible label shortened, accessible name kept whole. WCAG 2.5.3 needs the accessible
-              name to contain the visible text, and "Back to today's puzzles" contains "Back". */}
-          <button
-            aria-label="Back to today’s puzzles"
-            className="min-h-11 cursor-pointer rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)]"
-            onClick={goHome}
-            type="button"
-          >
-            Back
-          </button>
-          <h1 className="flex-1 text-lg text-[var(--lull-ink)]">{entry.label}</h1>
-          {/* Read during render rather than frozen in state, and that is safe here: PuzzleFrame
-              re-renders only when the pack resolution changes, and nothing on this path writes to
-              lull:meta or lull:progress between those renders -- the board's writes go through
-              PuzzleView, which is keyed and does freeze it. */}
-          {wasSolvedBefore(puzzle.id) && (
-            <span className="shrink-0 text-sm text-[var(--lull-ink-muted)]">Solved earlier</span>
-          )}
-        </div>
-        <PuzzleView entry={entry} key={puzzle.id} puzzle={puzzle} />
-      </div>
+      <DeadEnd trail={trailFor(date, locale)}>
+        <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">{UNKNOWN_TYPE_MESSAGE}</h1>
+      </DeadEnd>
     )
   }
 
   return (
-    <Flowed>
-      <h1 className="text-2xl text-[var(--lull-ink)]">{entry.label}</h1>
-      {/* Keyed on the id, so opening a different puzzle is a different component rather
-          than a prop change -- the board restores its state at mount and would otherwise
-          keep the previous puzzle's tiles. */}
-      <PuzzleView entry={entry} key={puzzle.id} puzzle={puzzle} />
-      <div>
-        <button
-          className="min-h-11 cursor-pointer rounded-full border border-[var(--lull-border)] px-4 text-[var(--lull-ink)]"
-          onClick={goHome}
-          type="button"
-        >
-          Back to today’s puzzles
-        </button>
+    // The bench: a flex column in which exactly ONE band flexes. max-h-dvh is a ceiling and the
+    // page's min-h-dvh is a floor -- without the ceiling the column becomes max(viewport,
+    // content), so a long phrase or an opened hint grows the page and the seam rides down with
+    // it. The pressure has nowhere to go but into the board's own overflow, which is what
+    // index.css gives it.
+    //
+    // overflow-y-auto, NOT overflow-hidden, and the difference is not cosmetic.
+    //
+    // Every band but the board is shrink-0, and the board floors at 96px, so this column has a
+    // HARD MINIMUM of 492px on the cipher bench: spine 44 + title 64 + board 96 + hint bar 60 +
+    // seam 228. Under a shorter viewport than that, the ceiling still applies and
+    // hidden simply amputates the bottom -- the instrument is cut off with nothing able to scroll
+    // to it. Every phone in landscape is shorter than 492px (844x390 clips 102px; 568x320 clips
+    // 172px), and the manifest sets no orientation lock, so this is reachable by rotating the
+    // device on any surface in the product.
+    //
+    // Below its minimum the seam's promise is not merely inconvenient, it is arithmetically
+    // impossible: the bands cannot all fit. So the honest degradation is to let the column
+    // scroll, which costs the constant position only in the case where no constant position
+    // exists, rather than to keep the promise by hiding the thing it was made about. At or above
+    // 492px this is a no-op -- the column fits, nothing overflows, and nothing scrolls.
+    //
+    // THERE IS NO PAGE GUTTER ON THIS ELEMENT, and there is none on the <main> around it either.
+    // Every band below is full width and pays for its own text inset out of --lull-gutter-*. An
+    // earlier arrangement put the gutter here and had the instrument cancel it with a negative
+    // margin, which worked for the instrument and for nothing else: this column is a scroll
+    // container, and in a scroll container a negative LEFT margin hangs outside the scrollable
+    // region entirely and is clipped, while the matching negative RIGHT margin becomes real
+    // sideways drag. The moment a second band wanted the full width -- the board's own plate --
+    // that trick would have amputated 16px off its left edge with nothing to show for it.
+    //
+    // `lull-bench` is the hook for two things: the raised plate this column is drawn on, and the
+    // one behaviour above 768px that is not the phone layout -- index.css stops the column
+    // stretching there and centres it, because a board band that swallows 390px of a desktop
+    // window is dead space rather than breathing room.
+    <div className="lull-bench flex max-h-dvh min-h-0 flex-1 flex-col overflow-y-auto">
+      {/* Wrapped only so the band can carry an order of its own. Leaving it to DOM position
+          would make the spine the one band whose place in the column is implied rather than
+          declared, and the first reordering would move it without touching this file. */}
+      <div className="lull-spine">
+        <Spine trail={trailFor(date, locale, entry.label)} />
       </div>
-    </Flowed>
+      {/* Keyed on the id, so opening a different puzzle is a different component rather than a
+          prop change -- the board restores its state at mount and would otherwise keep the
+          previous puzzle's tiles. */}
+      <PuzzleView entry={entry} key={puzzle.id} puzzle={puzzle} />
+    </div>
   )
 }

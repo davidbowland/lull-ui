@@ -39,7 +39,10 @@ const config: Config = {
     '^@test/(.*)$': '<rootDir>/test/$1',
     '^@types$': '<rootDir>/src/types',
     '^@utils/(.*)$': '<rootDir>/src/utils/$1',
-    '@fontsource/(.*)$': '<rootDir>/__mocks__/file-mock.js',
+    // Both scopes. The variable fonts ship under @fontsource-variable, which the
+    // narrower `@fontsource/` pattern does not match -- so jest reached the package's
+    // real index.css and died on the first `@font-face`.
+    '@fontsource(-variable)?/(.*)$': '<rootDir>/__mocks__/file-mock.js',
     '^framer-motion$': '<rootDir>/__mocks__/framer-motion.js',
   },
   // clearMocks alone leaves jest.spyOn installed on the prototype for the rest of

@@ -22,16 +22,20 @@ const Index = (): React.ReactNode => (
       <meta content="A puzzle to pass the time" name="twitter:description" />
       <meta content="https://lull.dbowland.com/og-image.png" name="twitter:image" />
     </Head>
-    {/* The horizontal padding is max(1rem, inset) rather than px-4 because _app.tsx now ships
-        viewport-fit=cover, which lets the page reach under a notch in landscape. The max floor is
-        today's 16px, so nothing moves on a device with no physical inset; it grows only where one
-        exists. The shelf is full-bleed rows against this padding, so it is the page that would
-        lose a tap target to the notch. */}
-    <main className="mx-auto flex w-full max-w-[720px] flex-col gap-6 py-10 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-      <div>
-        <h1 className="text-3xl text-[var(--lull-ink)]">Lull</h1>
-        <p className="text-[var(--lull-ink-muted)]">A puzzle to pass the time</p>
-      </div>
+    {/* NO horizontal padding, and that is the same decision every band of a bench makes: the
+        breadcrumb is a strip of the darker ground with a rule under it, and a page that padded it
+        would stop that rule 16px short of each edge, which reads as a card rather than as a band.
+        So the page carries only the measure, and everything inside it pays for its own inset out
+        of --lull-gutter-*, which is max(16px, inset) -- _app.tsx ships viewport-fit=cover, so on a
+        notched phone in landscape the content moves off the cutout and nothing moves anywhere else.
+
+        No vertical padding and no title of its own. The shelf opens with the spine, which has to
+        sit flush against the top of the column the way it does on every other surface, and the
+        name of the product is the spine's first crumb -- a second "Lull" above it would be the
+        same word twice on the one screen that already has a focal point. The date plate IS the
+        title here, so the <h1> lives with the fact it names, inside the shelf, where the day is
+        known. */}
+    <main className="mx-auto flex min-h-dvh w-full max-w-[720px] flex-col">
       <Shelf />
     </main>
   </>

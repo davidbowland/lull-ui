@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 
+import { Button } from '@components/button'
 import { InstallMode, InstallPlatform } from '@hooks/useInstallPrompt'
 
 export interface InstallCardProps {
@@ -10,12 +11,32 @@ export interface InstallCardProps {
   platform: InstallPlatform
 }
 
-// The quiet action carries no border, so it cannot read as a second offer of equal
-// weight beside the one control the card exists to present.
-const QUIET_ACTION = 'min-h-11 cursor-pointer text-[var(--lull-ink-muted)] hover:text-[var(--lull-ink)]'
+// A notice in the signage grammar: the plate carries a rule border rather than the
+// double bezel of an Enclosure. That technique is spent on the two plates that carry
+// real weight -- the date plate and the goal plate -- and a third one here would turn it
+// into background noise.
+const CARD = 'rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] bg-[var(--lull-plate)] p-[var(--lull-s4)]'
 
-const OFFER =
-  'mb-2 min-h-11 w-full cursor-pointer rounded-full bg-[var(--lull-accent)] px-4 text-[var(--lull-accent-ink)]'
+// The category label a sign wears above its message. It is read, not hidden, because the
+// word is what tells a listener this is the shelf speaking rather than the day's puzzles.
+const EYEBROW = 'text-[11px] font-semibold tracking-[0.14em] text-[var(--lull-muted)] uppercase'
+
+const HEADING = 'lull-sign mt-[var(--lull-s1)] text-xl text-[var(--lull-ink)]'
+
+const BODY = 'mt-[var(--lull-s2)] text-[var(--lull-muted)]'
+
+const STEP_LIST = 'mt-[var(--lull-s3)] list-decimal pl-[var(--lull-s5)] text-[var(--lull-muted)]'
+
+const ACTIONS = 'mt-[var(--lull-s4)] flex flex-wrap items-center gap-[var(--lull-s3)]'
+
+// The nub inside the primary control needs something to hold, and the chevron is the same
+// glyph the spine uses between crumbs, so forward keeps meaning the same thing everywhere.
+// Button hides the nub from the accessible name, so nobody hears "Install right arrow".
+const CHEVRON = (
+  <svg fill="none" height="10" viewBox="0 0 6 10" width="6">
+    <path d="m1 1 4 4-4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+  </svg>
+)
 
 // Safari has no install API, and Firefox for Android fires no beforeinstallprompt. On
 // both, the gesture happens in the browser's own chrome, where there is no button to
@@ -37,9 +58,11 @@ const STEPS: Partial<Record<InstallPlatform, string[]>> = {
 }
 
 export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: InstallCardProps): React.ReactNode => {
-  const collapsedRef = useRef<HTMLButtonElement>(null)
+  // Button takes no ref, so the wrapper is what gives us a handle on the control inside
+  // it -- the same move the hint bar makes for the same reason.
+  const collapsedRef = useRef<HTMLSpanElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const installRef = useRef<HTMLButtonElement>(null)
+  const installRef = useRef<HTMLSpanElement>(null)
   const previousMode = useRef<InstallMode>(mode)
 
   // Collapsing and reopening unmount the control the keyboard was sitting on. Focus then
@@ -51,10 +74,11 @@ export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: 
   useEffect(() => {
     const previous = previousMode.current
     previousMode.current = mode
-    if (previous === 'card' && mode === 'link') collapsedRef.current?.focus()
+    if (previous === 'card' && mode === 'link') collapsedRef.current?.querySelector('button')?.focus()
     // iOS and Firefox for Android offer steps instead of a button, so there the card
     // announces itself by its title rather than dropping focus back onto <body>.
-    if (previous === 'link' && mode === 'card') (installRef.current ?? headingRef.current)?.focus()
+    if (previous === 'link' && mode === 'card')
+      (installRef.current?.querySelector('button') ?? headingRef.current)?.focus()
   }, [mode])
 
   // A desktop has no home screen, so one label cannot serve both. Both branches read
@@ -70,15 +94,21 @@ export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: 
   // at all.
   if (mode === 'link') {
     return (
-      <button aria-expanded={false} className={QUIET_ACTION} onClick={onReopen} ref={collapsedRef} type="button">
-        {offerLabel}
-      </button>
+      // The collapsed offer is quiet rather than filled: the accent is the shelf's one
+      // loud surface, and spending it on a link the player has already turned down would
+      // make the dismissal look like it never landed.
+      <span ref={collapsedRef}>
+        <Button aria-expanded={false} onClick={onReopen} variant="quiet">
+          {offerLabel}
+        </Button>
+      </span>
     )
   }
 
   return (
-    <div className="rounded-xl border border-[var(--lull-border)] p-4">
-      <h3 className="mb-2 text-[var(--lull-ink)]" ref={headingRef} tabIndex={-1}>
+    <div className={CARD}>
+      <p className={EYEBROW}>Notice</p>
+      <h3 className={HEADING} ref={headingRef} tabIndex={-1}>
         Have tomorrow ready
       </h3>
       {/* Says the benefit this slice actually delivers. The previous copy promised "the
@@ -87,25 +117,32 @@ export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: 
           reach them. It also framed retention as "only the days you open", when pruning
           is by age and identical whether or not you install. Restore a seven-day claim
           when the archive lands. */}
-      <p className="mb-3 text-[var(--lull-ink-muted)]">
+      <p className={BODY}>
         Install Lull and each day’s puzzles are waiting on your phone before you open it — no connection needed.
       </p>
-      {steps === undefined ? (
-        <button className={OFFER} onClick={onInstall} ref={installRef} type="button">
-          {offerLabel}
-        </button>
-      ) : (
+      {steps !== undefined && (
         // A button here would be a promise the browser cannot keep: neither platform
         // that lands in this branch has an install event to replay.
-        <ol className="mb-3 list-decimal pl-5 text-[var(--lull-ink-muted)]">
+        <ol className={STEP_LIST}>
           {steps.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
       )}
-      <button className={QUIET_ACTION} onClick={onDismiss} type="button">
-        Not now
-      </button>
+      <div className={ACTIONS}>
+        {steps === undefined && (
+          <span ref={installRef}>
+            <Button onClick={onInstall} trailing={CHEVRON} variant="primary">
+              {offerLabel}
+            </Button>
+          </span>
+        )}
+        {/* Quiet, and therefore borderless: a bordered second control would read as a
+            second offer of equal weight beside the one the card exists to present. */}
+        <Button onClick={onDismiss} variant="quiet">
+          Not now
+        </Button>
+      </div>
     </div>
   )
 }
