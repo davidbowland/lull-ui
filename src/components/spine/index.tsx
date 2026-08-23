@@ -28,7 +28,7 @@ const SEPARATOR = (
 )
 
 // A bottom border rather than an underline, because the underline sits on the text
-// baseline and collides with descenders at this size. It is still a non-colour signal,
+// baseline and collides with descenders at this size. It is still a non-color signal,
 // which is what keeps the links distinguishable for anyone who cannot see the hue
 // difference against the current crumb (WCAG 1.4.1).
 //
@@ -66,7 +66,7 @@ export const Spine = ({ trail }: SpineProps): React.ReactNode => (
               className="flex shrink-0 items-center gap-[var(--lull-s1)] font-semibold whitespace-nowrap text-[var(--lull-ink)]"
             >
               {/* The pip is scenery. `aria-current` and the heavier weight are what say "you
-                  are here", so the accent colour is never the only thing carrying it. */}
+                  are here", so the accent color is never the only thing carrying it. */}
               <span aria-hidden="true" className="h-[7px] w-[7px] shrink-0 rounded-[2px] bg-[var(--lull-accent)]" />
               {crumb.label}
             </span>

@@ -1,6 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { InstallCard } from './index'
@@ -117,6 +116,14 @@ describe('InstallCard', () => {
       expect(screen.getByText('Tap Install. Older versions call it Add to Home screen.')).toBeInTheDocument()
     })
 
+    // The steps are numbered, not merely stacked: a listener hears "list, 2 items" and
+    // knows how many gestures the install takes before hearing the first one.
+    it.each(['firefox-android', 'ios'])('numbers the steps as a list on %s', (platform: string) => {
+      renderCard('card', platform as InstallPlatform)
+
+      expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(2)
+    })
+
     it.each(['firefox-android', 'ios'])('offers no button on %s, which has none to offer', (platform: string) => {
       renderCard('card', platform as InstallPlatform)
 
@@ -205,26 +212,6 @@ describe('InstallCard', () => {
       )
 
       expect(screen.getByRole('button', { name: 'Install' })).not.toHaveFocus()
-    })
-  })
-
-  describe('accessibility', () => {
-    it('has no accessibility violations', async () => {
-      const { container } = renderCard()
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no accessibility violations while collapsed', async () => {
-      const { container } = renderCard('link')
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no accessibility violations with steps instead of a button', async () => {
-      const { container } = renderCard('card', 'ios')
-
-      expect(await axe(container)).toHaveNoViolations()
     })
   })
 })

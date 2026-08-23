@@ -99,7 +99,7 @@ async function generate() {
 
   // 1200x630 is what every scraper expects, and the type sits inside a margin wide
   // enough to survive a square crop as well -- iMessage and some Slack layouts do not
-  // honour 1.91:1.
+  // honor 1.91:1.
   await sharp(OG, { density: 192 }).resize(1200, 630).png().toFile(path.join(publicDir, 'og-image.png'))
   console.log('✓ public/og-image.png  1200x630')
 }

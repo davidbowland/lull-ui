@@ -25,8 +25,8 @@ const spellOut = (displayed: string): string =>
 // phone without a long one needing three lines.
 //
 // The left padding is the tracking, and it is not a fudge: letter-spacing is applied AFTER every
-// glyph including the last, so a centred run carries one full space of air on its right that it
-// does not carry on its left, and the phrase sits visibly off-centre in its own plate. One
+// glyph including the last, so a centered run carries one full space of air on its right that it
+// does not carry on its left, and the phrase sits visibly off-center in its own plate. One
 // tracking unit of padding on the left puts it back, on every line rather than only the first,
 // which is why this is padding and not a text-indent.
 const PHRASE =
@@ -34,13 +34,45 @@ const PHRASE =
   'tracking-[0.32em] break-words text-[var(--lull-ink)]'
 
 // --lull-rule, never --lull-hair: this border is the whole of what tells a player where the box
-// they type into begins, and hair is decoration that must never identify a control.
+// they type into begins, and hair is decoration that must never identify a control. On the floor
+// that pair is `rule on floor`, which contrast.test.ts already holds at 3:1.
+//
+// `min-w-0 flex-1` rather than `w-full`, and min-w-0 is the load-bearing half: a flex item's
+// default `min-width: auto` refuses to shrink below its own content, so without it a long guess
+// pushes Check off the end of the row instead of scrolling inside the box.
 const FIELD =
-  'min-h-11 w-full rounded-[var(--lull-r-md)] border border-[var(--lull-rule)] bg-[var(--lull-raised)] ' +
+  'min-h-11 min-w-0 flex-1 rounded-[var(--lull-r-md)] border border-[var(--lull-rule)] bg-[var(--lull-raised)] ' +
   'px-[var(--lull-s3)] py-[var(--lull-s2)] text-lg text-[var(--lull-ink)]'
+
+// Wide enough for "Play again", which is what the slot has to hold rather than "Check": the two
+// share one position and a slot sized to the shorter would resize the field at the exact instant
+// the player wins. Source Serif semibold at 15px puts "Play again" at about 70px of glyphs, so with
+// 32px of padding and 2px of border it is around 104 natural, against "Check" at about 73. 128
+// clears both with room for a font fallback.
+//
+// A ONE-SIDED CONSTRAINT EXPRESSING A TWO-SIDED REQUIREMENT, and the gap is worth knowing about.
+// What this actually needs is "the two controls are the same width"; `min-w` only says "at least
+// this wide". Nothing pushes "Play again" past 128 today, but if something ever did -- a font swap,
+// an enforced minimum font size -- `shrink-0` would let the button grow, the field would give up
+// the difference, and reflow-at-the-win would come back with no test able to see it.
+//
+// It costs the field real width -- 148px at a 320 viewport -- and that is the tightest number on
+// this bench. There are 24px to reclaim here if the device pass finds the readback too tight; the
+// measurement above is what says they are available. See the spec's recorded risk.
+const CONTROL_SLOT = 'min-w-[128px] shrink-0 justify-center'
+
+// THE STANDING LINE, moved out of the board band with the field it belongs to. It is orientation
+// rather than content: worth reading once, at rest, and dead weight under the plate for the rest
+// of the solve. In the ribbon it sits directly over the box it is about.
+//
+// It is displaced by a message and returns on the next keystroke, because `change` clears
+// `checked`. That is what lets the visible label go sr-only: the player is never composing without
+// an instruction on screen, and the accessible name never goes away at all.
+const INSTRUCTION = 'The vowels are gone and the spaces have moved. What is it?'
 
 export const MissingVowelsBoard = ({
   onProgress,
+  onReset,
   onSolved,
   progress,
   puzzle,
@@ -71,8 +103,26 @@ export const MissingVowelsBoard = ({
   const check = (): void => setChecked(true)
 
   // Empties the box, which un-solves it: `solved` is derived, so clearing the guess is the whole
-  // reset. The shell is told the board is empty so a puzzle left this way reopens empty.
-  const playAgain = (): void => change('')
+  // reset as far as the BOARD is concerned. The shell is told the board is empty so a puzzle left
+  // this way reopens empty.
+  //
+  // The second call is the half the board cannot do itself. A fresh puzzle is a fresh hint ladder,
+  // and the ladder lives at `lull:hints:<puzzleId>` — storage, which a board gets none of. So this
+  // says "the player started over" and the shell decides what that means. What it does about it is
+  // deliberately not stated here: this board names an event, and naming the key or the component
+  // that answers for it would be the board reaching past the one thing it is allowed to say.
+  //
+  // It cannot be folded into the empty string above, tempting as that is. `change('')` is also what
+  // happens when a player selects their whole answer and deletes it, and charging them their spent
+  // rungs for a backspace would be the same bug goFigure avoids by keeping Clear and Play again on
+  // separate paths.
+  //
+  // Optional-called: `onReset` is optional on the props, and a board that assumed the shell always
+  // supplies it would crash on exactly the press this exists for.
+  const playAgain = (): void => {
+    change('')
+    onReset?.()
+  }
 
   const message = (): string => {
     if (solved) return `Solved. The answer is ${answer}.`
@@ -116,65 +166,92 @@ export const MissingVowelsBoard = ({
               </p>
             </Plate>
           </Shell>
+        </div>
+      </div>
 
-          <p className="text-[var(--lull-ink)]">The vowels are gone and the spaces have moved. What is it?</p>
+      {/* The band class rides a wrapper rather than FloorBar itself because FloorBar takes no
+          `className` -- `children`, `message`, `resting` and `variant` are the whole of its props,
+          and this component may not edit it. The wrapper is what the screen column sees, so it is
+          what has to carry the order.
 
-          <label
-            className="flex flex-col gap-[var(--lull-s2)] text-[12.5px] text-[var(--lull-muted)]"
-            htmlFor={`answer-${puzzle.id}`}
-          >
-            Your answer
+          THE ONE BENCH WITHOUT THE SEAM, and it is stated here rather than left to be discovered.
+          This floor used to reserve the full seam on the grounds that an OS keyboard was about to
+          cover it and a floor that collapsed would move the layout when the keyboard opened. Both
+          halves were wrong, and they are wrong in a new way now: the keyboard does not sit inside
+          the layout, it resizes the viewport over the top of it -- which is why the shell asks for
+          `interactive-widget=resizes-content` and measures the rest with useKeyboardInset, rather
+          than this bench reserving pixels against it.
+
+          What the seam is actually a promise about is where the INSTRUMENT is, and this bench's
+          instrument is one row: the box you type in and the control that checks it. So the floor is
+          exactly as tall as the ribbon plus that row, and it is still the same floor: same ground,
+          same ribbon, same live region, same place on the screen.
+
+          THE ROW IS 46px, NOT 44, and the two pixels are the field rather than the button. The row
+          is items-center, so it takes the taller of the two: Button is min-h-11, a flat 44, while
+          FIELD is text-lg -- a 28px line box -- plus 8px of padding either side plus a 1px border
+          either side. Which also means FIELD's own min-h-11 never binds; it is a floor under a
+          number that already clears it, kept because a future smaller type size would need it. The
+          floor grows by those two pixels and nothing else moves. */}
+      <div className="lull-instrument">
+        <FloorBar message={message()} resting={INSTRUCTION} variant="compact">
+          <div className="flex shrink-0 items-center gap-[var(--lull-s3)] pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
+            {/* The label is a SIBLING now, not a wrapper. An sr-only element hides its subtree, so
+                a wrapping label would take the field with it; `htmlFor` was already carrying the
+                association and is now the whole of it.
+
+                The component BUILDS this id out of the puzzle id, so both ends of the reference
+                are asserted -- see the suite. */}
+            <label className="sr-only" htmlFor={`answer-${puzzle.id}`}>
+              Your answer
+            </label>
             <input
               autoCapitalize="none"
               autoComplete="off"
               autoCorrect="off"
               className={FIELD}
-              // The OS keyboard is about to cover the floor this bench yields to it, and Check can
-              // end up underneath it. The keyboard's own action key is then the only control still
-              // on screen, so it has to do what the button does -- and it is named for the job so
-              // the key reads "Go" rather than "return".
+              // Chrome ignores autocomplete="off" for a field its heuristics have claimed, and a
+              // lone text input beside a submit-shaped button at the bottom of the viewport is the
+              // credential shape. These three are the opt-outs the managers themselves honor.
+              data-1p-ignore
+              data-form-type="other"
+              data-lpignore="true"
+              // Where the shell's mitigations do not land -- an engine that reads no
+              // interactive-widget key and offers no visual viewport to measure -- the OS keyboard
+              // still covers the floor, and its own action key is then the only control the player
+              // can reach. So it has to do what the button does, and it is named for the job so the
+              // key reads "Go" rather than "return".
               enterKeyHint="go"
               id={`answer-${puzzle.id}`}
               onChange={(event) => change(event.target.value)}
               onKeyDown={(event) => event.key === 'Enter' && check()}
               // readOnly, NOT disabled. A solved board takes no more keystrokes, but a disabled
-              // input is dropped from the tab order and is skipped by a screen reader's forms mode
-              // -- so the answer the player just won with would become unreachable and unreadable.
-              // readOnly stays focusable, stays announced, and still refuses the keystroke.
+              // input is dropped from the tab order and skipped by a screen reader's forms mode --
+              // so the answer the player just won with would become unreachable and unreadable.
+              // readOnly stays focusable, stays announced, and keeps the floor's own focus ring.
               readOnly={solved}
               spellCheck={false}
               type="text"
               value={guess}
             />
-          </label>
-        </div>
-      </div>
-
-      {/* The band class rides a wrapper rather than FloorBar itself because FloorBar takes only
-          `children`, `message` and `variant`, and this component may not edit it. The wrapper is
-          what the screen column sees, so it is what has to carry the order.
-
-          THE ONE BENCH WITHOUT THE SEAM, and it is stated here rather than left to be discovered.
-          This floor used to reserve the full 228px on the grounds that an OS keyboard was about to
-          cover it and a floor that collapsed would move the layout when the keyboard opened. Both
-          halves turned out to be wrong. The OS keyboard does not sit inside the layout at all -- it
-          resizes the visual viewport over the top of it -- so reserving room for it reserved room
-          for nothing; and on a laptop, where there is no OS keyboard in the first place, the bench
-          opened with 228px of near-black holding one button.
-
-          What the seam is actually a promise about is where the INSTRUMENT is, and this bench's
-          instrument is a single control. So the floor is exactly as tall as the ribbon plus that
-          control, and it is still the same floor: same ground, same ribbon, same live region, same
-          place on the screen. The constant that survives is the one worth keeping -- the floor is
-          where you operate the bench from -- rather than a number the bench had no use for. */}
-      <div className="lull-instrument">
-        <FloorBar message={message()} variant="compact">
-          <div className="flex shrink-0 pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
             {/* Two buttons rather than one that changes its mind, because they do not do the same
-                thing to the board. The swap is safe from the focus problem that governs Go
-                Figure!'s tiles: the winning keystroke is typed in the box, so this control is
-                never the focused element at the moment it is replaced. */}
-            {solved ? <Button onClick={playAgain}>Play again</Button> : <Button onClick={check}>Check</Button>}
+                thing to the board. The FIELD is not swapped with them: it holds the winning answer
+                and it is the focused element at the moment of the win, so rebuilding this row would
+                drop focus to <body>. React keeps a stable element type at a stable position, so the
+                node, the caret and the selection all survive.
+
+                Play again takes no `keepsFocusOnPress`. The composer contract exists to hold a
+                keyboard open over a field being typed in; a solved board is readOnly and has
+                nothing left to type. */}
+            {solved ? (
+              <Button className={CONTROL_SLOT} onClick={playAgain}>
+                Play again
+              </Button>
+            ) : (
+              <Button className={CONTROL_SLOT} keepsFocusOnPress onClick={check}>
+                Check
+              </Button>
+            )}
           </div>
         </FloorBar>
       </div>

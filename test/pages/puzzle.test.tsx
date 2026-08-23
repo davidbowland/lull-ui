@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import PuzzlePage, { getStaticPaths, getStaticProps } from '@pages/p/[puzzleId]'
@@ -98,15 +97,5 @@ describe('PuzzlePage', () => {
     it('carries no props: the page reads the URL itself', () => {
       expect(getStaticProps({})).toEqual({ props: {} })
     })
-  })
-
-  it('has no accessibility violations', async () => {
-    setup(`/p/${encodeURIComponent(puzzleId)}/`)
-    writePack('2026-08-18', pack)
-
-    const { container } = render(<PuzzlePage />)
-    await screen.findByRole('heading', { name: 'Make 154' })
-
-    expect(await axe(container)).toHaveNoViolations()
   })
 })

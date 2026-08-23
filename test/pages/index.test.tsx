@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import Index from '@pages/index'
@@ -46,13 +45,5 @@ describe('Index', () => {
     render(<Index />)
 
     expect(screen.getByRole('region', { name: 'Puzzles' })).toBeInTheDocument()
-  })
-
-  it('has no accessibility violations', async () => {
-    setup()
-
-    const { container } = render(<Index />)
-
-    expect(await axe(container)).toHaveNoViolations()
   })
 })

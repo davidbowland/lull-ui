@@ -50,10 +50,10 @@ const config: Config = {
   restoreMocks: true,
   setupFiles: ['<rootDir>/jest.setup-test-env.js'],
   // connections-ui has no after-env setup and imports @testing-library/jest-dom per
-  // test file by convention. Lull adds one, because jest-axe's toHaveNoViolations is
-  // a custom matcher registered with expect.extend -- and every component test in this
-  // repo ends with an axe assertion. Left to convention, one forgotten import fails as
-  // "expect(...).toHaveNoViolations is not a function" in a file that looks correct.
+  // test file by convention. Lull registers it once here instead: every test file in
+  // this repo uses its matchers, and a per-file import left to convention fails in
+  // whichever file forgets it as "expect(...).toBeInTheDocument is not a function" --
+  // which reads as a broken test rather than as a missing import.
   setupFilesAfterEnv: ['<rootDir>/jest.setup-after-env.ts'],
   testEnvironment: 'jsdom',
   // <rootDir>/.claude/ holds agent worktrees -- full checkouts of this repo. Without

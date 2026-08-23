@@ -4,7 +4,7 @@ import { HintBar } from '@components/hint-bar'
 import { Crumb, Spine } from '@components/spine'
 import { entryFor, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
-import { markSolved, readMeta, readPack, readProgress, writeProgress } from '@services/storage'
+import { markSolved, readMeta, readPack, readProgress, removeHints, writeProgress } from '@services/storage'
 import { Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
 import { hintsOf } from '@utils/hints'
 import { difficultyLabel, lengthLabel } from '@utils/labels'
@@ -126,21 +126,63 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // in the bag.
   const [wasSolved] = useState(() => wasSolvedBefore(puzzle.id))
 
-  // The shell owns persistence; the board is handed two callbacks and no storage.
+  // The shell owns persistence; the board is handed three callbacks and no storage.
   const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])
   const onSolved = useCallback(() => markSolved(puzzle.id), [puzzle.id])
+
+  // A NONCE, not a boolean, and it counts rather than toggles because the same puzzle can be
+  // started over any number of times in one sitting -- a boolean would be `true` after the first
+  // Play again and `true` again after the second, so the second reset would hand HintBar a prop it
+  // already holds, its effect would not run, and the ladder would sit where the player had just
+  // left it. There is a test for the second reset, because a comment arguing against an alternative
+  // is worth what the test behind it is worth.
+  //
+  // It exists because deleting the stored count is only half the job. HintBar reads its count ONCE,
+  // in a state initializer, and subscribes to nothing -- not even STORAGE_EVENT -- which is right
+  // for its normal life: the frame keys the view on the puzzle id, so re-reading storage on every
+  // render would hand the bar back its own writes. The cost is that an emptied key is invisible to
+  // a bar that is already mounted. Without this the ladder went quietly wrong rather than loudly:
+  // the stored count read 0, the bar on screen still drew its spent rungs and still offered "Open
+  // hint 2 of 3", and the next press wrote 3 back over the zero.
+  const [resetNonce, setResetNonce] = useState(0)
+
+  // The board asked for two things it cannot do itself, and neither of them tells it anything back.
+  // Deleting the count is storage, which a board gets none of; raising the signal is this frame's
+  // own state. So the ladder is reset without the board ever learning that a ladder exists.
+  //
+  // THE PAIR IS NOT ATOMIC, and it is worth knowing before rediscovering it. A board's Play again
+  // calls `onProgress('')` and then `onReset()`, which React batches, so no render ever sees the
+  // half-applied state. Storage is not batched: `writeProgress` and `removeHints` each dispatch
+  // STORAGE_EVENT synchronously, so between the two dispatches a listener re-reading storage sees
+  // empty progress alongside the stale hint count. Nothing observes it today -- the only subscriber
+  // is the shelf, which is never mounted with a bench -- so this is a note rather than a defect. A
+  // future listener that derives one from the other has to tolerate the interleave or be told once,
+  // after both.
+  const onReset = useCallback(() => {
+    removeHints(puzzle.id)
+    setResetNonce((nonce) => nonce + 1)
+  }, [puzzle.id])
 
   // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist,
   // and PuzzleProgress stays an opaque per-type string.
   const hints = hintsOf(puzzle)
 
-  // The tile bench drops the docked hint bar and spends its 60px on the goal plate and the worked
-  // example. Read off the bench rather than off the type, so a second type that plays on the same
-  // surface inherits the decision instead of repeating it.
+  // WHICH bar, not WHETHER there are hints. Every bench has a ladder now -- goFigure's rungs place
+  // an operator where a phrase bench's describe a meaning -- so this flag stopped being about the
+  // existence of hints and became about who draws the control.
   //
-  // It is stated as its own condition rather than shared with anything else. It used to ride on the
-  // sign row's flag, which read as one decision and was two: when the sign row went away the hint
-  // bar would have gone with it on all three benches.
+  // The tile bench draws its own, inside its control row, and so it must not also get the shell's:
+  // two hint controls on one screen reading different rungs off one stored count is a state no
+  // player could make sense of. The other benches have no control row to put one in, so the shell
+  // supplies a docked 60px band between the board and the instrument.
+  //
+  // (The band this replaced on the tile bench is spent on the goal plate and the worked example --
+  // which is why the flag is worth keeping even though every bench now has hints.)
+  //
+  // Read off the BENCH rather than off the type, so a second type that plays on the same surface
+  // inherits the decision instead of repeating it. And stated as its own condition rather than
+  // shared with anything else: it used to ride on the sign row's flag, which read as one decision
+  // and was two, so when the sign row went away the hint bar would have gone with it everywhere.
   const hasHintBar = entry.bench !== 'tile'
 
   return (
@@ -156,9 +198,9 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           title sits on the same raised plate the board does, so a line here would cut the working
           surface in half at its widest point. The bands that ARE ruled off are the ones drawn in
           the darker ground -- the breadcrumb above and the sign row below -- and they are told
-          apart by their ground, not by a border on their neighbour.
+          apart by their ground, not by a border on their neighbor.
 
-          Baseline-aligned rather than centred, and NOT `leading-none`. Line-height 1 gives a line
+          Baseline-aligned rather than centered, and NOT `leading-none`. Line-height 1 gives a line
           box exactly one em tall, and a serif descender hangs below that -- so with `truncate`'s
           `overflow: hidden` on the same element, the tail of the g in "Missing Vowels" was sliced
           off flat. Every bench name in the registry is one line, so the clipping bought nothing
@@ -179,7 +221,7 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
       </div>
 
       {/* The board and the instrument both come out of the SAME component -- that is what keeps
-          its four-prop contract intact -- but they belong in different bands, with the shell's
+          its five-prop contract intact -- but they belong in different bands, with the shell's
           own hint bar between them. `display: contents` dissolves this wrapper, so the two
           elements the component marks `.lull-board` and `.lull-instrument` become flex items of
           the screen column directly and index.css orders them into their bands. Neither side
@@ -202,13 +244,36 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           seam down. That box IS the seam, so it stays whole and the component owns it. The
           frame owns the order it appears in, which is the whole of what a shell needs to own. */}
       <div className="contents">
-        <Component onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />
+        <Component onProgress={onProgress} onReset={onReset} onSolved={onSolved} progress={progress} puzzle={puzzle} />
       </div>
 
       {/* Ordered BETWEEN two elements this frame does not own and cannot reach into. The bar
           itself is a fixed 60px strip that neither gives nor takes a pixel, and its opened hints
-          are drawn in a sheet out of flow -- so no length of hint text can move the seam. */}
-      {hasHintBar && hints !== null && <HintBar hints={hints} puzzleId={puzzle.id} />}
+          are drawn in a sheet out of flow -- so no length of hint text can move the seam.
+
+          HANDED THE NONCE AS A PROP, and it used to be handed to `key` instead. The remount looked
+          like the cheaper correct thing -- everything the bar holds after a reset is exactly what it
+          holds at mount, so mounting it again says that in one word -- and it was wrong twice.
+
+          A changed key is React's instruction to destroy a subtree unconditionally, and React ships
+          no focus handling with that instruction. The bar's control is the thing a keyboard player
+          is standing on when they reach for Play again, so destroying it dropped focus to <body> and
+          the next Tab restarted at the top of the page (WCAG 2.4.3). It was invisible in Chrome,
+          which focuses a <button> when a pointer press lands on it -- so the press on Play again had
+          already moved focus off the bar and there was nothing left to lose. Safari on macOS and iOS
+          and Firefox on macOS do not, and jsdom emulates Chrome, so no test could see it either
+          until one drove the reset without a click.
+
+          The second cost is quieter and would have outlived the first. The bar's role="status"
+          region is deliberately mounted empty and never hidden, because a live region inserted with
+          its content already in it is routinely missed by NVDA and JAWS. A remount destroyed and
+          rebuilt that region on every reset, which is that failure exactly -- and it is why the bar
+          can now say "Hints reset." at all.
+
+          So the nonce is a signal the bar reacts to rather than an identity it is rebuilt under.
+          Nothing else here is given it: the board keeps its own state through a reset, because the
+          board is the thing that just chose to reset. */}
+      {hasHintBar && hints !== null && <HintBar hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} />}
     </>
   )
 }
@@ -315,11 +380,14 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
   }
 
   return (
-    // The bench: a flex column in which exactly ONE band flexes. max-h-dvh is a ceiling and the
-    // page's min-h-dvh is a floor -- without the ceiling the column becomes max(viewport,
-    // content), so a long phrase or an opened hint grows the page and the seam rides down with
-    // it. The pressure has nowhere to go but into the board's own overflow, which is what
-    // index.css gives it.
+    // The bench: a flex column in which exactly ONE band flexes. The ceiling and the floor are
+    // BOTH in index.css now, on `.lull-bench` and `.lull-page`, because each grew a term Tailwind
+    // cannot express -- they subtract --lull-kb, the height of an open software keyboard. Those
+    // rules are unlayered and utilities are not, so a `max-h-dvh` left here would be a class that
+    // reads as load-bearing and does nothing. The relationship is unchanged: a ceiling on this
+    // column, a floor on the page, and without the ceiling the column becomes max(viewport,
+    // content) and the seam rides down with a long phrase. The pressure has nowhere to go but
+    // into the board's own overflow, which is what index.css gives it.
     //
     // overflow-y-auto, NOT overflow-hidden, and the difference is not cosmetic.
     //
@@ -347,10 +415,10 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
     // that trick would have amputated 16px off its left edge with nothing to show for it.
     //
     // `lull-bench` is the hook for two things: the raised plate this column is drawn on, and the
-    // one behaviour above 768px that is not the phone layout -- index.css stops the column
-    // stretching there and centres it, because a board band that swallows 390px of a desktop
+    // one behavior above 768px that is not the phone layout -- index.css stops the column
+    // stretching there and centers it, because a board band that swallows 390px of a desktop
     // window is dead space rather than breathing room.
-    <div className="lull-bench flex max-h-dvh min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="lull-bench flex min-h-0 flex-1 flex-col overflow-y-auto">
       {/* Wrapped only so the band can carry an order of its own. Leaving it to DOM position
           would make the spine the one band whose place in the column is implied rather than
           declared, and the first reordering would move it without touching this file. */}

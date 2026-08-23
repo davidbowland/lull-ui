@@ -128,7 +128,7 @@ const shelfPack = (localToday: PackDate): Pack | null => {
 const trailFor = (pack: Pack | null, locale: string): Crumb[] =>
   pack === null ? [{ label: 'Lull' }] : [{ href: '/', label: 'Lull' }, { label: crumbLabel(pack.date, locale) }]
 
-// A distinct SHAPE per state, not a distinct colour. Both chips are drawn in the same muted
+// A distinct SHAPE per state, not a distinct color. Both chips are drawn in the same muted
 // ink, so the tick and the empty ring are what separate them for a reader who cannot tell
 // the hues apart (WCAG 1.4.1) -- and the word beside them is what separates them for a
 // reader who cannot see either. Each is the `d` of one path in a 0 0 12 12 viewBox, stroked
@@ -228,9 +228,9 @@ const CARD =
   'rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] bg-[var(--lull-plate)] ' +
   'shadow-[inset_0_1px_1px_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.09)]'
 
-// The hover is a LIFT and nothing else. A border-colour hover has nowhere left to go now that the
+// The hover is a LIFT and nothing else. A border-color hover has nowhere left to go now that the
 // resting edge is the load-bearing one, and an accent edge on hover would spend the accent on
-// every row of the directory -- a colour this design uses in exactly three places.
+// every row of the directory -- a color this design uses in exactly three places.
 const ROW =
   `${CARD} grid min-h-11 grid-cols-[44px_1fr_auto] items-center gap-[var(--lull-s4)] p-[var(--lull-s3)] ` +
   'transition-transform duration-[420ms] ease-[cubic-bezier(0.22,0.68,0.12,1)] hover:-translate-y-[2px]'

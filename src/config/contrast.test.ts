@@ -2,13 +2,13 @@ import { DARK, LIGHT, Palette, THEME_COLOR } from './colors'
 import { contrastRatio } from './contrast'
 
 // These assertions are the WCAG AA floor the repo's own guidelines set, expressed so
-// that a later colour change fails here rather than shipping.
+// that a later color change fails here rather than shipping.
 describe('contrastRatio', () => {
   it('reports 21:1 for black on white', () => {
     expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 5)
   })
 
-  it('reports 1:1 for a colour against itself', () => {
+  it('reports 1:1 for a color against itself', () => {
     expect(contrastRatio('#8e3438', '#8e3438')).toBeCloseTo(1, 5)
   })
 
@@ -17,7 +17,7 @@ describe('contrastRatio', () => {
   })
 })
 
-// Every surface a colour is actually set on, not a representative sample. The three
+// Every surface a color is actually set on, not a representative sample. The three
 // grounds are genuinely all used -- ground is the page, plate is a raised surface, and
 // raised is a control face -- so a pair that passes on one and fails on another is a
 // real defect and this is where it surfaces.

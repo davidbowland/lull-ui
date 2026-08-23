@@ -50,7 +50,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // Three cells in a row with the first one marked. The cipher bench's whole move is picking a
     // cell and then a letter, so the glyph shows a cell picked. The mark is a dot rather than a
     // filled cell because the day strokes this path with no fill, which would leave a "filled"
-    // square indistinguishable from its two empty neighbours.
+    // square indistinguishable from its two empty neighbors.
     glyph: 'M0.7 2.6h6v10.8h-6zM8 2.6h6v10.8h-6zM15.3 2.6h6v10.8h-6zM3.7 8h.01',
     // An arrow crossing into a wall -- one thing standing for another, which is the whole game.
     icon: 'M4 12h9m0 0-3-3m3 3-3 3M18 5v14',

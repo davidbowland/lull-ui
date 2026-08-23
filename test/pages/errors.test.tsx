@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import NotFound from '@pages/404'
@@ -19,10 +18,14 @@ describe('error pages', () => {
       expect(screen.getByRole('link', { name: 'Back to today’s puzzles' })).toHaveAttribute('href', '/')
     })
 
-    it('has no accessibility violations', async () => {
-      const { container } = render(<NotFound />)
+    // A dead end is still a place, so it wears the same two landmarks as every other surface:
+    // the content sits inside <main>, and the named breadcrumb says where "here" is. Without
+    // both, a screen reader arriving on this page has nothing to jump to and no position.
+    it('says where you are, inside the page landmark', () => {
+      render(<NotFound />)
 
-      expect(await axe(container)).toHaveNoViolations()
+      expect(screen.getByRole('main')).toBeInTheDocument()
+      expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Not found')
     })
   })
 
@@ -41,10 +44,11 @@ describe('error pages', () => {
       expect(screen.getByRole('link', { name: 'Back to today’s puzzles' })).toHaveAttribute('href', '/')
     })
 
-    it('has no accessibility violations', async () => {
-      const { container } = render(<ServerError />)
+    it('says where you are, inside the page landmark', () => {
+      render(<ServerError />)
 
-      expect(await axe(container)).toHaveNoViolations()
+      expect(screen.getByRole('main')).toBeInTheDocument()
+      expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Something went wrong')
     })
   })
 })

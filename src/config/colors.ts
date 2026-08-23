@@ -1,7 +1,7 @@
 // The "Bench" palette. Ash grounds, one madder accent, and a dark instrument floor.
 //
 // Chosen by a full redesign run and audited before it landed: a pairwise CIEDE2000
-// matrix over every candidate palette put the nearest chromatic neighbour at dE 12.4,
+// matrix over every candidate palette put the nearest chromatic neighbor at dE 12.4,
 // and every banned reference palette -- the newsprint red, the habit-app terracotta,
 // the phosphor green, the acid chartreuse escape -- clears by more than dE 10. See
 // docs/design/design-assignments.md for the ledger.

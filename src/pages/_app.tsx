@@ -6,6 +6,7 @@ import React, { useEffect } from 'react'
 
 import '@assets/css/index.css'
 import { ErrorBoundary } from '@components/error-boundary'
+import { useKeyboardInset } from '@hooks/useKeyboardInset'
 import { usePrefetch } from '@hooks/usePrefetch'
 
 export default function App({ Component, pageProps }: AppProps) {
@@ -13,6 +14,11 @@ export default function App({ Component, pageProps }: AppProps) {
   // next one, and this is the only caller -- without it the whole offline feature is
   // inert and a visitor gets exactly the pack they asked for.
   usePrefetch()
+
+  // Publishes `--lull-kb`, which index.css subtracts from the bench's ceiling. Here rather than in
+  // PuzzleFrame because the token is page geometry of the same kind as --lull-gutter-*, and a
+  // per-surface mount would leave a stale inset behind on navigation.
+  useKeyboardInset()
 
   useEffect(() => {
     // _document.tsx sets this class before first paint so there is no flash of the
@@ -68,9 +74,31 @@ export default function App({ Component, pageProps }: AppProps) {
           It is page-wide and cannot be scoped to one puzzle type: /p/<id> is ONE exported document
           serving all three. That is why the horizontal padding on every top-level <main> is written
           as max(today's value, the inset) -- cover lets content reach the notch in landscape, and
-          those maxes are what keep it off. */}
+          those maxes are what keep it off.
+
+          interactive-widget=resizes-content is the other half, and it is what makes the floor a
+          safe place for a text field. The default is resizes-visual: the software keyboard is
+          drawn OVER a layout viewport that does not change, so 100dvh keeps its old value, the
+          bench keeps its old height, and the floor stays pinned behind the keyboard. Under
+          resizes-content the ICB shrinks to the space above the keyboard, the bench's flex column
+          re-lays out, and the board band absorbs the loss.
+
+          WHERE EXACTLY THE INSTRUMENT LANDS IS NOT SETTLED HERE, and the earlier claim that it sits
+          on the keyboard's top edge was one measurement too confident. The floor adds
+          env(safe-area-inset-bottom) on top of its own height, so it lands the system navigation
+          bar's height above the keyboard unless the engine zeroes that inset once the ICB has
+          shrunk clear of it. Nothing in this repo can answer that; the spec's device checklist asks
+          it as a step.
+
+          It manifests on exactly one bench, because Missing Vowels owns the only <input> in the
+          product -- the other two benches read keystrokes off a window-level handler and render no
+          editable field. iOS Safari implements the key not at all, which is what useKeyboardInset
+          in this same file is for. */}
       <Head>
-        <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport" />
+        <meta
+          content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+          name="viewport"
+        />
       </Head>
       <Component {...pageProps} />
     </ErrorBoundary>

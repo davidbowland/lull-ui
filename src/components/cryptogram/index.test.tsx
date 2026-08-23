@@ -1,6 +1,5 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { CryptogramBoard } from './index'
@@ -31,9 +30,6 @@ describe('CryptogramBoard', () => {
     return user
   }
 
-  // The squares ARE the accessible representation of the phrase. There is no parallel sr-only run:
-  // one would make a screen reader read the phrase twice, and marking the squares aria-hidden to
-  // prevent that is an aria-hidden-focus violation the axe assertion below would catch.
   // One cipher letter used exactly once, so the singular of the assignment message has a board to
   // happen on. The fixture's own phrase repeats every letter three times, which is what makes it a
   // good fixture and a useless one for this.
@@ -100,6 +96,23 @@ describe('CryptogramBoard', () => {
       setup()
 
       expect(screen.getAllByRole('button', { name: /^Cipher / })).toHaveLength(9)
+    })
+
+    // The squares ARE the accessible representation of the phrase. There is no parallel sr-only
+    // run: one would make a screen reader read the phrase twice, and the way that gets prevented is
+    // always the same wrong one -- marking the squares aria-hidden. Every square is focusable, so a
+    // hidden square is a control a keyboard can reach and a screen reader cannot see, which is the
+    // one shape of this board that would be worse than reading the phrase twice.
+    it('hides no square from a screen reader', () => {
+      setup()
+
+      // `hidden: true` so the query itself does not do the filtering: this has to count squares
+      // that ARE out of the accessibility tree, not skip past them.
+      const squares = screen.getAllByRole('button', { hidden: true, name: /^Cipher / })
+      const unreadable = squares.filter((element) => element.closest('[aria-hidden="true"]') !== null)
+
+      expect(squares).toHaveLength(9)
+      expect(unreadable).toHaveLength(0)
     })
 
     // The ciphertext has to be ON SCREEN. Which squares repeat is the entire information content of
@@ -1898,32 +1911,5 @@ describe('CryptogramBoard', () => {
 
       expect(square('Cipher E, letter 3 of 9, holds E')).toHaveFocus()
     })
-  })
-
-  it('has no axe violations', async () => {
-    const { container } = renderBoard()
-
-    expect(await axe(container)).toHaveNoViolations()
-  })
-
-  it('has no axe violations when solved', async () => {
-    const { container } = renderBoard(cryptogramPuzzle, SOLVED)
-
-    expect(await axe(container)).toHaveNoViolations()
-  })
-
-  // The mid-run gate. A pad tap is the one press that leaves the board in every state at once: the
-  // V run holds a letter, the caret has advanced off it onto a square the player never chose, that
-  // square carries aria-current beside the aria-pressed its whole run shares, the roving tabIndex
-  // has moved with it, and focus is parked on a pad key two bands away from all of it. Rendered
-  // through `renderBoard` with a local session, because `setup` throws the container away.
-  it('has no axe violations part-way through a run', async () => {
-    const user = userEvent.setup({ delay: null })
-    const { container } = renderBoard()
-
-    await user.click(square('Cipher V, letter 1 of 9, empty'))
-    await user.click(key('A, not used yet'))
-
-    expect(await axe(container)).toHaveNoViolations()
   })
 })

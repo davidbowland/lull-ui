@@ -8,6 +8,18 @@ export interface ButtonProps {
   children: React.ReactNode
   className?: string
   disabled?: boolean
+  // THE COMPOSER CONTRACT: this press does not take focus off whatever holds it. The writing bench
+  // asks for it on Check so the software keyboard stays up over the answer field and the layout does
+  // not jump at the moment the ribbon's message lands -- the same thing every messaging app teaches
+  // by not collapsing the keyboard when you press Send. Every other caller omits it and nothing
+  // changes.
+  //
+  // A BOOLEAN THE PRIMITIVE OWNS, and not a forwarded event handler. Forwarding shipped first and
+  // was worse three ways: it let a caller run arbitrary code inside a press, it broke the event-free
+  // shape `onClick?: () => void` sets for this component, and -- the one that actually bites -- it
+  // let a caller wire one of the two events and not the other, which is exactly the engine gap this
+  // exists to close.
+  keepsFocusOnPress?: boolean
   onClick?: () => void
   size?: 'md' | 'sm'
   trailing?: React.ReactNode
@@ -20,13 +32,13 @@ export interface ButtonProps {
 const BASE =
   'inline-flex min-h-11 cursor-pointer items-center gap-[var(--lull-s2)] rounded-[var(--lull-pill)] ' +
   'font-semibold transition-transform duration-[380ms] ease-[cubic-bezier(0.22,0.68,0.12,1)] ' +
-  // The spent state is drawn with a token colour, never with opacity. CSS opacity
+  // The spent state is drawn with a token color, never with opacity. CSS opacity
   // composites the element's whole rendering as one group -- border, background, AND
   // outline -- so `opacity-50` halved the focus ring of the one control this component
   // deliberately keeps in the tab order: 2.21:1 in light mode, against the 3:1 that 2.4.11
   // requires and which grants no inactive-component exemption to something still focusable
   // and still announced. Opacity cannot be scoped to exclude the outline, so the state has
-  // to be expressed in colour instead.
+  // to be expressed in color instead.
   'active:scale-[0.98] aria-disabled:cursor-default aria-disabled:text-[var(--lull-muted)]'
 
 // The accent appears in exactly three places in the whole product -- the you-are-here pip on the
@@ -62,7 +74,7 @@ const SIZE = { md: 'px-[var(--lull-s4)] text-[15px]', sm: 'px-[var(--lull-s3)] t
 // A button inside the button. An arrow set naked beside the label reads as punctuation on the
 // word; inside its own circle it reads as the place the press goes. The tint comes from
 // currentColor so the nub follows whichever variant it lands in rather than needing one rule per
-// variant -- and so it can never pick a colour that fails against its own face.
+// variant -- and so it can never pick a color that fails against its own face.
 const NUB = 'flex size-8 items-center justify-center rounded-[var(--lull-pill)] bg-current/10'
 
 export const Button = ({
@@ -73,6 +85,7 @@ export const Button = ({
   children,
   className,
   disabled,
+  keepsFocusOnPress,
   onClick,
   size = 'md',
   trailing,
@@ -87,6 +100,24 @@ export const Button = ({
     onClick?.()
   }
 
+  // Focus-on-press is the DEFAULT ACTION of the pointer sequence, so refusing that default is the
+  // whole mechanism -- there is nothing to blur and nothing to restore, because focus never moves.
+  //
+  // BOTH EVENTS, and the pair is the point rather than belt and braces. Per Pointer Events,
+  // canceling `pointerdown` suppresses the compatibility mouse events, and with them the focus,
+  // while leaving `click` alone -- but that mapping has been implemented unevenly, and preventing
+  // `mousedown` is the older pattern every composer on the web already rests on. Where the first is
+  // honored the second never fires at all, so naming both costs nothing and covers the engine this
+  // change cannot test: iOS Safari, which is the writing bench's release gate.
+  //
+  // Attached only when asked for, so a control that never wanted this carries no listeners.
+  //
+  // NOT routed through handleClick's aria-disabled guard. That guard refuses an ACTIVATION; this
+  // refuses a focus change, and a spent control that quietly started stealing focus back would be a
+  // worse answer than one that simply does not move it.
+  const refusePress =
+    keepsFocusOnPress === true ? (event: React.SyntheticEvent): void => event.preventDefault() : undefined
+
   return (
     <button
       aria-controls={ariaControls}
@@ -100,6 +131,8 @@ export const Button = ({
         .join(' ')}
       disabled={disabled}
       onClick={handleClick}
+      onMouseDown={refusePress}
+      onPointerDown={refusePress}
       type="button"
     >
       {children}

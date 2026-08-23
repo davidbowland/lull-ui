@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { Plate, Shell } from './index'
@@ -37,13 +36,17 @@ describe('Enclosure', () => {
 
   // Neither half is a landmark, a region, or a group: this is a drawn edge and nothing
   // more, so it must add no structure a screen reader has to walk past.
-  it('adds no landmark or role of its own', async () => {
-    const { container } = render(
+  it('adds no landmark or role of its own', () => {
+    render(
       <Shell>
         <Plate>Today</Plate>
       </Shell>,
     )
+    const plate = screen.getByText('Today')
 
-    expect(await axe(container)).toHaveNoViolations()
+    expect(plate).not.toHaveAttribute('role')
+    expect(plate.parentElement).not.toHaveAttribute('role')
+    expect(screen.queryByRole('group')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
   })
 })

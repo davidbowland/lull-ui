@@ -10,7 +10,7 @@ describe('toPackDate', () => {
   })
 
   // Reads local fields, not toISOString. Under TZ=UTC the two agree, which is why the
-  // west-of-UTC behaviour is covered by injecting dates rather than by moving the clock.
+  // west-of-UTC behavior is covered by injecting dates rather than by moving the clock.
   it('reads the calendar date, not the instant', () => {
     expect(toPackDate(new Date(Date.UTC(2026, 7, 18, 23, 59, 59)))).toEqual('2026-08-18')
   })

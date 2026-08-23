@@ -1,6 +1,24 @@
-import { CryptogramData, GoFigureData, HintLadder, Meta, MissingVowelsData, Pack, PackDate, Puzzle } from '@types'
+import {
+  CryptogramData,
+  GoFigureData,
+  GoFigureHintLadder,
+  HintLadder,
+  Meta,
+  MissingVowelsData,
+  Pack,
+  PackDate,
+  Puzzle,
+} from '@types'
 
 export const packDate: PackDate = '2026-08-18'
+
+// Rung order 1, 0, 2 -- the difficulty-4 order, which is deliberately NOT left to right. A test that
+// passes with hints[slot] instead of hints[rung].metadata.slot is a test that never saw this.
+export const goFigureHints: GoFigureHintLadder = [
+  { metadata: { operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
+  { metadata: { operator: '+', slot: 0 }, text: 'The 1st operator from the left is "+".' },
+  { metadata: { operator: '*', slot: 2 }, text: 'The 3rd operator from the left is "×".' },
+]
 
 // The original TI-83 puzzle: goal 154 from the bank 6,9,7,7. goFigure evaluates
 // STRICTLY LEFT TO RIGHT -- 6+9=15, +7=22, *7=154 -- so these six expressions are the
@@ -10,6 +28,7 @@ export const goFigureData: GoFigureData = {
   acceptedSolutions: ['6+7+9*7', '6+9+7*7', '7+6+9*7', '7+9+6*7', '9+6+7*7', '9+7+6*7'],
   bank: [6, 9, 7, 7],
   goal: 154,
+  hints: goFigureHints,
   operators: ['+', '-', '*', '/'],
 }
 
@@ -30,6 +49,11 @@ export const quickPuzzle: Puzzle<GoFigureData> = {
     acceptedSolutions: ['1+2+3+4'],
     bank: [1, 2, 3, 4],
     goal: 10,
+    hints: [
+      { metadata: { operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
+      { metadata: { operator: '+', slot: 0 }, text: 'The 1st operator from the left is "+".' },
+      { metadata: { operator: '+', slot: 2 }, text: 'The 3rd operator from the left is "+".' },
+    ] as GoFigureHintLadder,
     operators: ['+', '-', '*', '/'],
   },
   difficulty: 1,
@@ -61,9 +85,9 @@ export const meta: Meta = { installDismissed: false, solved: [], v: 1 }
 export const missingVowelsPuzzleId = '2026-08-18:missingvowels:9f8e7d6c'
 
 export const missingVowelsHints: HintLadder = [
-  'A space opera sequel',
-  'The middle chapter, where the heroes lose',
-  'The one where a lightsaber duel ends with a revelation about parentage',
+  { text: 'A space opera sequel' },
+  { text: 'The middle chapter, where the heroes lose' },
+  { text: 'The one where a lightsaber duel ends with a revelation about parentage' },
 ]
 
 export const missingVowelsPuzzle: Puzzle<MissingVowelsData> = {
@@ -104,9 +128,9 @@ export const phrasePack: Pack = {
 export const cryptogramPuzzleId = '2026-08-18:cryptogram:7c6b5a49'
 
 export const cryptogramHints: HintLadder = [
-  'A saying about a meal',
-  'What you say when the plate is empty',
-  'Three words, and two of them are the same',
+  { text: 'A saying about a meal' },
+  { text: 'What you say when the plate is empty' },
+  { text: 'Three words, and two of them are the same' },
 ]
 
 export const cryptogramPuzzle: Puzzle<CryptogramData> = {

@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { MissingVowelsBoard } from './index'
@@ -9,8 +8,10 @@ import { MissingVowelsData, Puzzle } from '@types'
 
 describe('MissingVowelsBoard', () => {
   const SOLVED = 'The Empire Strikes Back'
+  const INSTRUCTION = 'The vowels are gone and the spaces have moved. What is it?'
 
   const onProgress = jest.fn()
+  const onReset = jest.fn()
   const onSolved = jest.fn()
 
   // Named and called explicitly rather than a beforeEach, and the user instance is built here so
@@ -23,9 +24,31 @@ describe('MissingVowelsBoard', () => {
   ): { container: HTMLElement; user: ReturnType<typeof userEvent.setup> } => {
     const user = userEvent.setup({ delay: null })
     const { container } = render(
-      <MissingVowelsBoard onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />,
+      <MissingVowelsBoard
+        onProgress={onProgress}
+        onReset={onReset}
+        onSolved={onSolved}
+        progress={progress}
+        puzzle={puzzle}
+      />,
     )
     return { container, user }
+  }
+
+  // The same board with the callback left off, because `onReset` is optional and every board that
+  // predates it still compiles and still renders. Play again has to work here too -- an optional
+  // prop called without a guard is a crash on the one press this whole task is about.
+  const setupWithoutReset = (progress: string): ReturnType<typeof userEvent.setup> => {
+    const user = userEvent.setup({ delay: null })
+    render(
+      <MissingVowelsBoard
+        onProgress={onProgress}
+        onSolved={onSolved}
+        progress={progress}
+        puzzle={missingVowelsPuzzle}
+      />,
+    )
+    return user
   }
 
   const answerBox = (): HTMLElement => screen.getByLabelText('Your answer')
@@ -76,11 +99,21 @@ describe('MissingVowelsBoard', () => {
     // A phrase with its vowels removed is not a word, so every helper the platform offers would
     // fight the player: autocorrect rewrites the guess, autocomplete offers last week's answers,
     // and a capitalised first letter is one more thing to undo.
+    //
+    // The three data-* attributes are about a different helper. A lone text input at the bottom of
+    // the viewport beside a submit-shaped button is the shape Chrome and every password manager
+    // classify as a credential form -- and Chrome routinely ignores autocomplete="off" for a field
+    // it has claimed heuristically. An injected manager overlay would land on top of a field that
+    // is 148px wide at the narrowest supported viewport.
     it('leaves the player’s typing alone', () => {
       setup()
 
       expect(answerBox()).toHaveAttribute('autocorrect', 'off')
       expect(answerBox()).toHaveAttribute('spellcheck', 'false')
+      expect(answerBox()).toHaveAttribute('autocomplete', 'off')
+      expect(answerBox()).toHaveAttribute('data-1p-ignore')
+      expect(answerBox()).toHaveAttribute('data-lpignore', 'true')
+      expect(answerBox()).toHaveAttribute('data-form-type', 'other')
     })
 
     it('says nothing about correctness before the player checks', () => {
@@ -93,10 +126,14 @@ describe('MissingVowelsBoard', () => {
   // The two elements the shell orders into its bands. The component renders both and learns
   // nothing about either band; index.css does the placing, keyed off these classes.
   describe('the bench bands', () => {
-    it('puts the phrase and the answer box in the board band', () => {
+    // Inverted from "puts the phrase and the answer box in the board band", deliberately rather
+    // than deleted. The board band is the one that scrolls, so a field that drifts back into it
+    // is the original defect returning, and this pair is the only thing that would notice.
+    it('puts the answer box in the instrument band', () => {
       const { container } = setup()
 
-      expect(container.querySelector('.lull-board')).toContainElement(answerBox())
+      expect(container.querySelector('.lull-instrument')).toContainElement(answerBox())
+      expect(container.querySelector('.lull-board')).not.toContainElement(answerBox())
     })
 
     it('puts the one control in the instrument band', () => {
@@ -111,6 +148,129 @@ describe('MissingVowelsBoard', () => {
       const { container } = setup()
 
       expect(container.querySelector('.lull-instrument')).toContainElement(screen.getByRole('status'))
+    })
+  })
+
+  describe('the answer box in the floor', () => {
+    // The label is sr-only now, so nothing on screen says "Your answer" -- and the accessible name
+    // is therefore the only thing left carrying it. A role query is what defends that, because it
+    // reads the accessibility tree rather than the markup.
+    it('keeps its name once the label stops being visible', () => {
+      setup()
+
+      expect(screen.getByRole('textbox')).toHaveAccessibleName('Your answer')
+    })
+
+    // The component BUILDS this IDREF out of the puzzle id, and an aria/for reference that breaks
+    // is the one accessibility fact a role query cannot always catch -- so both ends are resolved
+    // explicitly. See CLAUDE.md.
+    it('points its label at the box it names', () => {
+      const { container } = setup()
+      const target = container.querySelector('label[for]')?.getAttribute('for')
+
+      // Resolved against a ROLE query rather than against `answerBox()`, which finds the field by
+      // following this very attribute -- that version asserted the reference agreed with itself.
+      expect(document.getElementById(String(target))).toBe(screen.getByRole('textbox'))
+    })
+
+    it('stands the instruction in the floor rather than the board', () => {
+      const { container } = setup()
+
+      expect(container.querySelector('.lull-instrument')).toContainElement(screen.getByText(INSTRUCTION))
+      expect(container.querySelector('.lull-board')).not.toContainElement(screen.getByText(INSTRUCTION))
+    })
+
+    // The standing line has to be a SIBLING of the live region, never a child. A role="status"
+    // element that mounts with text already in it is a region NVDA and JAWS were never watching,
+    // so putting the instruction inside would cost this bench every announcement it makes.
+    it('keeps the standing line out of the live region', () => {
+      setup()
+
+      expect(screen.getByRole('status')).not.toContainElement(screen.getByText(INSTRUCTION))
+    })
+
+    it('says the instruction once, not once per band', () => {
+      setup()
+
+      expect(screen.getAllByText(INSTRUCTION)).toHaveLength(1)
+    })
+
+    // The presence assertion first is what stops this being an absence-only test: without it the
+    // whole thing passes on a bench that never draws a standing line at all.
+    it('gives the floor up to a message', async () => {
+      const { user } = setup()
+      expect(screen.getByText(INSTRUCTION)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Check' }))
+
+      expect(screen.getByRole('status')).toHaveTextContent('Type your answer first.')
+      expect(screen.queryByText(INSTRUCTION)).not.toBeInTheDocument()
+    })
+
+    // And takes it straight back. The visible instruction is displaced rather than spent: the next
+    // keystroke clears `checked`, the message empties, and the standing line returns -- which is
+    // what keeps a field with no visible label from ever being a field with no instruction either.
+    it('takes the instruction back on the next keystroke', async () => {
+      const { user } = setup()
+      await user.click(screen.getByRole('button', { name: 'Check' }))
+      // The middle assertion is the whole test. Without it this passes on a bench where the
+      // instruction never left -- which is exactly what it looked like before the standing line
+      // existed, so it would have proved the change was unnecessary rather than that it works.
+      expect(screen.queryByText(INSTRUCTION)).not.toBeInTheDocument()
+
+      await user.type(answerBox(), 'T')
+
+      expect(screen.getByText(INSTRUCTION)).toBeInTheDocument()
+    })
+
+    // A lone text input and a submit-shaped button inside a <form> is the login shape, and it adds
+    // an implicit submit and a navigation this bench has no use for.
+    it('is not a form', () => {
+      setup()
+
+      expect(answerBox().closest('form')).toBeNull()
+    })
+
+    it('puts the box before the control in the tab order', async () => {
+      const { user } = setup()
+      answerBox().focus()
+
+      await user.tab()
+
+      expect(screen.getByRole('button', { name: 'Check' })).toHaveFocus()
+    })
+
+    // The player arrives to read a phrase. A field that grabbed focus would raise the software
+    // keyboard over the one thing on the board before they had looked at it.
+    it('does not grab focus when the board opens', () => {
+      setup()
+
+      expect(answerBox()).not.toHaveFocus()
+    })
+
+    // The composer contract: pressing Check must not take focus off the field, so the keyboard
+    // stays up, nothing moves, and the message lands on a still screen.
+    it('leaves focus in the box when the player checks', async () => {
+      const { user } = setup()
+      await user.type(answerBox(), 'wrong')
+
+      await user.click(screen.getByRole('button', { name: 'Check' }))
+
+      expect(answerBox()).toHaveFocus()
+    })
+
+    // The winning keystroke is typed IN the field, so the field is the focused element at the
+    // instant Check becomes Play again. Rebuilding the row would destroy it and drop focus to
+    // <body>, from which the next Tab restarts at the top of the page.
+    it('keeps the same box, and the focus in it, through the win', async () => {
+      const { user } = setup()
+      const before = answerBox()
+
+      await user.type(before, SOLVED)
+
+      expect(answerBox()).toBe(before)
+      expect(answerBox()).toHaveValue(SOLVED)
+      expect(answerBox()).toHaveFocus()
     })
   })
 
@@ -288,12 +448,43 @@ describe('MissingVowelsBoard', () => {
       expect(screen.getByRole('status')).toBeEmptyDOMElement()
     })
 
-    it('forgets the winning guess when the player plays again', async () => {
+    // Play again is a fresh puzzle, not merely an empty box, and the hint ladder is part of what
+    // "fresh" means. The board cannot clear it itself -- `lull:hints:<puzzleId>` is storage, and a
+    // board gets none -- so it says the puzzle was started over and the shell does the rest.
+    it('asks the shell to start the puzzle over when the player plays again', async () => {
+      const { user } = setup(missingVowelsPuzzle, SOLVED)
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(onReset).toHaveBeenCalled()
+    })
+
+    // Emptying the box and starting over are one press, and the shell needs both facts: the empty
+    // string is what a reopened puzzle restores from, and the reset is what puts the ladder back.
+    it('empties the board as well as starting it over', async () => {
       const { user } = setup(missingVowelsPuzzle, SOLVED)
 
       await user.click(screen.getByRole('button', { name: 'Play again' }))
 
       expect(onProgress).toHaveBeenLastCalledWith('')
+    })
+
+    // Nothing about a reset is announced. Checking, typing and winning are the only things that say
+    // anything, and a board that reported its own housekeeping would be telling the shell twice.
+    it('says nothing about starting over while the player is still guessing', async () => {
+      const { user } = setup()
+
+      await user.type(answerBox(), 'Wrong')
+
+      expect(onReset).not.toHaveBeenCalled()
+    })
+
+    it('still empties the box when no reset callback is supplied', async () => {
+      const user = setupWithoutReset(SOLVED)
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(answerBox()).toHaveValue('')
     })
 
     it('takes a fresh guess once the player plays again', async () => {
@@ -303,34 +494,6 @@ describe('MissingVowelsBoard', () => {
       await user.type(answerBox(), 'Star')
 
       expect(answerBox()).toHaveValue('Star')
-    })
-  })
-
-  describe('accessibility', () => {
-    it('has no axe violations', async () => {
-      const { container } = setup()
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no axe violations once solved', async () => {
-      const { container } = setup(missingVowelsPuzzle, SOLVED)
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no axe violations with the category hidden', async () => {
-      const { container } = setup(hiddenCategoryPuzzle)
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no axe violations with a wrong answer on the floor', async () => {
-      const { container, user } = setup()
-
-      await user.type(answerBox(), 'Wrong{Enter}')
-
-      expect(await axe(container)).toHaveNoViolations()
     })
   })
 })

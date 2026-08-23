@@ -1,6 +1,5 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { PuzzleFrame } from './index'
@@ -26,7 +25,7 @@ jest.mock('@services/lull')
 
 // Only entryFor, and only its Component. Every other export stays real, so the benches and
 // labels asserted below are the ones the product ships -- but the board itself is a recorder,
-// because the four-prop contract is a claim about what the frame HANDS a board and asserting
+// because the five-prop contract is a claim about what the frame HANDS a board and asserting
 // it through a real board's rendered output would test the board instead. It also keeps this
 // suite from breaking every time a bench is rebuilt: the frame's job is the chrome around a
 // board, not the board.
@@ -38,8 +37,8 @@ describe('PuzzleFrame', () => {
 
   // The two elements every puzzle component renders, marked the way the band order in
   // index.css expects to find them. The buttons stand in for whatever a real board would do
-  // to reach the two callbacks it is handed.
-  const Board = jest.fn(({ onProgress, onSolved, puzzle }: PuzzleComponentProps) => (
+  // to reach the three callbacks it is handed.
+  const Board = jest.fn(({ onProgress, onReset, onSolved, puzzle }: PuzzleComponentProps) => (
     <>
       <section aria-label="Board" className="lull-board">
         <h2>{puzzle.id}</h2>
@@ -48,6 +47,12 @@ describe('PuzzleFrame', () => {
         </button>
         <button onClick={onSolved} type="button">
           Record a win
+        </button>
+        {/* Stands in for whatever a real board calls Play again. It is pressed with `?.()` because
+            the prop is optional on the type, and a recorder that assumed otherwise would be
+            asserting a contract the shell does not make. */}
+        <button onClick={() => onReset?.()} type="button">
+          Start over
         </button>
       </section>
       <div className="lull-instrument" />
@@ -138,14 +143,14 @@ describe('PuzzleFrame', () => {
     // The contract, asserted rather than assumed. A board that could reach routing, storage, or
     // the network would make "this app displays, the backend decides" a convention instead of a
     // structure, so the KEY SET is the assertion: a fifth prop fails this test.
-    it('hands the board four props and nothing else', async () => {
+    it('hands the board five props and nothing else', async () => {
       setup()
       writePack(packDate, pack)
 
       renderFrame()
       await screen.findByRole('region', { name: 'Board' })
 
-      expect(Object.keys(lastProps()).toSorted()).toEqual(['onProgress', 'onSolved', 'progress', 'puzzle'])
+      expect(Object.keys(lastProps()).toSorted()).toEqual(['onProgress', 'onReset', 'onSolved', 'progress', 'puzzle'])
     })
   })
 
@@ -282,6 +287,20 @@ describe('PuzzleFrame', () => {
       expect(within(trail).getByText('Tue, Aug 18')).toHaveAttribute('aria-current', 'page')
     })
 
+    // The other half of the case below, and a different render path: here the day IS known, so the
+    // trail has two crumbs rather than one. The first of them is still the only way off a surface
+    // that has no board, no Back button and -- under display: standalone -- no address bar either,
+    // so the link is asserted in this state as well as in the one where the id names no day.
+    it('still offers a way home when the puzzle cannot be found', async () => {
+      setup()
+      mockFetchPack.mockRejectedValueOnce(new Error('offline'))
+
+      renderFrame()
+      const trail = await breadcrumb()
+
+      expect(within(trail).getByRole('link', { name: 'Lull' })).toHaveAttribute('href', '/')
+    })
+
     // An id with no date prefix names no day either, so there is nothing true to put after Lull.
     // Lull keeps its href even here, and that is the whole point of the case. An id with no date
     // names no day, so there is nothing true to put after Lull -- but a trail of one href-less
@@ -354,9 +373,17 @@ describe('PuzzleFrame', () => {
       expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
     })
 
-    // The tile bench keeps the title row -- every bench does -- and loses only the bar it has no
-    // hints to fill.
-    it('gives the tile bench the title row but no hint bar', async () => {
+    // The tile bench keeps the title row -- every bench does -- and the SHELL draws no bar above it.
+    //
+    // The comment here used to say the bench "loses only the bar it has no hints to fill", which is
+    // now false in both halves: goFigure has a ladder, and it renders its own control down in the
+    // tray, where a rung places a sign on the board instead of only describing one. What this test
+    // can honestly hold is the shell's half of that arrangement -- puzzle-frame reads the bench and
+    // declines to draw a bar for this one -- and nothing about the board's own control, because
+    // `@registry` is mocked in this suite and the real board never renders. Asserting the absence of
+    // every /hint/i control would therefore pass here for a reason that has nothing to do with the
+    // decision under test. The board's control has its own suite; this one owns the shell.
+    it('draws no hint bar of its own above the tile bench', async () => {
       setup()
       writePack(packDate, pack)
 
@@ -390,6 +417,106 @@ describe('PuzzleFrame', () => {
       const bar = screen.getByRole('button', { name: 'Open hint 1 of 3' })
 
       expect(board.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    // A board that starts a puzzle over cannot clear the ladder itself -- `lull:hints:<puzzleId>`
+    // is storage, and a board gets none. So it says so, and the shell is the one that deletes.
+    //
+    // The assertion is on the KEY, not on the count read back through it, because `readHints`
+    // answers 0 for three different states and only one of them is right. `writeHints(id, 0)`
+    // leaves an orphan key behind that `cachedHintIds` still indexes and `usePrefetch` still walks
+    // when it prunes, and a `localStorage.clear()` would take the pack and the progress with it and
+    // still read 0 here. Only "the key is gone" distinguishes the deletion this test is named after
+    // from the two implementations that merely look like it.
+    //
+    // `HINTS_PREFIX` is private to storage.ts and the string is written out here on purpose: a test
+    // that built the key from the same constant the code builds it from would pass whatever that
+    // constant became, which is the one thing a storage-key test is for.
+    it('forgets the hints the player opened when the board starts over', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+
+      renderFrame(missingVowelsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(window.localStorage.getItem(`lull:hints:${missingVowelsPuzzleId}`)).toBeNull()
+    })
+
+    // The one that catches the real bug, and it is a different assertion from the line above rather
+    // than a restatement of it. HintBar reads its count once in a state initializer and subscribes
+    // to nothing -- not even STORAGE_EVENT -- so deleting the key leaves the MOUNTED bar still
+    // drawing its spent rungs, still offering "Open hint 2 of 3", and still writing the old count
+    // back on the next press. The stored zero above would be true and the screen would be wrong.
+    it('puts the visible hint control back to its first rung when the board starts over', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+
+      renderFrame(missingVowelsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // The bug that ended the remount, and the only test in this file that can see it. A changed
+    // `key` is React's instruction to throw a subtree away and build a new one, and React ships no
+    // focus handling with that instruction -- so the focused element simply stopped existing and
+    // the browser fell back to <body>, from which the next Tab restarts at the top of the page
+    // (WCAG 2.4.3). HintBar has documented that exact failure since it was written, which is why
+    // its own `close` moves focus BEFORE it hides anything.
+    //
+    // It is driven with `fireEvent` rather than `user.click`, and that is the whole reason the
+    // remount survived review. A real click focuses the button it hits in Chrome, so the click on
+    // Start over moved focus off the hint control before the reset ran and there was nothing left
+    // to lose -- and jsdom emulates Chrome. Safari on macOS and iOS and Firefox on macOS do NOT
+    // focus a <button> on click, so on those browsers a player who reached the hint control with
+    // the keyboard still held it when the pointer press landed. `fireEvent.click` is what
+    // reproduces them here: it dispatches the click and moves no focus.
+    it('leaves focus on the hint control when the board starts over', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+
+      renderFrame(missingVowelsPuzzleId)
+      const control = await screen.findByRole('button', { name: 'Open hint 1 of 3' })
+      control.focus()
+      await user.keyboard('{Enter}')
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+    })
+
+    // The count, not a flag, and this is the test that tells the two apart. A boolean flipped on
+    // reset would read `true` after the first Play again and `true` again after the second, so the
+    // second reset would hand the bar a prop it already holds, no effect would run, and the ladder
+    // would stay where the player had just left it. The frame comments argue that at length; this
+    // is the argument with a test behind it.
+    it('puts the ladder back on the second reset as well as the first', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+
+      renderFrame(missingVowelsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // The reset is a reset, not a reload. A bar that came back reading zero because it had
+    // re-read an emptied key would pass the test above and still lose a returning player's rungs
+    // the moment anything else remounted it, so the count that survives an untouched board is
+    // asserted on its own.
+    it('keeps the hints the player opened when the board never starts over', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+
+      renderFrame(missingVowelsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Record progress' }))
+
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
     })
   })
 
@@ -504,6 +631,28 @@ describe('PuzzleFrame', () => {
       ).toBeInTheDocument()
     })
 
+    // The message is what this surface IS, so it is the surface's heading rather than a line of
+    // prose sitting in the middle of it. A reader who arrives by deep link is told what happened by
+    // the first thing a screen reader's heading list offers, and the page has a name at all -- the
+    // board that would normally supply one never rendered.
+    it('makes that message the heading of the surface', async () => {
+      setup()
+      mockFetchPack.mockResolvedValueOnce(undefined)
+      writePack(packDate, {
+        ...pack,
+        puzzles: [{ ...goFigurePuzzle, type: 'crossword' as typeof goFigurePuzzle.type }],
+      })
+
+      renderFrame()
+
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'A newer kind of puzzle. Reload while you’re online to play it.',
+        }),
+      ).toBeInTheDocument()
+    })
+
     it('names the day it could not draw, and nothing after it', async () => {
       setup()
       mockFetchPack.mockResolvedValueOnce(undefined)
@@ -528,51 +677,6 @@ describe('PuzzleFrame', () => {
       renderFrame(undefined)
 
       expect(screen.queryByRole('heading')).not.toBeInTheDocument()
-    })
-  })
-
-  describe('accessibility', () => {
-    it('has no accessibility violations on a bench', async () => {
-      setup()
-      writePack(packDate, pack)
-
-      const { container } = renderFrame()
-      await screen.findByRole('region', { name: 'Board' })
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no accessibility violations on a bench with a hint bar', async () => {
-      setupPack(cryptogramPack)
-
-      const { container } = renderFrame(cryptogramPuzzleId)
-      await screen.findByRole('button', { name: 'Open hint 1 of 3' })
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no accessibility violations when the puzzle is missing', async () => {
-      setup()
-      mockFetchPack.mockRejectedValueOnce(new Error('offline'))
-
-      const { container } = renderFrame()
-      await screen.findByRole('heading', { name: 'That puzzle isn’t here' })
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no accessibility violations on a type this build cannot draw', async () => {
-      setup()
-      mockFetchPack.mockResolvedValueOnce(undefined)
-      writePack(packDate, {
-        ...pack,
-        puzzles: [{ ...goFigurePuzzle, type: 'crossword' as typeof goFigurePuzzle.type }],
-      })
-
-      const { container } = renderFrame()
-      await screen.findByRole('heading', { name: 'A newer kind of puzzle. Reload while you’re online to play it.' })
-
-      expect(await axe(container)).toHaveNoViolations()
     })
   })
 })

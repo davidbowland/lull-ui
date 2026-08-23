@@ -28,7 +28,7 @@ const PuzzlePage = (): React.ReactNode => {
         <title>Lull</title>
         <meta content="A puzzle to pass the time" name="description" />
         {/* Dated puzzle pages are unbounded in number and dead within the week.
-            Deliberately NOT disallowed in robots.txt: link preview crawlers honour it,
+            Deliberately NOT disallowed in robots.txt: link preview crawlers honor it,
             and blocking /p/ would break the unfurl on every shared puzzle. */}
         <meta content="noindex, follow" name="robots" />
         <meta content="Lull" property="og:title" />
@@ -52,9 +52,13 @@ const PuzzlePage = (): React.ReactNode => {
           both edges, and the board's own plate is the working surface rather than a card laid on
           one. A column that padded them would stop every one of those rules 16px short. So this
           element carries only the measure. See index.css, where the alternative -- padding the
-          column and cancelling it with a negative margin -- is recorded along with why it cannot
-          work inside a scroll container. */}
-      <main className="lull-page mx-auto flex min-h-dvh w-full max-w-[720px] flex-col">
+          column and canceling it with a negative margin -- is recorded along with why it cannot
+          work inside a scroll container.
+
+          The full-height floor is `.lull-page` in index.css rather than `min-h-dvh` here: it
+          subtracts --lull-kb so the column ends where an open software keyboard begins, which is
+          a term a utility cannot carry. */}
+      <main className="lull-page mx-auto flex w-full max-w-[720px] flex-col">
         <PuzzleFrame puzzleId={puzzleId} />
       </main>
     </>

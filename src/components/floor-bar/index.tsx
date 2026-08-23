@@ -9,8 +9,8 @@ export interface FloorBarProps {
   resting?: string
   // `seam` is the constant: exactly --lull-seam tall, whatever is in it. `compact` is the one
   // exception in the product and it is stated rather than hidden -- see the writing bench, whose
-  // instrument is a single button and whose floor used to reserve a keypad's worth of near-black
-  // for an on-screen keyboard it does not have.
+  // instrument is one row (the box you type in and the control that checks it) and whose floor used
+  // to reserve a keypad's worth of near-black for an on-screen keyboard it does not have.
   variant?: 'compact' | 'seam'
 }
 

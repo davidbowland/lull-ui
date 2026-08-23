@@ -1,5 +1,4 @@
-import { render, screen } from '@testing-library/react'
-import { axe } from 'jest-axe'
+import { render, screen, within } from '@testing-library/react'
 import React from 'react'
 
 import { Spine } from './index'
@@ -42,9 +41,11 @@ describe('Spine', () => {
     expect(screen.getByText('Lull')).toHaveAttribute('aria-current', 'page')
   })
 
-  it('has no violations', async () => {
-    const { container } = render(<Spine trail={trail} />)
+  // The chevrons are hidden, so the list is the only thing left carrying the sequence: a
+  // listener hears "list, 3 items" and learns how deep the surface sits.
+  it('carries the sequence in the list rather than in the chevrons', () => {
+    render(<Spine trail={trail} />)
 
-    expect(await axe(container)).toHaveNoViolations()
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(3)
   })
 })

@@ -103,6 +103,21 @@
      Only a ceiling. Below it the bench is whatever the window is, so nothing changes on a phone,
      and a bench whose board wants more than 460 scrolls that band exactly as it always did. */
   --lull-bench-max: 868px;
+
+  /* How much of the window a software keyboard is covering, written from JS by useKeyboardInset
+     and zero the rest of the time. It is a token rather than an inline style on the bench because
+     three declarations across two elements read it, and because a geometry fact that moves the
+     seam belongs beside the other numbers that do.
+
+     Declared here so the token has a value before any JS runs, and so the number lives beside the
+     other geometry rather than being repeated as a `, 0px` at every read site. That is the same
+     reason --lull-gutter-* is declared once, and it is worth being clear about what it does NOT
+     buy: a declaration and a fallback both answer an UNDECLARED token, and neither answers a
+     declared one that does not parse. `calc(100dvh - <garbage>)` is invalid at computed-value
+     time, and max-height does not inherit, so it falls to its initial `none` and the ceiling is
+     gone entirely rather than merely wrong. What makes that unreachable is useKeyboardInset,
+     which builds every value it writes as a number with `px` appended. */
+  --lull-kb: 0px;
 }
 
 html.dark {
@@ -190,6 +205,20 @@ body {
    and the chrome sinks. */
 .lull-bench {
   background-color: var(--lull-plate);
+  /* THE CEILING, moved here off the frame's `max-h-dvh` utility, because it now has a term the
+     utility cannot express. A ceiling of 100dvh is a promise about a viewport the software
+     keyboard does not shrink: under it the floor -- and on the writing bench the answer field in
+     it -- sits behind the keyboard. Subtracting --lull-kb measures the bench against the space
+     that is actually visible instead.
+
+     The page's min-height carries the same term for the same reason; without it the ≥768px
+     centering below would center the bench in the window and push it under the keyboard. */
+  max-height: calc(100dvh - var(--lull-kb));
+}
+
+/* The page column. Only /p/<id> carries this class. */
+.lull-page {
+  min-height: calc(100dvh - var(--lull-kb));
 }
 
 /* The title row carries the bench name and, opposite it, the difficulty and the length -- the two
@@ -199,7 +228,7 @@ body {
    It is drawn on the bench's own plate with NO rule under it, which is what keeps the working
    surface continuous. The bands that are ruled off are the ones drawn in the darker ground -- the
    breadcrumb above and, on the two benches that have one, the sign row below. They are told apart
-   by their ground, not by a border on their neighbour.
+   by their ground, not by a border on their neighbor.
 
    The sign row belongs to the PUZZLE COMPONENT rather than to this file, because both facts on it
    (the category, and how much of the board is filled) are read off the puzzle's own data, which
@@ -266,7 +295,7 @@ body {
    the page's 16px-a-side gutter it is 40.3px, which is under the 44x44 touch target this
    project holds itself to, on the narrowest device and for every key on the board.
 
-   Cancelled with the gutter token rather than a literal, so the two can never drift: if
+   Canceled with the gutter token rather than a literal, so the two can never drift: if
    the page's inset changes, this follows it. The board and every other band keep the
    gutter, because text against a screen edge is a different and worse problem. */
 /* The one band that takes NO gutter, only the physical inset. The keypad is 7 columns sized so
@@ -299,17 +328,17 @@ body {
 
    So the bench is CAPPED rather than stretched, and the surplus above the cap becomes margin. The
    board still flexes, exactly as it does on a phone — it simply stops growing at
-   --lull-bench-max, and the window's leftover height is centred around the whole bench instead of
+   --lull-bench-max, and the window's leftover height is centered around the whole bench instead of
    being poured into one band.
 
-   The first attempt sized the board by its content and let auto margins do the centring, and it was
+   The first attempt sized the board by its content and let auto margins do the centering, and it was
    wrong twice over. The margins ate everything the board did not use, so a 900px window opened with
    135px of nothing above the breadcrumb; and a board with no slack in it left the hint sheet — which
    is out of flow and drawn UPWARD from the hint bar — nowhere to land but on top of the phrase. Both
    are the same mistake: space the reader needs went to the margins. Capping the bench gives it back
    to the board, where an open hint has room to sit under the squares rather than over them.
 
-   Centring is `justify-content` on the page, NOT `margin-block: auto` on the bench, and the two are
+   Centering is `justify-content` on the page, NOT `margin-block: auto` on the bench, and the two are
    not interchangeable. Per flexbox, free space distributed to auto margins is taken BEFORE flex
    growth — an item with `margin: auto` does not grow at all — so auto margins here would pin the
    board back to its content size and undo the cap.
@@ -325,11 +354,14 @@ body {
     justify-content: center;
   }
 
-  /* min() with 100dvh restated, not left to the bench's own max-h-dvh: these rules are unlayered
-     and Tailwind's utilities are not, so this declaration outranks that one and would otherwise
-     let the bench outgrow a short window. */
+  /* min() with 100dvh restated, not left to the base `.lull-bench` rule above: this declaration
+     sets the same property on the same element and simply replaces that one, so a cap named here
+     without 100dvh in it would let the bench outgrow a short window.
+
+     --lull-kb is restated here for the same reason 100dvh is: this declaration replaces the base
+     one wholesale, so a term dropped here is a term the desktop bench does not have. */
   .lull-bench {
-    max-height: min(100dvh, var(--lull-bench-max));
+    max-height: min(calc(100dvh - var(--lull-kb)), var(--lull-bench-max));
   }
 }
 

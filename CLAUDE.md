@@ -21,8 +21,23 @@ pushed. What catches drift is the vendored tests running in this suite and a war
 neither calls the other.
 
 **A puzzle component gets no router, no storage, and no API client.** It receives
-`{ puzzle, progress, onProgress, onSolved }` and nothing else. The shell owns routing, persistence,
-and the network. This is what keeps the display-only rule structural rather than aspirational.
+`{ puzzle, progress, onProgress, onReset, onSolved }` and nothing else. The shell owns routing,
+persistence, and the network. This is what keeps the display-only rule structural rather than
+aspirational.
+
+`onReset` is a lifecycle signal, not game state — "the player started this puzzle over." **A board
+may name an event; it may never name a key, a route, or an endpoint.** That is the line five props
+has to stay on, and it is the line worth stating, because what changed with `onReset` is that a
+board can now cause a storage write it does not understand. "The board learns nothing back from it"
+is true and does not do the work: it would also permit `onSaveDraft(text)`, which hands the shell a
+payload and a place to put it. `onReset()` takes no argument and names no destination, so deleting
+`lull:hints:<puzzleId>` and resetting the hint bar stay entirely the shell's business.
+
+It exists because empty progress cannot carry that meaning. Three boards write `''` for reasons that
+are not a reset: `encode({})` in `cryptogram/mapping.ts` when the last letter is cleared,
+`missingvowels` when the text is deleted, and goFigure's Undo and Clear — which under the current
+grammar write `''` only when no rung has been spent, since a cleared board with rungs spent stores
+`_______|2|`.
 
 **Never let the service worker answer for the manifest.** `public/sw.js` bails out before
 intercepting `/site.webmanifest`. Firefox fetches the manifest inside `requestIdleCallback` with no
@@ -46,11 +61,57 @@ no content that relies on color alone. Run an accessibility audit before marking
 it is a per-task gate, not a cleanup pass. A board built without labeled controls is a rewrite, not
 a patch.
 
+**The audit means naming the properties and asserting them, never running `jest-axe`.** That
+package is not a dependency of this repo and must not become one. Work out what each state of the
+UI actually promises a screen reader or a keyboard, then pin each promise with an observable
+assertion: accessible names, roles, focus destinations, live-region text, tab order, `aria-current`,
+`aria-expanded`, `aria-disabled`, `aria-hidden`, `hidden`. `getByRole(..., { name })` reads the
+accessibility tree, so a role query IS an accessibility assertion — one that names the property it
+is defending and fails with a sentence a reader can act on.
+
+A rule engine cannot do this work. It passes markup that is valid and useless — a correctly formed
+button labeled "Button", a live region that announces at the wrong moment, a roving `tabIndex`
+pinned to the first cell — and under jsdom it never sees layout at all, so contrast and
+scrollable-region rules return nothing either way.
+
+**An IDREF is the one thing a role query cannot always defend, and only one kind of IDREF.** Break
+`aria-labelledby` or `htmlFor` and the element loses its accessible name, so a
+`getByRole(..., { name })` somewhere fails and tells you. `aria-controls` contributes nothing to a
+name, so it can rot in total silence — every query keeps passing while the relationship it asserts
+is gone. Resolve it explicitly wherever one exists:
+
+```ts
+const id = control.getAttribute('aria-controls')
+expect(document.getElementById(id ?? '')).toBeInTheDocument()
+```
+
+That is observable DOM, not a style assertion, and it is asserted today at both ends of the only
+such reference in the app — the hint sheet's, which `gofigure` follows to decide whether to freeze
+its keyboard.
+
+**Duplicate `id`s** genuinely have no behavioral equivalent, but nothing here can produce one: the
+only id sources are `useId()`, which React makes unique per instance, and `answer-${puzzle.id}` in
+Missing Vowels, where the id is unique per puzzle and the shell mounts one board. It becomes a real
+risk the day two boards render at once. Where a component builds an id or an IDREF, say so in a
+comment beside the code and assert both ends.
+
 ## Copy and UX Writing
 
 **All user-facing copy, CTAs, labels, and error messages must be reviewed by a UX expert and by
 Steven Pinker's principles** (plain language, active voice, concrete nouns, no jargon, no weasel
 words). Apply the suggested changes unless they conflict with technical constraints.
+
+**American English, in prose and in code comments.** `color`, `behavior`, `center`, `gray`,
+`labeled`, `canceled`, `-ize` over `-ise`. The comments in this repo are its documentation and they
+run to thousands of words, so a mixed spelling convention is a thing every future edit has to guess
+at.
+
+**The exception is anything bound to an external contract, and it is not optional.** `aria-labelledby`
+keeps its two Ls — it is an ARIA attribute name, and "correcting" it silently removes an element's
+accessible name with no test failure anywhere, because a role query that never had a name to find
+goes on not finding one. The same holds for a third-party API field, a CSS property, a package name,
+and text quoted from someone else. Spelling rules apply to prose; identifiers belong to whoever
+defined them.
 
 ## Testing Standards
 

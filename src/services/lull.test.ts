@@ -7,7 +7,7 @@ jest.mock('axios', () => ({
   create: jest.fn(() => ({ get: (...args: any[]) => mockGet(...args) })),
 }))
 
-// Storage is deliberately NOT mocked here. Cache-first is the behaviour under test, and
+// Storage is deliberately NOT mocked here. Cache-first is the behavior under test, and
 // against a mock it would be a claim about a call rather than about what the device holds.
 describe('fetchPack', () => {
   const setup = (): void => {

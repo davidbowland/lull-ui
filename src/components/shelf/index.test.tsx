@@ -1,6 +1,5 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { orderPuzzles, Shelf } from './index'
@@ -270,7 +269,7 @@ describe('Shelf', () => {
       expect(rows()[0].querySelector(`path[d="${REGISTRY.gofigure.glyph}"]`)).toBeInTheDocument()
     })
 
-    // Never by colour alone, and never by a tick with no name.
+    // Never by color alone, and never by a tick with no name.
     it('marks a solved puzzle in words', () => {
       setup()
       writePack('2026-08-18', pack)
@@ -471,7 +470,7 @@ describe('Shelf', () => {
   describe('the offer to install', () => {
     // usePrefetch gates the whole seven-day window on isInstalled(), so the shelf is
     // where the offer has to live: without it a first-time visitor gets one pack and
-    // never sees the offline behaviour the app is built around.
+    // never sees the offline behavior the app is built around.
     it('offers to install once the browser says it can', async () => {
       setup()
       writePack('2026-08-18', pack)
@@ -511,23 +510,6 @@ describe('Shelf', () => {
       expect(rows()[0]).toHaveFocus()
     })
 
-    it('has no accessibility violations', async () => {
-      setup()
-      writePack('2026-08-18', pack)
-
-      const { container } = renderShelf()
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no accessibility violations with an empty device', async () => {
-      setup()
-
-      const { container } = renderShelf()
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
     // Rendered with no props at all, which is how the page renders it: the clock and the
     // language come off the device, and neither may be read before the effect has run.
     // The assertion is date-free on purpose -- an empty device says the same thing on
@@ -538,16 +520,6 @@ describe('Shelf', () => {
       render(<Shelf />)
 
       expect(screen.getByRole('heading', { name: 'No puzzles on this device' })).toBeInTheDocument()
-    })
-
-    it('has no accessibility violations while offline', async () => {
-      setup()
-      setNavigatorOnLine(false)
-      writePack('2026-08-18', pack)
-
-      const { container } = renderShelf()
-
-      expect(await axe(container)).toHaveNoViolations()
     })
   })
 

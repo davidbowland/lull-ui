@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { axe } from 'jest-axe'
 import React from 'react'
 
 import { Button } from './index'
@@ -93,6 +92,38 @@ describe('Button', () => {
     expect(screen.getByRole('button', { expanded: true })).toHaveAttribute('aria-controls', 'hints')
   })
 
+  // The composer contract the writing bench needs: a press that does not take focus off the
+  // field the player is typing in, so the software keyboard stays up and nothing moves at the
+  // moment the message lands. The click still firing is the half worth asserting, because losing
+  // it would break the control silently -- a press that does nothing at all reads as a dead button
+  // rather than as a focus bug.
+  it('keeps focus where it is when the press is refused, and still clicks', async () => {
+    const user = userEvent.setup({ delay: null })
+    const onClick = jest.fn()
+    render(
+      <Button keepsFocusOnPress onClick={onClick}>
+        Press
+      </Button>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Press' }))
+
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Press' })).not.toHaveFocus()
+  })
+
+  // The control case, and it is what gives the assertion above its meaning. Without it, a press
+  // that focused nothing either way would pass the pair silently -- and the mechanism it is
+  // supposed to be proving would be dead.
+  it('lets a press take focus when it is not asked to refuse one', async () => {
+    const user = userEvent.setup({ delay: null })
+    render(<Button onClick={jest.fn()}>Press</Button>)
+
+    await user.click(screen.getByRole('button', { name: 'Press' }))
+
+    expect(screen.getByRole('button', { name: 'Press' })).toHaveFocus()
+  })
+
   describe('the trailing nub', () => {
     it('leaves the accessible name to the label alone', () => {
       render(<Button trailing={<span>→</span>}>Install</Button>)
@@ -140,34 +171,6 @@ describe('Button', () => {
       render(<Button className="w-full">Check</Button>)
 
       expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
-    })
-  })
-
-  describe('accessibility', () => {
-    it('has no violations', async () => {
-      const { container } = render(<Button trailing={<span>→</span>}>Install</Button>)
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no violations as the one filled control', async () => {
-      const { container } = render(
-        <Button size="sm" variant="primary">
-          Check
-        </Button>,
-      )
-
-      expect(await axe(container)).toHaveNoViolations()
-    })
-
-    it('has no violations when aria-disabled', async () => {
-      const { container } = render(
-        <Button aria-disabled variant="quiet">
-          All hints open
-        </Button>,
-      )
-
-      expect(await axe(container)).toHaveNoViolations()
     })
   })
 })

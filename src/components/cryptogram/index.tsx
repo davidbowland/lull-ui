@@ -157,7 +157,7 @@ const SQUARE =
 // about. And it was an `outline`, which is the property index.css's global focus ring sets -- an
 // unlayered rule that outranks any Tailwind utility, so the caret's own mark vanished under the
 // focus ring on every square the player typed into. A ring is a box-shadow: the two marks now
-// coexist, and the caret is still stated in aria-current so the distinction never rides on colour.
+// coexist, and the caret is still stated in aria-current so the distinction never rides on color.
 //
 // --lull-accent on --lull-raised is a pair contrast.test.ts already holds to 4.5:1, well over the
 // 3:1 a boundary owes 1.4.11, so this introduces no pair that needs registering there.
@@ -165,7 +165,7 @@ const SQUARE_CARET = 'inset-ring-2 inset-ring-[var(--lull-accent)]'
 
 // Never --lull-hair: that token is decorative and may not draw the boundary that identifies a
 // control. The selected border is --lull-accent and is stated in aria-pressed as well, so the
-// selection is never carried by colour alone -- and the caption follows the border into the accent
+// selection is never carried by color alone -- and the caption follows the border into the accent
 // for the same reason a spent key annotates itself: the mark and its label move together.
 const CIPHER = 'leading-none tracking-[0.09em] text-[var(--lull-muted)]'
 const CIPHER_SELECTED = 'leading-none tracking-[0.09em] font-semibold text-[var(--lull-accent)]'
@@ -316,7 +316,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
 
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0
-      // A hidden or not-yet-laid-out box reports zero, and honouring that collapses every square.
+      // A hidden or not-yet-laid-out box reports zero, and honoring that collapses every square.
       if (width > 0) setAvailable(width)
     })
     observer.observe(board)
@@ -344,7 +344,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
 
   const solved = isSolved(ciphertext, mapping, answer)
 
-  // Initialised with the MOUNT-TIME value, so a board restored into a solved mapping does not report
+  // Initialized with the MOUNT-TIME value, so a board restored into a solved mapping does not report
   // a solve that already happened -- the shell marked it solved when the player actually won. Every
   // later transition into solved does report, because the board stays interactive and can be
   // re-solved.
@@ -588,7 +588,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
 
     // A redundant keystroke is FREE. The advance skips the run it filled, so this is not the way
     // SEEK gets spelled any more -- it is the player who says the word out loud as they type it, or
-    // who taps the pad key labelled `= V` to check what V is on. Under apply's row 4 the letter a
+    // who taps the pad key labeled `= V` to check what V is on. Under apply's row 4 the letter a
     // square already shows is the one that ERASES it, so without this intercept both of those
     // gestures would empty a run the player was only reading. Nothing is assigned and the caret
     // moves on. Ordered after the null guard because it has to read squares[cursor] to ask its

@@ -36,8 +36,37 @@ export interface Pack {
 
 export type Operator = '+' | '-' | '*' | '/'
 
+export type OperatorSlot = 0 | 1 | 2
+
+// The 0-based operator index, left to right, so slot 2 is the rightmost sign -- the one a player
+// would call op3. There is no cell index here; what a board does with a slot is the board's business.
+export interface GoFigureHintMetadata {
+  operator: Operator
+  slot: OperatorSlot
+}
+
+// OPTIONAL here and required on the goFigure narrowing below. That is what lets a shared renderer
+// typed on HintLadder read a hint without a type error while the board still gets a required field.
+//
+// `text` is authored by the backend and rendered VERBATIM. This app derives no hint copy.
+// `metadata.operator` is ASCII and is never rendered as itself -- it goes through OPERATOR_SYMBOLS
+// to draw a cell and OPERATOR_NAMES to name one.
+export interface Hint {
+  metadata?: GoFigureHintMetadata
+  text: string
+}
+
+export interface GoFigureHint extends Hint {
+  metadata: GoFigureHintMetadata
+}
+
+export type GoFigureHintLadder = [GoFigureHint, GoFigureHint, GoFigureHint]
+
 export interface GoFigureData {
   goal: number
+  // REQUIRED. Every pack is rebuilt on deploy, so there is no puzzle without it and no reason for a
+  // read site to branch on its absence.
+  hints: GoFigureHintLadder
   bank: number[] // each digit used exactly once
   operators: Operator[] // reusable
   acceptedSolutions: string[] // e.g. "6+9+7*7"
@@ -57,9 +86,16 @@ export interface GoFigureData {
 // back light on a single tag produce zero puzzles of a type.
 export type PhraseShape = 'compact' | 'idiom' | 'quote' | 'title'
 
-// Exactly three, ordered least to most revealing. The count is checked once, at the parse boundary
-// in phrase-checks; the tuple carries that guarantee to every read site downstream.
-export type HintLadder = [string, string, string]
+// Exactly three. The count is checked once, at the parse boundary; the tuple carries that guarantee
+// to every read site downstream.
+//
+// A rung index is NOT a slot index. lull-api orders rungs by how much each reveals, so difficulties
+// 4 and 5 run slots 1, 0, 2. Never write hints[slot].
+export type HintLadder = [Hint, Hint, Hint]
+
+// What the MODEL returned, which is not what goes on the wire. Keeping the two named apart is what
+// stops a prose gate quietly running over objects.
+export type PhraseHints = [string, string, string]
 
 // 5 = a general audience recognizes it instantly, 1 = obscure but fair. Set by the REVIEWER, never
 // by the generator: a generator asked to rate its own output is grading its own work. Defaults to 3
@@ -75,7 +111,7 @@ export interface Phrase {
   // used to be, so keeping both would squeeze the ladder into the narrow band between them and make
   // rung 1 duplicate whatever is already on screen.
   category: string
-  hints: HintLadder
+  hints: PhraseHints
   familiarity: Familiarity
 }
 
@@ -126,6 +162,18 @@ export type PuzzleProgress = string
 
 export interface PuzzleComponentProps<T = unknown> {
   onProgress: (progress: PuzzleProgress) => void
+  // "The player started this puzzle over." A LIFECYCLE signal, not game state: it carries no hint
+  // knowledge in either direction — the board does not learn that a ladder exists and the shell
+  // does not learn what the board holds — so the display-only rule still holds with five props.
+  //
+  // Empty progress cannot be this signal, which is the tempting zero-prop alternative. Three boards
+  // write '' for reasons that are not a reset: cryptogram's encode({}) in mapping.ts when the last
+  // letter is cleared, missingvowels when the text is deleted, and goFigure's own Undo and Clear. A
+  // shell that treated '' as "start over" would wipe a player's spent rungs on a keystroke.
+  //
+  // OPTIONAL, so every board that predates it compiles and renders unchanged. A board that has no
+  // replay affordance — cryptogram today — simply never calls it.
+  onReset?: () => void
   onSolved: () => void
   progress: PuzzleProgress | null
   puzzle: Puzzle<T>
