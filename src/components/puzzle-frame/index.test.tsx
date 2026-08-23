@@ -373,6 +373,35 @@ describe('PuzzleFrame', () => {
       expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
     })
 
+    // The shell hands the bar the answer as well as the ladder, so a player who spends all three
+    // rungs and still cannot see it has somewhere left to go. The bar composes nothing -- the
+    // sentence is `answerOf`'s -- so this is the wire-up, asserted through the one thing that can
+    // observe it: the control the bar only offers when it has been given a solution.
+    it('gives the bar the answer to offer once the ladder is spent', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+      renderFrame(missingVowelsPuzzleId)
+
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+
+      expect(screen.getByRole('button', { name: 'Show answer' })).toBeInTheDocument()
+    })
+
+    it('shows the answer the pack shipped', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(phrasePack)
+      renderFrame(missingVowelsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answer is The Empire Strikes Back.')).toBeInTheDocument()
+    })
+
     // The tile bench keeps the title row -- every bench does -- and the SHELL draws no bar above it.
     //
     // The comment here used to say the bench "loses only the bar it has no hints to fill", which is

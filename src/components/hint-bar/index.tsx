@@ -30,6 +30,15 @@ export interface HintBarProps {
   // goFigure bench, whose owner resets the ladder by moving `control.opened` -- never enters the
   // effect at all.
   resetSignal?: number
+  // The answer, composed by the CALLER and rendered verbatim -- the same contract `hint.text` has,
+  // for the same reason. A phrase bench's answer is its phrase and goFigure's is an expression drawn
+  // with × and ÷ rather than * and /, so the one thing they have in common is being a sentence
+  // somebody else wrote. This bar renders one and derives neither.
+  //
+  // OPTIONAL, and its absence is a real state rather than a migration artifact: a bench with no
+  // answer to give ends its ladder exactly where it always did, with the control turning into the
+  // sheet's toggle. Nothing here invents a fallback.
+  solution?: string
   // `docked` is the shell's own band between the board and the instrument, so it is a fixed strip
   // that neither gives nor takes a pixel. `inline` is for the tile bench, which has no band of its
   // own and sets the bar inside its own column. `bare` is for a bench that puts the bar in a row it
@@ -214,9 +223,26 @@ interface ControlLabel {
   visible: string
 }
 
-const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number): ControlLabel => {
+const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSolution: boolean): ControlLabel => {
+  // THE ONE STATE WHOSE TWO HALVES ARE THE SAME STRING BY WIDTH RATHER THAN BY NECESSITY, unlike
+  // "Hide hints" above it. There is a shorter noun -- "Answer" -- and it is not taken: at eleven
+  // characters "Show answer" is exactly as wide as "Hint 1 of 3", which is the label the goFigure
+  // row was measured against, so it buys nothing and costs the verb.
+  //
+  // It is returned from TWO states, and they are different presses saying one true thing. Shut and
+  // already revealed, the press puts the sheet back up; open with every rung spent, the press spends
+  // the reveal. Both end with the answer on screen, which is what the label promises and the only
+  // thing this control has ever promised -- "the label always names what the press will DO".
+  const revealed = hasSolution && opened > hints.length
+  if (revealed && !isOpen) return { name: 'Show answer', visible: 'Show answer' }
+
   if (!isOpen && opened > 0) {
-    const rungs = `${opened} hint${opened === 1 ? '' : 's'}`
+    // CLAMPED, and the clamp is defensive rather than load-bearing: the branch above catches every
+    // revealed count this bar can produce. What it guards is a count of one past the ladder arriving
+    // with no `solution` beside it -- a caller that dropped the prop but kept the stored count -- which
+    // would otherwise paint "4 hints" over a ladder that has three.
+    const spent = Math.min(opened, hints.length)
+    const rungs = `${spent} hint${spent === 1 ? '' : 's'}`
     return { name: `Show ${rungs}`, visible: rungs }
   }
   // The shared half is the ORDINAL and not the word, so each form can start in its own register:
@@ -234,6 +260,10 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number): Contr
     const ordinal = `${opened + 1} of ${hints.length}`
     return { name: `Open hint ${ordinal}`, visible: `Hint ${ordinal}` }
   }
+  // The ladder is spent and there is still something left to give, so the control offers it rather
+  // than becoming a toggle. This is the state the reveal was built for: three rungs paid, the puzzle
+  // still not seen, and -- before this -- nowhere left to go.
+  if (hasSolution && !revealed) return { name: 'Show answer', visible: 'Show answer' }
   return { name: 'Hide hints', visible: 'Hide hints' }
 }
 
@@ -257,6 +287,7 @@ export const HintBar = ({
   hints,
   puzzleId,
   resetSignal = 0,
+  solution,
   variant = 'docked',
 }: HintBarProps): React.ReactNode => {
   // Read once, at mount. The frame keys the view on the puzzle id, so a different puzzle is a
@@ -314,11 +345,19 @@ export const HintBar = ({
 
   const isSpent = opened >= hints.length
 
+  // The reveal has ITS OWN COUNT rather than a boolean beside the ladder's, and that is what makes
+  // starting over work without a line of code: the shell deletes `lull:hints:<puzzleId>` and the
+  // board writes '', so one number carries the rungs and the answer and one erasure takes both.
+  // A separate `revealed` flag would need its own store, its own reset and its own validation, and
+  // could disagree with the count in a state no test would think to write.
+  const hasSolution = solution !== undefined
+  const isRevealed = hasSolution && opened > hints.length
+
   // Computed once and destructured at the call site, rather than called twice in the markup. Two
   // calls would be two chances for the name and the visible text to be derived from different state
   // -- which is precisely the pairing WCAG 2.5.3 is about, and precisely the kind of drift no test
   // written against a single render would catch.
-  const label = controlLabel(hints, isOpen, opened)
+  const label = controlLabel(hints, isOpen, opened, hasSolution)
 
   // The label and the SECTION THAT NAMES ITSELF WITH IT go together, and taking one without the
   // other is the bug this pair exists to prevent. Dropping only the visible "Hints" text leaves
@@ -393,7 +432,11 @@ export const HintBar = ({
     }
     // Nothing left to reveal, so the control is the sheet's toggle. A control that only refuses is
     // not a control.
-    if (isSpent) {
+    //
+    // "Nothing left" now means the ANSWER is gone too, not just the rungs. A bench with a solution
+    // still standing falls through to the advance below, where one past the ladder is the reveal --
+    // see `controlLabel`, whose "Show answer" state is exactly this gap.
+    if (isSpent && (isRevealed || !hasSolution)) {
       close()
       return
     }
@@ -571,6 +614,32 @@ export const HintBar = ({
                   <li key={hint.text}>{hint.text}</li>
                 ))}
               </ol>
+            )}
+            {/* OUTSIDE the list, and that is a statement about what this is rather than a layout
+                choice. The <ol> is the ladder -- lull-api orders those rungs by how much each
+                reveals, and the decimal markers beside them are that order made visible. An answer
+                appended as a fourth <li> would be numbered "4." by the marker and read as the next
+                rung in a ladder that has three.
+
+                It carries the same VERBATIM contract as a rung: the caller composed the sentence,
+                including whether it hedges. goFigure's must, because its ladder pins an operator
+                tuple and not an expression -- many accepted solutions share that tuple -- so the
+                bench that knows which says so, and this bar says nothing at all.
+
+                GATED ON THE SHEET BEING OPEN, like the header and the list, and for the same live
+                region reason: `hidden` takes the sheet out of the accessibility tree and leaves
+                everything inside it in the document, so a returning player whose stored count is the
+                revealed one would mount this paragraph already inside the role="status" region --
+                the arrangement NVDA and JAWS are documented to miss, since they announce changes
+                inside a region they are ALREADY watching.
+
+                A <p> and not a heading, for the reason the sheet's own label is one: the heading
+                levels on screen belong to the shell, and a heading here would either skip a level or
+                claim one it does not own. */}
+            {isOpen && isRevealed && (
+              <p className="border-t border-[var(--lull-rule)] pt-[var(--lull-s3)] text-[var(--lull-ink)]">
+                {solution}
+              </p>
             )}
           </section>
         </div>

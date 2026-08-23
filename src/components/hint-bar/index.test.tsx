@@ -258,10 +258,253 @@ describe('HintBar', () => {
     })
   })
 
+  // The end of the ladder, and the state that used to be a dead end. A player who spent all three
+  // rungs and still could not see it had nowhere left to go; now the control offers the answer.
+  //
+  // The string is rendered VERBATIM and composed by the CALLER, exactly as `hint.text` is. This bar
+  // knows what a phrase answer and a goFigure expression have in common -- nothing but being a
+  // sentence somebody else wrote -- so it renders one and derives neither.
+  describe('the answer', () => {
+    const solution = 'The answer is NOTHING GOLD CAN STAY.'
+
+    const renderWithAnswer = (opened: number): ReturnType<typeof render> => {
+      jest.mocked(readHints).mockReturnValueOnce(opened)
+      return render(<HintBar hints={hints} puzzleId={puzzleId} solution={solution} />)
+    }
+
+    const answerOnScreen = (): boolean => screen.queryByText(solution) !== null
+
+    it('offers the answer once every rung is spent', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+
+      await press(user, 'Show 3 hints')
+
+      expect(screen.getByRole('button', { name: 'Show answer' })).toBeInTheDocument()
+    })
+
+    // The rungs are the price. A bar that put the answer on screen beside rung 1 would make the
+    // other two rungs pointless and the ladder a formality.
+    it('offers no answer while a rung is still unspent', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(2)
+
+      await press(user, 'Show 2 hints')
+
+      expect(screen.getByRole('button', { name: 'Open hint 3 of 3' })).toBeInTheDocument()
+      expect(answerOnScreen()).toBe(false)
+    })
+
+    it('keeps the answer out of the sheet until it is asked for', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+
+      await press(user, 'Show 3 hints')
+
+      expect(answerOnScreen()).toBe(false)
+    })
+
+    it('shows the answer it was given, verbatim', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(screen.getByText(solution)).toBeInTheDocument()
+    })
+
+    // The rungs stay. A player who paid for three hints and then asked for the answer did not ask
+    // to have the hints taken away, and the sheet is where they live.
+    it('leaves the rungs listed beside it', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(openRungs()).toEqual(texts)
+    })
+
+    // ONE PAST THE LADDER, which is the whole grammar of the reveal: `lull:hints:<puzzleId>` already
+    // holds a count, and the answer is the count that no rung index is ever taken from.
+    it('persists the reveal one past the ladder', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(writeHints).toHaveBeenCalledWith(puzzleId, 4)
+    })
+
+    // Nothing left to reveal, so the control goes back to being the sheet's toggle -- the same thing
+    // it did at the end of the ladder before there was an answer to offer.
+    it('goes back to hiding once the answer is out', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(screen.getByRole('button', { name: 'Hide hints' })).toBeInTheDocument()
+    })
+
+    // The returning player, whose stored count is the revealed one. The sheet comes back shut like
+    // every other state, and what the control offers back is the ANSWER rather than the rungs: it is
+    // what they last asked for and what they came back to read.
+    it('offers the answer back to a returning player', () => {
+      renderWithAnswer(4)
+
+      expect(screen.getByRole('button', { name: 'Show answer' })).toBeInTheDocument()
+      expect(answerOnScreen()).toBe(false)
+    })
+
+    it('hands a returning player the answer and the rungs without charging again', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(4)
+
+      await press(user, 'Show answer')
+
+      expect(screen.getByText(solution)).toBeInTheDocument()
+      expect(openRungs()).toEqual(texts)
+      expect(writeHints).not.toHaveBeenCalled()
+    })
+
+    // The regression guard for every bench that has no answer to give. A bar handed no `solution`
+    // must end its ladder exactly where it always did, or the last press becomes a button that
+    // renames itself and shows nothing.
+    it('still hides rather than offering an answer it was never given', async () => {
+      const user = userEvent.setup({ delay: null })
+      jest.mocked(readHints).mockReturnValueOnce(3)
+      renderBar()
+
+      await press(user, 'Show 3 hints')
+
+      expect(screen.getByRole('button', { name: 'Hide hints' })).toBeInTheDocument()
+    })
+
+    // Starting over takes the answer back with the rungs. The bar holds no separate reveal state to
+    // forget -- the count IS the reveal -- so this is the same reset the ladder already had, and the
+    // test is here to say that on purpose rather than by accident.
+    it('takes the answer back when the puzzle is started over', async () => {
+      const user = userEvent.setup({ delay: null })
+      jest.mocked(readHints).mockReturnValueOnce(3)
+      const { rerender } = render(<HintBar hints={hints} puzzleId={puzzleId} resetSignal={0} solution={solution} />)
+      await press(user, 'Show 3 hints')
+      await press(user, 'Show answer')
+
+      rerender(<HintBar hints={hints} puzzleId={puzzleId} resetSignal={1} solution={solution} />)
+
+      expect(answerOnScreen()).toBe(false)
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // The answer arrives in a region a reader is ALREADY watching, which is the only way NVDA and
+    // JAWS announce it at all -- the same argument the rung list and the sheet header both turn on.
+    it('announces the answer on the press that reveals it', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(screen.getByRole('status')).toHaveTextContent(solution)
+    })
+
+    it('mounts the live region empty for a returning player who owns the answer', () => {
+      renderWithAnswer(4)
+
+      expect(screen.getByRole('status').textContent).toBe('')
+    })
+
+    // WCAG 2.4.3. The reveal press hides nothing, so focus has nowhere it needs to be rescued to --
+    // and that is exactly why it is worth pinning: a future implementation that closed and reopened
+    // the sheet to make the answer land in the live region would drop focus to <body>, from which
+    // the next Tab restarts at the top of the page. The bug would be invisible in Chrome, which
+    // focuses a button when a pointer press lands on it.
+    it('leaves focus on the control that revealed the answer', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(screen.getByRole('button', { name: 'Hide hints' })).toHaveFocus()
+    })
+
+    // The IDREF, resolved rather than merely present, in the state this task added. `aria-controls`
+    // contributes nothing to an accessible name, so it is the one relationship in this repo that can
+    // rot in total silence -- every role query keeps passing while the reference points at nothing.
+    // The existing assertion covers the "Hide hints" end of the ladder; this state is new markup
+    // reached by a new branch, and the sheet it names is the one now holding the answer.
+    it('still names the sheet it controls once the answer is in it', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      const control = screen.getByRole('button', { name: 'Hide hints' })
+      expect(control).toHaveAttribute('aria-expanded', 'true')
+      const controls = control.getAttribute('aria-controls')
+      expect(document.getElementById(controls ?? '')).toContainElement(screen.getByText(solution))
+    })
+
+    // The offer itself carries the relationship too, which is the state a keyboard player meets
+    // BEFORE they press: the control says the sheet is open and says which sheet.
+    it('names the sheet it controls while it is still offering the answer', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+
+      await press(user, 'Show 3 hints')
+
+      const control = screen.getByRole('button', { name: 'Show answer' })
+      expect(control).toHaveAttribute('aria-expanded', 'true')
+      const controls = control.getAttribute('aria-controls')
+      expect(document.getElementById(controls ?? '')).toBeInTheDocument()
+    })
+
+    // The WCAG 2.5.3 pair for the new state, which `describe('the control label')` requires of every
+    // state this bar can be in. Both halves are the same string here, like "Hide hints": there is no
+    // noun form that says what the press does, and at eleven characters it is exactly as wide as
+    // "Hint 1 of 3", so it never binds the goFigure row.
+    it('paints the offer whole, in both the states that make it', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderWithAnswer(3)
+
+      await press(user, 'Show 3 hints')
+      expect(painted('Show answer')).toBe('Show answer')
+
+      await press(user, 'Show answer')
+      await press(user, 'Hide')
+      expect(painted('Show answer')).toBe('Show answer')
+    })
+  })
+
   // The bar is handed its count instead of reading one, which is what lets the goFigure bench render
   // it inside the board's own subtree without that subtree touching storage. The shell keeps owning
   // persistence; the bench only owns the number.
   describe('controlled mode', () => {
+    it('reports the reveal as one past the ladder and writes nothing', async () => {
+      const user = userEvent.setup({ delay: null })
+      const onOpen = jest.fn()
+      render(
+        <HintBar
+          control={{ onOpen, opened: 3 }}
+          hints={hints}
+          puzzleId={puzzleId}
+          solution="One winning answer is 6 + 9 + 7 × 7."
+        />,
+      )
+      await press(user, 'Show 3 hints')
+
+      await press(user, 'Show answer')
+
+      expect(onOpen).toHaveBeenCalledWith(4)
+      expect(writeHints).not.toHaveBeenCalled()
+    })
+
     // Storage is not merely ignored, it is NOT REACHED. That is the whole reason the mode exists:
     // the goFigure bench renders this bar inside the board's own subtree, and `CLAUDE.md` names a
     // puzzle component's distance from storage as what makes the display-only rule structural

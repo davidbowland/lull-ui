@@ -1307,6 +1307,140 @@ describe('GoFigureBoard', () => {
       expect(screen.getByRole('button', { name: 'Square 6, sign, Multiply, from a hint' })).toBeInTheDocument()
     })
 
+    // THE ANSWER, offered once every rung is spent, and text-only: it goes in the sheet and never
+    // onto the squares. Filling the board would be this component deciding a puzzle was over, and
+    // this component decides nothing -- a set lookup against the shipped expressions is the only
+    // thing that ends a goFigure.
+    describe('the answer', () => {
+      const spendTheLadder = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+        await openRung(user, HINT_1)
+        await openRung(user, 'Open hint 2 of 3')
+        await openRung(user, 'Open hint 3 of 3')
+      }
+
+      it('offers the answer once every rung is spent', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await spendTheLadder(user)
+
+        expect(screen.getByRole('button', { name: 'Show answer' })).toBeInTheDocument()
+      })
+
+      // Drawn for READING, with spaces and ×, like the solved banner and unlike the squares. The
+      // squares carry the pack's own characters because that is the string the player is building
+      // and the string acceptedSolutions is matched on; a sentence is not that string.
+      it('draws the answer for reading rather than in the pack characters', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+        await spendTheLadder(user)
+
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(screen.getByText('One winning answer is 6 + 7 + 9 × 7.')).toBeInTheDocument()
+      })
+
+      // HEDGED, and the hedge is true rather than modest. The ladder pins an operator TUPLE -- this
+      // fixture's six accepted solutions all share "++*" -- so naming one of them "the answer" would
+      // assert a uniqueness the pack does not have.
+      it('agrees with the signs the ladder locked onto the board', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+        await spendTheLadder(user)
+
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(screen.getByRole('button', { name: 'Square 2, sign, Add, from a hint' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Square 6, sign, Multiply, from a hint' })).toBeInTheDocument()
+      })
+
+      // TEXT ONLY. The squares the player has not filled stay empty, because revealing an answer is
+      // not solving a puzzle -- the board never reports a solve it did not evaluate.
+      it('puts nothing on the squares and reports no solve', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+        await spendTheLadder(user)
+
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(screen.getByRole('button', { name: 'Square 1, number, empty' })).toBeInTheDocument()
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      // ONE PAST THE LADDER, in the progress string the rungs already ride in. That is what makes the
+      // reveal survive a reload without a second store to keep in step with this one -- and what makes
+      // Play again take it back, since Play again writes ''.
+      it('stores the reveal beside the rungs it was paid for', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+        await spendTheLadder(user)
+
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(onProgress).toHaveBeenLastCalledWith('_+_+_*_|4|012')
+      })
+
+      it('offers the answer back to a player who reloads on it', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '_+_+_*_|4|012')
+
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(screen.getByText('One winning answer is 6 + 7 + 9 × 7.')).toBeInTheDocument()
+      })
+
+      // The pack whose accepted set spans two tuples -- 1*2*3*4 and 1+2+3*4 both reach 24 -- is the
+      // case this whole derivation exists for. The revealed answer must carry the tuple the LADDER
+      // named, or it contradicts the signs sitting locked on the board.
+      it('reveals the tuple the ladder named rather than the first solution shipped', async () => {
+        const user = userEvent.setup({ delay: null })
+        const twoTuples: Puzzle<GoFigureData> = {
+          ...goFigurePuzzle,
+          data: {
+            ...goFigurePuzzle.data,
+            acceptedSolutions: ['6*7*9*7', '6+7+9*7'],
+          },
+        }
+        renderBoard(twoTuples)
+
+        await spendTheLadder(user)
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(screen.getByText('One winning answer is 6 + 7 + 9 × 7.')).toBeInTheDocument()
+      })
+
+      // No answer to give, so the ladder ends where it always did. A control that renamed itself and
+      // then showed nothing is worse than one that never made the offer.
+      it('makes no offer when no shipped solution carries the ladder tuple', async () => {
+        const user = userEvent.setup({ delay: null })
+        const mismatched: Puzzle<GoFigureData> = {
+          ...goFigurePuzzle,
+          data: { ...goFigurePuzzle.data, acceptedSolutions: ['6-7-9/7'] },
+        }
+        renderBoard(mismatched)
+
+        await spendTheLadder(user)
+
+        expect(screen.getByRole('button', { name: 'Hide hints' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Show answer' })).not.toBeInTheDocument()
+      })
+
+      // Play again empties the board and zeroes the count, so the answer goes with the rungs. The
+      // board holds no separate reveal flag to forget -- the count IS the reveal.
+      it('takes the answer back when the player starts over', async () => {
+        const user = userEvent.setup({ delay: null })
+        // Tiles 0, 2, 1, 3 of the bank 6,9,7,7 spell 6+7+9*7, which is 154 left to right and one of
+        // the six the fixture accepts -- so this board is solved, and Play again is the control on it.
+        renderBoard(goFigurePuzzle, '0+2+1*3|4|012')
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+        expect(screen.queryByText('One winning answer is 6 + 7 + 9 × 7.')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+      })
+    })
+
     // A rung overwrites whatever was in its slot. It can afford to: every rung names an operator
     // drawn from a canonical accepted tuple, so a locked sign is always part of some winning answer
     // and nobody is stranded by the permanence.
@@ -1787,7 +1921,11 @@ describe('GoFigureBoard', () => {
 
       await user.click(screen.getByRole('button', { name: 'Show 2 hints' }))
       await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
-      await user.click(screen.getByRole('button', { name: 'Hide hints' }))
+      // The sheet's OWN dismissal, not the bar's control. Spending the last rung used to turn that
+      // control into "Hide hints"; it now offers the answer instead, and this test is about the
+      // banner surviving a dismissal rather than about which button performs one. The sheet has
+      // carried its own Hide since a touch player could otherwise only leave by spending rungs.
+      await user.click(screen.getByRole('button', { name: 'Hide' }))
 
       expect(screen.getByText('Solved. 6 + 9 + 7 × 7 = 154')).toBeInTheDocument()
     })

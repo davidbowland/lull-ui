@@ -13,6 +13,7 @@ import {
   isComplete,
   isDigitCell,
   isLocked,
+  matchingSolution,
   nextCursor,
   runningTotal,
   slotOf,
@@ -459,6 +460,31 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     puzzle.data.hints.length > 0 &&
     puzzle.data.hints.every((hint) => isPlaceable(hint, operators))
 
+  // The sentence the sheet prints once every rung is spent, or undefined when there is nothing
+  // honest to print. Composed HERE and not in the bar, for the same reason `answerOf` composes the
+  // phrase benches' line where it does: the bar renders what it is handed, verbatim, and a component
+  // that took a bare expression would have to know which bench's phrasing to wrap it in.
+  //
+  // HEDGED, and the hedge is accurate rather than modest. The ladder pins an operator TUPLE, never
+  // an expression -- lull-api's `pickCanonical` deliberately takes the MOST-SHARED arrangement, so
+  // that after rung 3 the player has the largest set of working digit orders left -- and this
+  // fixture's six accepted solutions all carry one tuple. "The answer is 6 + 7 + 9 × 7" would assert
+  // a uniqueness the pack does not have and that the player can disprove by finding another.
+  //
+  // Drawn for READING, like the solved banner: spaces, and × rather than *. The squares keep the
+  // pack's own characters because that is the string being built and the string `accepted` is
+  // matched on, and one region cannot serve both.
+  //
+  // Gated on `hasLadder` as well as on the match, because a ladder that cannot place a sign is a
+  // ladder whose metadata cannot be trusted to name a tuple either -- and `matchingSolution` reads
+  // exactly that metadata. One malformed-pack decision, made once, in the place that already makes
+  // it for the control beside this one.
+  const solution = useMemo(() => {
+    if (!hasLadder) return undefined
+    const expression = matchingSolution(puzzle.data.hints, acceptedSolutions)
+    return expression === null ? undefined : `One winning answer is ${forReading([...expression])}.`
+  }, [acceptedSolutions, hasLadder, puzzle.data.hints])
+
   const cursorLocked = isLocked(state, cursor)
   // Gated on the caret's KIND and its LOCK. Without the lock arm, parking the caret on a hinted
   // square leaves the sign tiles announcing themselves as available while every tap is refused -- a
@@ -759,6 +785,25 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // Advancing `opened` alone keeps `locked` a subset of the rungs paid for, so the encoded board
     // stays valid and the sheet still lists the rung.
     if (isSolved) {
+      commit({ ...state, opened: nextOpened })
+      return
+    }
+
+    // ONE PAST THE LADDER IS THE ANSWER, and it touches the squares as little as a rung touches them
+    // on a solved board. Text only: the sheet prints a sentence and the board stays exactly as the
+    // player left it.
+    //
+    // Filling in the answer is the tempting version and it is wrong twice over. It would make this
+    // component decide a puzzle was finished, which is the one thing `CLAUDE.md` says a board never
+    // does -- a solve here is a set lookup against the expressions the backend shipped, and nothing
+    // else. And it would have to guess which bank tile wrote each digit: the bank 6,9,7,7 has two
+    // tiles that spell "7", so a filled-in answer would rebuild the tile-identity bug `board.ts`
+    // stores INDICES to prevent.
+    //
+    // This branch has to come before the read below, because `hints[3]` is undefined and `applyHint`
+    // destructures its metadata -- a reveal would throw inside a click handler with no error
+    // boundary between here and the root.
+    if (nextOpened > puzzle.data.hints.length) {
       commit({ ...state, opened: nextOpened })
       return
     }
@@ -1405,6 +1450,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                   // Play again meant an empty list over a fresh board and a keyboard that declined
                   // every key. See `playAgain` for why it is a signal and not a changed `key`.
                   resetSignal={resetNonce}
+                  solution={solution}
                   variant="bare"
                 />
               )}

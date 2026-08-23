@@ -11,6 +11,7 @@ import {
   isComplete,
   isDigitCell,
   isLocked,
+  matchingSolution,
   nextCursor,
   runningTotal,
   slotOf,
@@ -129,8 +130,14 @@ describe('decode', () => {
     expect(decode('+______|0|', goFigureData)).toEqual(EMPTY_BOARD)
   })
 
-  test('rejects an opened count past the ladder', () => {
-    expect(decode('_______|4|', goFigureData)).toEqual(EMPTY_BOARD)
+  // One past the ladder is the ANSWER, not a fourth rung. Rejecting it would empty the board and
+  // take back every paid-for rung the moment a player who revealed the answer came back.
+  test('restores the revealed count of one past the ladder', () => {
+    expect(decode('_______|4|', goFigureData)).toEqual({ ...EMPTY_BOARD, opened: 4 })
+  })
+
+  test('rejects an opened count past the revealed answer', () => {
+    expect(decode('_______|5|', goFigureData)).toEqual(EMPTY_BOARD)
   })
 
   test('rejects an opened count that is not a single digit', () => {
@@ -652,5 +659,77 @@ describe('runningTotal', () => {
       [2, 1],
     ])
     expect(runningTotal(state, goFigureData.bank)).toBe("Running total: none. That division doesn't come out even.")
+  })
+})
+
+// The ladder pins an OPERATOR TUPLE, never an expression. lull-api's `pickCanonical` chooses one
+// arrangement -- most-shared, ties by smallest raw ASCII -- and all three rungs describe it, one slot
+// each. Many accepted solutions share that arrangement, and that is deliberate: the most-shared tuple
+// leaves the player the largest set of working digit arrangements after rung 3.
+//
+// So "which solution do the hints mean" has no single answer, and this function does not try to
+// invent one. It reads the tuple back off the rungs -- which ARE `pickCanonical`'s output, so nothing
+// here can drift from it -- and returns a solution that matches. Any of them is consistent with every
+// rung the player paid for, which is the property that matters: a revealed answer can never
+// contradict the operators the ladder has already locked onto the board.
+describe('matchingSolution', () => {
+  test('returns a solution built from the tuple the rungs name', () => {
+    expect(matchingSolution(goFigureHints, goFigureData.acceptedSolutions)).toBe('6+7+9*7')
+  })
+
+  // Deterministic, because lull-api sorts acceptedSolutions before storing them. A reveal that
+  // varied between two loads of the same puzzle would look like the answer had changed.
+  test('takes the same one every time', () => {
+    const twice = [
+      matchingSolution(goFigureHints, goFigureData.acceptedSolutions),
+      matchingSolution(goFigureHints, goFigureData.acceptedSolutions),
+    ]
+
+    expect(twice[0]).toBe(twice[1])
+  })
+
+  // The property the whole derivation exists for. A pack whose accepted set spans two tuples -- the
+  // case `openHint` already documents, where 1*2*3*4 and 1+2+3*4 both reach 24 -- must reveal the one
+  // the ladder locked, or the answer on screen contradicts the signs on the board.
+  test('skips a solution whose operators the ladder did not name', () => {
+    const hints: GoFigureHintLadder = [
+      { metadata: { operator: '*', slot: 1 }, text: 'rung 1' },
+      { metadata: { operator: '+', slot: 0 }, text: 'rung 2' },
+      { metadata: { operator: '*', slot: 2 }, text: 'rung 3' },
+    ]
+
+    expect(matchingSolution(hints, ['1*2*3*4', '1+2*3*4', '1+2+3*4'])).toBe('1+2*3*4')
+  })
+
+  // Untrusted pack, same register as decode. A ladder that leaves a slot unnamed cannot pin a tuple,
+  // so there is nothing to match on and no answer to give.
+  test('declines a ladder that does not name every slot', () => {
+    const hints = [
+      { metadata: { operator: '+', slot: 0 }, text: 'rung 1' },
+      { metadata: { operator: '+', slot: 0 }, text: 'rung 2' },
+      { metadata: { operator: '*', slot: 2 }, text: 'rung 3' },
+    ] as GoFigureHintLadder
+
+    expect(matchingSolution(hints, goFigureData.acceptedSolutions)).toBeNull()
+  })
+
+  test('declines when no accepted solution carries the tuple', () => {
+    expect(matchingSolution(goFigureHints, ['6-7-9/7'])).toBeNull()
+  })
+
+  test('declines when the pack shipped no solutions at all', () => {
+    expect(matchingSolution(goFigureHints, [])).toBeNull()
+  })
+
+  // A pack cached before a deploy is a VALID pack with the wrong shape inside it -- the same argument
+  // decode makes at the top of this file. Nothing here may throw during render.
+  test('declines a pack whose solutions are not an array', () => {
+    expect(matchingSolution(goFigureHints, undefined as unknown as string[])).toBeNull()
+  })
+
+  test('declines a ladder whose rungs carry no metadata', () => {
+    expect(
+      matchingSolution(['a', 'b', 'c'] as unknown as GoFigureHintLadder, goFigureData.acceptedSolutions),
+    ).toBeNull()
   })
 })

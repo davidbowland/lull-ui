@@ -191,12 +191,21 @@ export const writeHints = (puzzleId: string, revealed: number): void => {
 // which is a bare safeRead with no validation at all. Progress is free text a board wrote and any
 // string is a state its own input could have reached; a reveal count is an integer the shell
 // indexes a ladder with, so a NaN or a 7 would open rungs that do not exist.
+//
+// The bound is `hintCount + 1`, and the extra one is the ANSWER rather than a fourth rung. The bar
+// spends every rung and then offers "Show answer", which stores one past the ladder -- a count no
+// `hints[]` index is ever taken from, so nothing downstream dereferences it. Under the old bound
+// that value was not merely refused: this function SELF-HEALS, so the write below would have put a
+// 0 on disk and taken back the three rungs the player had paid for as well as the answer.
+//
+// It also makes the stored count FORWARD-ONLY. A build with the old bound reading a 4 discards it
+// and rewrites 0, so rolling back loses the ladder for anyone who had revealed an answer.
 export const readHints = (puzzleId: string, hintCount: number): number => {
   const raw = safeRead(`${HINTS_PREFIX}${puzzleId}`)
   if (raw === null) return 0
 
   const revealed = Number.parseInt(raw, 10)
-  const isUsable = Number.isInteger(revealed) && revealed >= 0 && revealed <= hintCount
+  const isUsable = Number.isInteger(revealed) && revealed >= 0 && revealed <= hintCount + 1
   if (isUsable) return revealed
 
   // Rewritten, not just reported. The bad value is on disk, so leaving it means every later load

@@ -40,3 +40,30 @@ export const hintsOf = (puzzle: Puzzle<unknown>): HintLadder | null => {
 
   return isLadder ? (hints as HintLadder) : null
 }
+
+/**
+ * The sentence the bar prints once every rung is spent, or null.
+ *
+ * PHRASE PUZZLES ONLY, and the narrowness is the point. `PhrasePuzzleData.answer` is one string that
+ * is the answer; goFigure ships `acceptedSolutions`, an array of expressions several of which are
+ * right, so there is no answer here to state. That bench composes its own line -- it has to redraw
+ * the operators with × and ÷, and it has to hedge, because its ladder pins an operator tuple rather
+ * than an expression -- and it renders its own bar, so it never reaches this function.
+ *
+ * The SENTENCE and not the answer, because the caller is a wire-up: `HintBar` renders what it is
+ * handed verbatim, the same contract `hint.text` has, and a component that took a bare answer would
+ * have to know which bench's phrasing to wrap it in.
+ *
+ * Structural, like `hintsOf` above and for the same reason -- a pack is JSON off the network that
+ * was persisted, and `isValidPuzzle` deliberately leaves `data` opaque. A blank answer is refused
+ * rather than printed: "The answer is ." spends the player's last press to say nothing.
+ */
+export const answerOf = (puzzle: Puzzle<unknown>): string | null => {
+  const data = puzzle.data as Record<string, unknown> | null
+  if (typeof data !== 'object' || data === null) return null
+
+  const answer = data.answer
+  if (typeof answer !== 'string' || answer.trim() === '') return null
+
+  return `The answer is ${answer}.`
+}

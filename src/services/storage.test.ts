@@ -237,12 +237,24 @@ describe('storage', () => {
       expect(readHints(missingVowelsPuzzleId, 3)).toBe(2)
     })
 
+    // One past the ladder is the ANSWER, not a rung: the bar spends every rung and then offers
+    // "Show answer", which stores hintCount + 1. Reading it back as 0 would take a revealed answer
+    // away on reload AND self-heal the key, wiping the three rungs the player had paid for.
+    it('round-trips the revealed answer as one past the ladder', () => {
+      setup()
+
+      writeHints(missingVowelsPuzzleId, 4)
+
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(4)
+    })
+
     // Progress is a bare safeRead because any string is a state its own input could have reached.
     // A reveal count is an integer the shell indexes a ladder with, so NaN or 7 would open rungs
     // that do not exist.
     it.each([
       ['not a number', 'two'],
       ['negative', '-1'],
+      ['beyond the answer', '5'],
       ['beyond the ladder', '7'],
     ])('treats a %s stored count as zero', (_description, raw) => {
       setup()

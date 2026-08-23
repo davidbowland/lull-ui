@@ -1,5 +1,5 @@
 import { evaluateLeftToRight } from './evaluate'
-import { GoFigureData, GoFigureHint, Operator, OperatorSlot } from '@types'
+import { GoFigureData, GoFigureHint, GoFigureHintLadder, Operator, OperatorSlot } from '@types'
 
 // N O N O N O N. Seven cells, and a CONSTANT rather than a length computed from the bank: lull-api
 // fixes the bank at four permanently, so a board that derived this would be arithmetic standing in
@@ -176,7 +176,15 @@ export const decode = (progress: string | null, data: GoFigureData): BoardState 
   // three today, and they mean different things.
   if (!isDigit(rawOpened)) return EMPTY_BOARD
   const opened = Number(rawOpened)
-  if (opened > ladder.length) return EMPTY_BOARD
+  // `ladder.length + 1`, and the extra one is the ANSWER rather than a fourth rung. Once every rung
+  // is spent the bar offers "Show answer", and that press advances this same count one further -- so
+  // the reveal rides in the field the rungs already ride in, and Play again clears both by writing
+  // ''. No `hints[]` index is ever taken from it: `openHint` in index.tsx branches before it reads a
+  // rung, and the lock cross-check below only ever asks whether a rung index is BELOW it.
+  //
+  // Rejecting it would not merely refuse the value -- `decode` drops the whole string, so a player
+  // who revealed the answer would come back to an empty board with all three paid-for rungs gone.
+  if (opened > ladder.length + 1) return EMPTY_BOARD
 
   const digits: (number | null)[] = Array(DIGIT_COUNT).fill(null)
   const operators: (Operator | null)[] = Array(OPERATOR_COUNT).fill(null)
@@ -297,6 +305,51 @@ export const applyHint = (state: BoardState, hint: GoFigureHint, nextOpened: num
     opened: nextOpened,
     operators: state.operators.map((held, at) => (at === slot ? operator : held)),
   }
+}
+
+// An accepted solution whose operators are the ones the ladder names, or null.
+//
+// THE LADDER PINS A TUPLE AND NEVER AN EXPRESSION, which is the whole reason this function exists
+// and the reason it does not take a "the" in its name. lull-api's `pickCanonical` chooses one
+// operator arrangement -- most-shared, ties by smallest raw ASCII -- and all three rungs describe
+// that one arrangement, a slot each. It picks the most-shared tuple ON PURPOSE, because that leaves
+// the player the largest set of working digit arrangements after rung 3, so several accepted
+// solutions sharing it is the design rather than an ambiguity to resolve.
+//
+// So there is no single solution the hints "mean", and nothing here invents one. The tuple is read
+// back off the rungs -- which ARE `pickCanonical`'s output, delivered on the wire -- so this cannot
+// drift from upstream the way a reimplementation of that choice would. Any solution carrying the
+// tuple is consistent with every rung the player paid for, and that buys the property that matters:
+// a revealed answer can never contradict the operators the ladder has already LOCKED onto the board.
+//
+// The first match rather than a chosen one, and it is deterministic because lull-api sorts
+// acceptedSolutions before storing them (enumerate.ts). An answer that varied between two loads of
+// one puzzle would read as the answer having changed.
+//
+// Every rejection is a shape the pack can genuinely arrive in. `isValidPuzzle` leaves `data` opaque,
+// so a pack cached before the ladder shipped carries three bare strings and `undefined` where the
+// solutions should be -- and this runs during render, where a throw takes the page down with no
+// error boundary above it. Null means the bench offers no answer, which is the same degradation
+// `hasLadder` already makes for a ladder that cannot place anything.
+export const matchingSolution = (hints: GoFigureHintLadder, acceptedSolutions: string[]): string | null => {
+  if (!Array.isArray(acceptedSolutions) || !Array.isArray(hints)) return null
+
+  // Indexed by SLOT, filled from the rungs, which is the one direction that is safe: rung order is
+  // lull-api's reveal order and runs 1, 0, 2 on this fixture, so `hints[slot]` would read a different
+  // rung and build a tuple no accepted solution carries.
+  const tuple: (Operator | null)[] = Array(OPERATOR_COUNT).fill(null)
+  for (const hint of hints) {
+    const slot = (hint as GoFigureHint)?.metadata?.slot
+    const operator = (hint as GoFigureHint)?.metadata?.operator
+    if (!Number.isInteger(slot) || slot < 0 || slot >= OPERATOR_COUNT) return null
+    tuple[slot] = operator
+  }
+  // A ladder that names one slot twice leaves another unnamed, and an unnamed slot cannot be matched
+  // on. There is no partial answer to give.
+  if (tuple.some((operator) => operator === null)) return null
+
+  const wanted = tuple.join('')
+  return acceptedSolutions.find((expression) => expression.replace(/\d/g, '') === wanted) ?? null
 }
 
 // What a cell SHOWS, which for a digit cell is not what it holds: the cell holds a bank index and

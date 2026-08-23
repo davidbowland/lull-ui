@@ -6,7 +6,7 @@ import { entryFor, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readPack, readProgress, removeHints, writeProgress } from '@services/storage'
 import { Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
-import { hintsOf } from '@utils/hints'
+import { answerOf, hintsOf } from '@utils/hints'
 import { difficultyLabel, lengthLabel } from '@utils/labels'
 import { packDateOf } from '@utils/pack-dates'
 
@@ -167,6 +167,14 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // and PuzzleProgress stays an opaque per-type string.
   const hints = hintsOf(puzzle)
 
+  // The end of the ladder, and still the shell's business rather than the board's. The board never
+  // learns that hints exist and it does not learn that an answer does either -- both come off the
+  // pack, here, and go into the bar the shell already owns.
+  //
+  // `?? undefined` because HintBar's prop is OPTIONAL and its absence is what says "this bench has
+  // no answer to give". Passing null would be a third state for a component that has two.
+  const solution = answerOf(puzzle) ?? undefined
+
   // WHICH bar, not WHETHER there are hints. Every bench has a ladder now -- goFigure's rungs place
   // an operator where a phrase bench's describe a meaning -- so this flag stopped being about the
   // existence of hints and became about who draws the control.
@@ -273,7 +281,9 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           So the nonce is a signal the bar reacts to rather than an identity it is rebuilt under.
           Nothing else here is given it: the board keeps its own state through a reset, because the
           board is the thing that just chose to reset. */}
-      {hasHintBar && hints !== null && <HintBar hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} />}
+      {hasHintBar && hints !== null && (
+        <HintBar hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} solution={solution} />
+      )}
     </>
   )
 }
