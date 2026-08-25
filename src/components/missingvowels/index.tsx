@@ -9,8 +9,18 @@ import { MissingVowelsData, PuzzleComponentProps } from '@types'
 // The one rule this component applies, and it is vendored rather than authored: the backend
 // decides what counts as the answer, and normalizeAnswer exists only because the comparison runs
 // over free text the player invents at play time, which no generator can enumerate in advance.
+//
+// `typeof answer` IS CHECKED FIRST, and it is the one guard here whose absence LATCHES.
+// `isValidPuzzle` leaves `data` opaque, so a pack whose `answer` is missing, null or a number
+// renders a plate that looks perfectly fine -- the empty-guess operand short-circuits while the box
+// is still empty. The first keystroke then calls `onProgress` and only afterwards reaches
+// `normalizeAnswer(answer)`, which throws: so the write lands and the render does not. Every later
+// load restores that one character at mount, the throw happens before the player can touch
+// anything, ErrorBoundary replaces the whole app with "Lull got stuck", and nothing self-heals it --
+// the pack is valid so `readPack` keeps it, and no code validates a progress string. That puzzle is
+// unopenable until site data is cleared by hand. Found on the cryptic bench, which copied this line.
 const isCorrect = (guess: string, answer: string): boolean =>
-  normalizeAnswer(guess) !== '' && normalizeAnswer(guess) === normalizeAnswer(answer)
+  typeof answer === 'string' && normalizeAnswer(guess) !== '' && normalizeAnswer(guess) === normalizeAnswer(answer)
 
 // The plate's accessible name. Read as one string by a screen reader the consonants are gibberish,
 // so the visible run is hidden and the name spells the groups out instead -- a blind player gets

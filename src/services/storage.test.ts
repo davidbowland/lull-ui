@@ -2,7 +2,9 @@ import {
   cachedHintIds,
   cachedPackDates,
   cachedProgressIds,
+  clearDictRetry,
   markSolved,
+  readDictRetry,
   readHints,
   readMeta,
   readPack,
@@ -12,6 +14,7 @@ import {
   removeProgress,
   setInstallDismissed,
   STORAGE_EVENT,
+  writeDictRetry,
   writeHints,
   writePack,
   writeProgress,
@@ -109,8 +112,8 @@ describe('storage', () => {
       expect(cachedPackDates()).toEqual([packDate])
     })
 
-    // This runs during render with no error boundary above it -- an escaping throw
-    // white-screens the app.
+    // This runs during render, so an escaping throw reaches ErrorBoundary and costs the
+    // whole app rather than this one read.
     it('reports no cached packs rather than throwing when localStorage is unavailable', () => {
       setup()
       denyStorage()
@@ -464,6 +467,82 @@ describe('storage', () => {
       readPack('2026-08-18')
 
       expect(cachedPackDates()).toEqual(['2026-08-17'])
+    })
+  })
+
+  describe('the dictionary retry schedule', () => {
+    it('round-trips a schedule', () => {
+      setup()
+
+      writeDictRetry({ attempt: 3, nextAt: 1_700_000_000_000 })
+
+      expect(readDictRetry()).toEqual({ attempt: 3, nextAt: 1_700_000_000_000 })
+    })
+
+    it('has no schedule on a device that has never missed', () => {
+      setup()
+
+      expect(readDictRetry()).toBeNull()
+    })
+
+    it('forgets the schedule when the device recovers', () => {
+      setup()
+      writeDictRetry({ attempt: 3, nextAt: 1_700_000_000_000 })
+
+      clearDictRetry()
+
+      expect(readDictRetry()).toBeNull()
+    })
+
+    // SELF-HEALS BY REMOVING, the way readPack does, and NOT by rewriting a corrected value the way
+    // readHints does. A hint count has a meaningful zero to fall back to; a retry schedule does not.
+    // The honest fallback for a corrupt one is "no schedule", which is null, which is mayAttempt
+    // returning true -- so the next attempt writes a fresh record.
+    //
+    // The last two rows are the reason this is validated at all rather than cast: `mayAttempt`
+    // compares `now() >= state.nextAt`, and a nextAt no clock can ever reach is a device that never
+    // tries again for the life of the install -- silently, with no error anywhere.
+    //
+    // ONE CLAUSE DOES ALL OF IT. `Number.isFinite` does not coerce, so `'soon'`, `null` and Infinity
+    // are each refused by it alone -- which is why the `typeof nextAt === 'number'` clause that used
+    // to sit beside it was deleted rather than kept: no row here could redden it, and an earlier
+    // version of this comment said the opposite, naming the typeof clause as the one refusing null.
+    // All three rows stay, because they are three different wire shapes reaching one guard.
+    it.each<[string, string]>([
+      ['a value that is not JSON', '{'],
+      ['a JSON null', 'null'],
+      ['an array', '[]'],
+      ['a missing attempt', '{"nextAt":1700000000000}'],
+      ['a fractional attempt', '{"attempt":1.5,"nextAt":1700000000000}'],
+      ['a negative attempt', '{"attempt":-1,"nextAt":1700000000000}'],
+      ['a non-numeric nextAt', '{"attempt":1,"nextAt":"soon"}'],
+      ['a null nextAt, which is how JSON.stringify writes NaN', '{"attempt":1,"nextAt":null}'],
+      ['a nextAt that overflows to Infinity', '{"attempt":1,"nextAt":1e999}'],
+    ])('discards %s and removes it', (_description, stored) => {
+      setup()
+      window.localStorage.setItem('lull:dict:retry', stored)
+
+      expect(readDictRetry()).toBeNull()
+      // The removal, not just the refusal. A key left on disk is re-read and re-refused on every
+      // load, offline included, and the console noise never stops.
+      expect(window.localStorage.getItem('lull:dict:retry')).toBeNull()
+    })
+
+    // NOT ANNOUNCED, and the absence is deliberate rather than an omission. `announce()` exists so
+    // this tab learns about its own writes for things that RENDER off a key, and nothing renders off
+    // this one -- the provider holds its status in React state. Announcing would also re-enter the
+    // provider's own STORAGE_EVENT listener from inside its own failure branch, which is a loop
+    // waiting for a reason.
+    //
+    // Led with a positive assertion, because a listener that was never called also passes an
+    // absence check on a function that did nothing at all.
+    it('writes without telling the rest of the app', () => {
+      setup()
+
+      const listener = announcementsDuring(() => writeDictRetry({ attempt: 1, nextAt: 5 }))
+
+      expect(window.localStorage.getItem('lull:dict:retry')).toEqual('{"attempt":1,"nextAt":5}')
+      expect(listener).not.toHaveBeenCalled()
     })
   })
 })

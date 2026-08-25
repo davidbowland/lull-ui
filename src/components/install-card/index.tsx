@@ -111,12 +111,16 @@ export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: 
       <h3 className={HEADING} ref={headingRef} tabIndex={-1}>
         Have tomorrow ready
       </h3>
-      {/* Says the benefit this slice actually delivers. The previous copy promised "the
-          last seven days stay too", and installing does download seven days -- but the
-          shelf renders one pack and there is no archive route, so a player could never
-          reach them. It also framed retention as "only the days you open", when pruning
-          is by age and identical whether or not you install. Restore a seven-day claim
-          when the archive lands. */}
+      {/* OVERSTATED as of the one-date prefetch, and left standing on purpose: rewriting a
+          user-facing promise is a UX decision, not a side effect of a hook change, so it is
+          named here rather than quietly reworded.
+          usePrefetch now asks for exactly one date -- today's, local -- installed or not.
+          Nothing arrives before you open the app, and installing changes nothing about what
+          is fetched. What installing still buys is a launcher icon, a standalone window,
+          and today's pack surviving a dead connection once the app has been opened that
+          day. Both this sentence and the heading above it need new words for that, and the
+          seven-day claim the earlier copy made is further out of reach than ever: pruning
+          keeps a week, but only of days the player actually opened. */}
       <p className={BODY}>
         Install Lull and each day’s puzzles are waiting on your phone before you open it — no connection needed.
       </p>

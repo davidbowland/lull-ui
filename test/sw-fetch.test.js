@@ -238,4 +238,21 @@ describe('sw.js lifecycle', () => {
     expect(worker.claimed.count).toEqual(1)
     expect(await worker.caches.keys()).not.toContain('lull-old-build')
   })
+
+  // The dictionary cache is a SIBLING, keyed by the DICTIONARY version rather than the build, so it
+  // has to survive a deploy. caches.keys() is origin-wide and this sweep deletes everything that is
+  // not the current build's cache, which would take it with every release.
+  //
+  // toContain / not.toContain rather than toEqual on an array, because the test above already pins
+  // exact membership for the build caches and this one is about the exemption, not about ordering.
+  it('keeps the dictionary cache across a deploy', async () => {
+    const worker = loadWorker()
+    await worker.caches.open('lull-old-build')
+    await worker.caches.open('lull-dict-v1')
+
+    await worker.dispatch('activate', {})
+
+    expect(await worker.caches.keys()).toContain('lull-dict-v1')
+    expect(await worker.caches.keys()).not.toContain('lull-old-build')
+  })
 })

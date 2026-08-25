@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import React, { useEffect, useState } from 'react'
 
+import { useDictionary } from '@components/dictionary-provider'
 import { Plate, Shell } from '@components/enclosure'
 import { InstallCard } from '@components/install-card'
 import { Crumb, Spine } from '@components/spine'
@@ -72,7 +73,7 @@ const byId = (first: string, second: string): number => (first < second ? -1 : f
  *
  * Difficulty first, because gentlest first is the honest on-ramp and estimatedSeconds stays
  * printed on every row, so choosing by time still works. Bench second, from the registry's
- * fixed BENCH_ORDER, so a reader meets the three rooms in the same sequence every day. Id
+ * fixed BENCH_ORDER, so a reader meets the four rooms in the same sequence every day. Id
  * last, which is what guarantees totality -- ids are unique, so the comparator cannot
  * return 0 for two different puzzles and stability stops mattering at all.
  */
@@ -134,10 +135,19 @@ const trailFor = (pack: Pack | null, locale: string): Crumb[] =>
 // reader who cannot see either. Each is the `d` of one path in a 0 0 12 12 viewBox, stroked
 // with no fill, like every other glyph in this product.
 //
-// Three shapes for three states: a tick, a half-filled ring, an empty ring.
+// Five shapes for five states: a tick, a half-filled ring, an hourglass, a download arrow over a
+// tray, an empty ring.
 const STATE_GLYPH = {
+  // An hourglass -- a fifth SHAPE, and the one that has to be told from the download arrow beside
+  // it, because the two states it separates are the two the player can do nothing about and the
+  // one they can. Full width top and bottom, pinched in the middle, which is nothing else here.
+  preparing: 'M3.4 2h5.2M3.4 10h5.2M3.4 2l2.6 4-2.6 4M8.6 2 6 6l2.6 4',
   solved: 'M2.3 6.3 5 9 9.7 3.2',
   started: 'M6 1.9a4.1 4.1 0 1 0 0.01 0M6 1.9v8.2',
+  // A download arrow over a tray -- a fourth SHAPE, distinct from the tick, the ring and the
+  // half-ring, so a reader who cannot tell the hues apart is not being asked to. It takes
+  // --lull-muted like every non-solved chip; only `solved` spends the accent.
+  unavailable: 'M6 1.6v5.6M3.6 5.4 6 7.8l2.4-2.4M2.2 9.9h7.6',
   unsolved: 'M6 1.9a4.1 4.1 0 1 0 0.01 0',
 }
 
@@ -156,13 +166,39 @@ const STATE_GLYPH = {
 //
 // Empty counts as absent. Play again empties a board and stores that, so an empty string
 // means the player wiped it rather than leaving one keystroke behind.
-export type PuzzleState = 'solved' | 'started' | 'unsolved'
+//
+// TWO STATES THAT stateOf CANNOT PRODUCE AND MUST NOT LEARN TO. That function reads storage and
+// answers "what has the player done here"; these two answer "can this build open this puzzle right
+// now" -- a fact that comes from the registry entry and the dictionary's status, neither of which
+// stateOf has or should be handed. ShelfRow derives them, at the point where it already has both.
+export type PuzzleState = 'preparing' | 'solved' | 'started' | 'unavailable' | 'unsolved'
 
 const STATE_LABEL: Record<PuzzleState, string> = {
+  preparing: 'Getting ready',
   solved: 'Solved',
   started: 'Started',
+  unavailable: 'Needs setup',
   unsolved: 'Not started',
 }
+
+/**
+ * Which chip a row that cannot be opened yet wears.
+ *
+ * THE PROGRESS STATE WINS WHEREVER THERE IS ONE, and the earlier version of this row replaced it
+ * outright on the argument that "a puzzle cannot be started without a dictionary, so `started` and
+ * `unavailable` are not simultaneously reachable". That was false across sessions, which is the
+ * only span that matters here: play or solve today's Phrazle while the word list is in hand, then
+ * reopen offline, or after a Cache API eviction, or during the window before the cache read
+ * settles. A player who had just solved it was told their solved puzzle needed setup, with the
+ * Solved chip gone.
+ *
+ * The two facts are about different things -- the chip says what the PLAYER has done, the sentence
+ * beside it says what the DEVICE still needs -- and the row has room for both, so nothing has to be
+ * dropped. Only `unsolved` has nothing to report, so it is the only one the dictionary's state may
+ * speak in place of.
+ */
+const chipFor = (state: PuzzleState, missing: 'preparing' | 'unavailable'): PuzzleState =>
+  state === 'unsolved' ? missing : state
 
 interface StateChipProps {
   state: PuzzleState
@@ -228,20 +264,34 @@ const CARD =
   'rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] bg-[var(--lull-plate)] ' +
   'shadow-[inset_0_1px_1px_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.09)]'
 
+// The three-column geometry every row has, pressable or not, so the glyph, the name and the chip
+// sit at the same x on all of them.
+const ROW = `${CARD} grid min-h-11 grid-cols-[44px_1fr_auto] items-center gap-[var(--lull-s4)] p-[var(--lull-s3)]`
+
 // The hover is a LIFT and nothing else. A border-color hover has nowhere left to go now that the
 // resting edge is the load-bearing one, and an accent edge on hover would spend the accent on
 // every row of the directory -- a color this design uses in exactly three places.
-const ROW =
-  `${CARD} grid min-h-11 grid-cols-[44px_1fr_auto] items-center gap-[var(--lull-s4)] p-[var(--lull-s3)] ` +
-  'transition-transform duration-[420ms] ease-[cubic-bezier(0.22,0.68,0.12,1)] hover:-translate-y-[2px]'
+//
+// IT LIVES HERE AND NOT ON ROW, because the rows that are not links must not lift. A row that rises
+// under the pointer is advertising that pressing it does something, and on a row the shell will not
+// let you open that is a promise broken on every pointer device -- the same trap the <div> below
+// exists to avoid, reintroduced by a class. NOTHING IN THIS SUITE CAN CATCH IT: this repo forbids
+// style assertions, jsdom computes no layout, and a hover transform is invisible to every query
+// Testing Library offers. So the split is stated here, and the reason it cannot be pinned is stated
+// with it.
+const ROW_LINK = `${ROW} transition-transform duration-[420ms] ease-[cubic-bezier(0.22,0.68,0.12,1)] hover:-translate-y-[2px]`
 
 const ShelfRow = ({ puzzle, state }: ShelfRowProps): React.ReactNode => {
+  // Called unconditionally and before the guard below, because a hook may not sit under a return.
+  // That is not the same as the BRANCH order, which is the thing that matters here.
+  const { status } = useDictionary()
   const entry = entryFor(puzzle.type)
 
   // A type this build has never heard of. lull-api can ship a generator before the UI
   // that draws it, and a pack is JSON off the network -- so the row says what it cannot
-  // do rather than destructuring undefined during a render with no error boundary
-  // above it.
+  // do rather than destructuring undefined during render, which ErrorBoundary (_app.tsx)
+  // would answer by replacing the whole day with "Lull got stuck". One unknown type
+  // would cost every playable row on the shelf.
   if (entry === undefined) {
     // The same card, minus the grid: there is no glyph to put in the first column and no state to
     // put in the last, because the whole point of this row is that this build cannot draw the
@@ -250,13 +300,82 @@ const ShelfRow = ({ puzzle, state }: ShelfRowProps): React.ReactNode => {
     return <li className={`${CARD} p-[var(--lull-s4)] text-[13px] text-[var(--lull-muted)]`}>{UNKNOWN_TYPE_MESSAGE}</li>
   }
 
+  // BELOW the guard above, and the order is not a preference. An unknown type has no `entry` to ask
+  // about needsDictionary, so reading it first dereferences a possible undefined -- a throw during a
+  // render, which ErrorBoundary (_app.tsx) would answer by replacing the whole day with "Lull got
+  // stuck", which is the exact failure the comment on that guard exists to prevent. The frame's
+  // suite asserts the same ordering on the same pair.
+  if (entry.needsDictionary && status !== 'ready') {
+    return (
+      // The same three-column grid as a playable row, so the glyph, the name and the meta line sit
+      // exactly where they do everywhere else -- but a <div>, never a <Link> and never a disabled
+      // one. A link to a board the shell will refuse to mount is a trap: the player arrives at a
+      // dead end they were invited to. There is nothing to press, so there is nothing to keep in
+      // the tab order, and whatever explanation the row carries is visible text read in place by a
+      // screen reader working down the list, exactly as the unknown-type row's sentence is. This is
+      // the one place the usual "keep disabled controls focusable" advice does not apply, because
+      // what is being removed is a navigation and not a control.
+      //
+      // ROW AND NOT ROW_LINK: this row does not lift under the pointer, because it cannot be
+      // pressed. See ROW_LINK for why that split cannot be asserted here.
+      <li>
+        <div className={ROW}>
+          {/* The identical glyph span the link branch draws, repeated rather than referred to: the
+              row still says WHAT it is, so the bench sign is exactly where it is on every other
+              row. Decoration beside the words and never instead of them, which is why it is
+              hidden and the label is not. */}
+          <span
+            aria-hidden="true"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--lull-r-md)] border border-[var(--lull-rule)] bg-[var(--lull-raised)] text-[var(--lull-ink)]"
+          >
+            <svg
+              fill="none"
+              height="16"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.3"
+              viewBox="0 0 22 16"
+              width="22"
+            >
+              <path d={entry.glyph} />
+            </svg>
+          </span>
+
+          <span className="flex min-w-0 grow flex-col">
+            <span className="lull-sign text-xl leading-[1.15] text-[var(--lull-ink)]">{entry.label}</span>
+            <span className="mt-[3px] text-[12.5px] text-[var(--lull-muted)]">
+              {difficultyLabel(puzzle.difficulty)} · {lengthLabel(puzzle.estimatedSeconds)}
+            </span>
+            {/* ONLY WHEN WE HAVE ACTUALLY LOOKED. Concrete noun, active, no jargon, no hedge, and
+                it names the one thing that will fix it. It deliberately does not say dictionary,
+                word list, or download -- those are all true and none of them is the player's next
+                action.
+
+                While the status is 'loading' nothing is known yet, and telling a player to
+                reconnect is then both false and useless: on a cold open this row paints before the
+                Cache API has answered, so the sentence would run on a device that has the word
+                list. The row says nothing at all in that window and the chip carries the wait. */}
+            {status === 'absent' && (
+              <span className="mt-[3px] text-[12.5px] text-[var(--lull-muted)]">Needs a connection to set up.</span>
+            )}
+          </span>
+
+          {/* The chip reports the PLAYER's progress wherever there is any -- see chipFor -- and
+              speaks for the dictionary only on a row with nothing else to say. */}
+          <StateChip state={chipFor(state, status === 'absent' ? 'unavailable' : 'preparing')} />
+        </div>
+      </li>
+    )
+  }
+
   return (
     <li>
       {/* Encoded, because a puzzle id carries colons. The id is opaque past its date
           prefix, so it is passed along whole and never taken apart. */}
-      <Link className={ROW} href={`/p/${encodeURIComponent(puzzle.id)}`}>
+      <Link className={ROW_LINK} href={`/p/${encodeURIComponent(puzzle.id)}`}>
         {/* The sign in the directory. Each row draws the shape of the BENCH it opens, not a
-            badge for the game, so choosing here is visibly choosing between three different
+            badge for the game, so choosing here is visibly choosing between four different
             rooms -- said one screen before you walk into one. Decoration beside the words
             and never instead of them, which is why it is hidden and the label is not. */}
         <span
@@ -426,9 +545,11 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
           </>
         )}
 
-        {/* Not decoration, and not optional. usePrefetch gates the entire seven-day
-            window on isInstalled(), so without something that asks, a first-time visitor
-            gets one pack and the offline premise this app is built on never engages. */}
+        {/* usePrefetch no longer gates anything on isInstalled() -- it asks for today's
+            pack and nothing else, in a tab or on a home screen alike. This card is now an
+            offer of a launcher icon and a standalone window, and on iOS and Firefox for
+            Android it is the only place either is explained. Its copy still promises the
+            old seven-day fill; see the note in install-card. */}
         <InstallCard mode={mode} onDismiss={dismiss} onInstall={install} onReopen={reopen} platform={platform} />
       </section>
     </>

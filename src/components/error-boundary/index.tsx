@@ -11,8 +11,15 @@ interface ErrorBoundaryState {
 // The last resort. Storage and the registry both validate what they hand on, so nothing
 // *known* reaches render broken -- but a render-time throw with nothing above it unmounts
 // the React root and leaves a blank white page, which tells a player nothing and offers
-// them nothing. Several comments in this codebase cite "there is no error boundary above
-// it" as a reason to be careful; this is that boundary.
+// them nothing. Comments in this codebase used to cite "there is no error boundary above it" as
+// the reason to be careful, which stopped being true when this shipped; they now name what a
+// render throw actually costs, which is THIS -- the whole app, every surface, replaced by one
+// sentence. A cheaper failure, and still the most expensive one the app has.
+//
+// WHAT IT DOES NOT CATCH is the half worth knowing, because two boards guard against it: React
+// routes only RENDER-phase throws to a boundary. A throw inside an event handler escapes to
+// window.onerror, leaves the DOM exactly as it was, and shows the player nothing at all -- so a
+// wedged board with no message is not a lesser failure than this screen, it is a worse one.
 //
 // Deliberately a class. React has no hook equivalent -- getDerivedStateFromError and
 // componentDidCatch exist only on classes.

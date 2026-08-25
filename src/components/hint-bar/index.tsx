@@ -78,7 +78,7 @@ const VARIANT = {
 // CLAMPED, with a floor, and the floor is the whole fix. The bound alone is
 // 100dvh - seam - bar - clearance, which is fine in portrait and collapses in landscape: at a
 // 390dvh phone it computes to 14px, and at 320dvh it goes negative. Against the sheet's own 32px
-// of padding that leaves nothing at all -- so opening a hint relabelled the button, moved focus,
+// of padding that leaves nothing at all -- so opening a hint relabeled the button, moved focus,
 // and displayed no text, inside a zero-height overflow-y-auto box that touch cannot scroll. A
 // component built to protect the seam became the one thing on the bench that silently did nothing.
 //
@@ -246,7 +246,7 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
     return { name: `Show ${rungs}`, visible: rungs }
   }
   // The shared half is the ORDINAL and not the word, so each form can start in its own register:
-  // the name is a command and the visible label is a title. That leaves "Hint" capitalised on screen
+  // the name is a command and the visible label is a title. That leaves "Hint" capitalized on screen
   // and "hint" lowercase inside the name, which is a case difference rather than a containment
   // failure -- 2.5.3 matches without regard to case.
   //
@@ -279,7 +279,7 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
  *
  * Opened rungs are drawn in a sheet that OVERLAYS the board rather than in a panel that shares the
  * column with it. The instrument sits `--lull-seam` up from the bottom edge on every bench, in
- * every state, and a hint that could push it down would break the one promise all three benches
+ * every state, and a hint that could push it down would break the one promise all four benches
  * make together.
  */
 export const HintBar = ({

@@ -3,10 +3,13 @@ import userEvent from '@testing-library/user-event'
 import React from 'react'
 
 import { PuzzleFrame } from './index'
-import { entryFor, REGISTRY, RegistryEntry } from '@registry'
+import { DictionaryContext, DictionaryState } from '@components/dictionary-provider'
+import { entryFor, REGISTRY, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readProgress, writePack, writeProgress } from '@services/storage'
 import {
+  crypticCluePack,
+  crypticCluePuzzleId,
   cryptogramPack,
   cryptogramPuzzleId,
   goFigurePuzzle,
@@ -14,8 +17,14 @@ import {
   pack,
   packDate,
   phrasePack,
+  phrazleDictionary,
+  phrazlePack,
+  phrazlePuzzle,
+  phrazlePuzzleId,
   puzzleId,
   quickPuzzleId,
+  themedAnagramsPack,
+  themedAnagramsPuzzleId,
 } from '@test/__mocks__'
 import { Pack, PuzzleComponent, PuzzleComponentProps } from '@types'
 
@@ -25,7 +34,7 @@ jest.mock('@services/lull')
 
 // Only entryFor, and only its Component. Every other export stays real, so the benches and
 // labels asserted below are the ones the product ships -- but the board itself is a recorder,
-// because the five-prop contract is a claim about what the frame HANDS a board and asserting
+// because the six-prop contract is a claim about what the frame HANDS a board and asserting
 // it through a real board's rendered output would test the board instead. It also keeps this
 // suite from breaking every time a bench is rebuilt: the frame's job is the chrome around a
 // board, not the board.
@@ -142,15 +151,27 @@ describe('PuzzleFrame', () => {
 
     // The contract, asserted rather than assumed. A board that could reach routing, storage, or
     // the network would make "this app displays, the backend decides" a convention instead of a
-    // structure, so the KEY SET is the assertion: a fifth prop fails this test.
-    it('hands the board five props and nothing else', async () => {
+    // structure, so the KEY SET is the assertion: a seventh prop fails this test.
+    //
+    // `dictionary` is the sixth and it is a FACT rather than a CAPABILITY -- a frozen set of strings
+    // and no callable, carrying no URL, no version, no status and no way to ask for more. Every
+    // board is handed it, including the four that read nothing off it, because that keeps the wiring
+    // to ONE mount site a grep can find.
+    it('hands the board six props and nothing else', async () => {
       setup()
       writePack(packDate, pack)
 
       renderFrame()
       await screen.findByRole('region', { name: 'Board' })
 
-      expect(Object.keys(lastProps()).toSorted()).toEqual(['onProgress', 'onReset', 'onSolved', 'progress', 'puzzle'])
+      expect(Object.keys(lastProps()).toSorted()).toEqual([
+        'dictionary',
+        'onProgress',
+        'onReset',
+        'onSolved',
+        'progress',
+        'puzzle',
+      ])
     })
   })
 
@@ -371,6 +392,66 @@ describe('PuzzleFrame', () => {
 
       expect(await screen.findByText('About 2 min')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // THE SECOND TYPE ON THE WRITING BENCH, and this is the assertion that `hasHintBar` was written
+    // off the BENCH rather than off the type. Its own comment says it is written that way "so a
+    // second type that plays on the same surface inherits the decision instead of repeating it" --
+    // this is that second type, and it gets the docked bar with no shell edit at all.
+    it('gives the second writing-bench type the same hint bar', async () => {
+      setupPack(crypticCluePack)
+
+      renderFrame(crypticCluePuzzleId)
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Cryptic Clue' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // `answerOf` requires data.answer to be a non-empty string and composes the sentence itself, so
+    // a type that ships one closes its ladder for free. Tested rather than argued.
+    it('closes the cryptic ladder with the answer the pack shipped', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(crypticCluePack)
+      renderFrame(crypticCluePuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answer is TANGO.')).toBeInTheDocument()
+    })
+
+    // THE THIRD TYPE ON THE WRITING BENCH, and it needs no shell edit either: `hasHintBar` is
+    // `entry.bench !== 'tile'`, so this type inherits the docked bar the way Cryptic Clue did.
+    it('gives the third writing-bench type the same hint bar', async () => {
+      setupPack(themedAnagramsPack)
+
+      renderFrame(themedAnagramsPuzzleId)
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Themed Anagrams' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // THE LADDER CLOSING ON THE ONE BENCH WHERE FOUR ANSWERS HAVE TO BE NAMED, end to end through
+    // the real `answerOf`: the frame evaluates `answerOf(puzzle) ?? undefined` for every puzzle it
+    // opens, hands the bar the sentence, and the bar renders what it is handed verbatim. Nothing in
+    // the frame changes for this type, which is the thing this test actually proves -- it renders
+    // the shipped frame over the fixture pack rather than asserting that no edit was needed.
+    //
+    // The board itself is the recorder this suite mocks in, so what is on screen here is the bar's
+    // output and not the board's.
+    it('closes the themed anagrams ladder with all four answers', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(themedAnagramsPack)
+      renderFrame(themedAnagramsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answers are KETTLE, SAUCEPAN, SKILLET, and SPATULA.')).toBeInTheDocument()
     })
 
     // The shell hands the bar the answer as well as the ladder, so a player who spends all three
@@ -642,8 +723,8 @@ describe('PuzzleFrame', () => {
   describe('a puzzle this build cannot draw', () => {
     // lull-api can ship a generator before the UI that draws it, so a pack off the network can
     // name a type this build has never heard of. Destructuring the missing registry entry would
-    // throw during a render with no error boundary above it.
-    it('says so rather than white-screening', async () => {
+    // throw during render, and ErrorBoundary would answer it by replacing the whole app.
+    it('says so rather than losing the whole app to the boundary', async () => {
       setup()
       // The real fetchPack answers a COMPLETE stored pack without a request, which here means
       // leaving the cache below exactly as this test wrote it.
@@ -706,6 +787,154 @@ describe('PuzzleFrame', () => {
       renderFrame(undefined)
 
       expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    })
+  })
+
+  // The gate. A context value is supplied directly rather than a provider, so no network, no timers
+  // and no Cache API are involved and the state under test is one literal.
+  describe('a puzzle whose type needs a word list', () => {
+    const renderGated = (state: DictionaryState, id: string = phrazlePuzzleId): ReturnType<typeof render> =>
+      render(
+        <DictionaryContext.Provider value={state}>
+          <PuzzleFrame locale="en-US" puzzleId={id} />
+        </DictionaryContext.Provider>,
+      )
+
+    it('refuses a Phrazle deep link until the word list is here', async () => {
+      setupPack(phrazlePack)
+
+      renderGated({ status: 'absent', words: null })
+
+      expect(await screen.findByRole('heading', { name: 'Phrazle needs a one-time download' })).toBeInTheDocument()
+      expect(
+        screen.getByText('The word list downloads once and then works offline. Reconnect and open this puzzle again.'),
+      ).toBeInTheDocument()
+    })
+
+    // The entry is KNOWN here, so the trail names the puzzle. That is the whole difference between
+    // this dead end and "That puzzle isn't here", which names the day and stops.
+    it('names the puzzle on the spine, because it knows which one it is', async () => {
+      setupPack(phrazlePack)
+
+      renderGated({ status: 'absent', words: null })
+      const trail = await breadcrumb()
+
+      expect(within(trail).getByText('Phrazle')).toHaveAttribute('aria-current', 'page')
+    })
+
+    // A WORD LIST STILL ARRIVING IS NOT A WORD LIST THAT FAILED, and this surface used to say it
+    // was. Every cold open passes through `loading`: the pack comes synchronously out of
+    // localStorage and the provider's Cache API read does not, so the first painted frame of a
+    // Phrazle deep link landed on a panel telling a player who already had the word list to
+    // reconnect and open the puzzle again -- both halves false.
+    //
+    // What it says instead names no action, and it keeps the spine, which under a standalone
+    // manifest is the only way off this surface.
+    //
+    // REDDENS ON: the gate put back to `status !== 'ready'` for the refusal panel -- the heading
+    // then appears while the shell is still looking, and the live region does not.
+    it('says only that it is still getting ready while the word list is arriving', async () => {
+      setupPack(phrazlePack)
+
+      renderGated({ status: 'loading', words: null })
+
+      expect(await screen.findByRole('status')).toHaveTextContent('Getting this puzzle ready…')
+      expect(screen.queryByRole('heading', { name: 'Phrazle needs a one-time download' })).toBeNull()
+      expect(
+        screen.queryByText(
+          'The word list downloads once and then works offline. Reconnect and open this puzzle again.',
+        ),
+      ).toBeNull()
+    })
+
+    // The way home survives the wait. A blank placeholder was the other candidate for this state and
+    // this is why it lost: the manifest is display: standalone, so there is no back button and no
+    // address bar, and a slow first download would have left the player on a screen with nothing on
+    // it and no way off.
+    //
+    // REDDENS ON: returning the frame's aria-hidden placeholder for `loading` instead of a DeadEnd.
+    it('still offers a way home while the word list is arriving', async () => {
+      setupPack(phrazlePack)
+
+      renderGated({ status: 'loading', words: null })
+      const trail = await breadcrumb()
+
+      expect(within(trail).getByRole('link', { name: 'Lull' })).toHaveAttribute('href', '/')
+      expect(within(trail).getByText('Phrazle')).toHaveAttribute('aria-current', 'page')
+    })
+
+    it('opens the board once the word list is here', async () => {
+      setupPack(phrazlePack)
+
+      renderGated({ status: 'ready', words: phrazleDictionary })
+
+      expect(await screen.findByRole('region', { name: 'Board' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Phrazle needs a one-time download' })).toBeNull()
+    })
+
+    // THE WIRING ITSELF, which the gate above does not cover: every test in this describe asserts
+    // what the frame DRAWS at a given status, and all of them stay green on a frame that opens the
+    // board and hands it no word list at all. `dictionary={words ?? undefined}` is one mount site
+    // and one expression, and until this row nothing read it.
+    //
+    // toBe RATHER THAN toEqual, and that is the assertion doing a second job. Identity is what makes
+    // "one provider, one fetch, one 51,852-entry Set for the whole app however many surfaces read
+    // it" true -- a frame that rebuilt the set per mount would satisfy toEqual and quietly cost a
+    // rebuild on every navigation. It also pins that nothing between the context and the board
+    // copies, filters or freezes it on the way past.
+    //
+    // The recorder is the right instrument here rather than a real Phrazle. This suite mocks
+    // entryFor file-wide precisely so the frame's contract is asserted as what it HANDS a board,
+    // and reading the set back out of a real board's rendered output would test the board.
+    //
+    // REDDENS ON: dropping the `dictionary` prop from the mount site, or replacing the value with
+    // `new Set(words)`.
+    it('hands the board the word set the provider published, and not a copy of it', async () => {
+      setupPack(phrazlePack)
+
+      renderGated({ status: 'ready', words: phrazleDictionary })
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(lastProps().dictionary).toBe(phrazleDictionary)
+    })
+
+    // THE OTHER HALF, and the one that says the prop is ambient rather than Phrazle's. goFigure does
+    // not need a word list, so the frame never gates it -- and it is handed `undefined` rather than
+    // the set, because `words` is null on a device that never fetched one. A board that predates the
+    // sixth prop reads nothing and compiles unchanged, which is the whole claim the optional prop
+    // makes.
+    //
+    // REDDENS ON: `dictionary={words ?? EMPTY}` or any default that substitutes a set for absence --
+    // the value is then a Set here and a board could not tell "no dictionary" from "no words".
+    it('hands a board that needs no word list undefined rather than an empty set', async () => {
+      setupPack(pack)
+
+      renderGated({ status: 'absent', words: null }, puzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(lastProps().dictionary).toBeUndefined()
+    })
+
+    // THE ORDERING, and this is the test that catches the branch being written the other way round.
+    // An unknown type has NO entry to ask about needsDictionary, so the unknown-type guard must stay
+    // FIRST -- put the new branch above it and the frame dereferences entry.needsDictionary on an
+    // entry that may be undefined, which is a throw during a render, and ErrorBoundary (_app.tsx)
+    // would answer it by replacing the whole app with "Lull got stuck" -- so the cost is the entire
+    // surface, not this one puzzle.
+    //
+    // The fixture is what makes this a real guard test rather than a shape: a pack holding a type
+    // this build has never heard of, opened with NO dictionary, so BOTH branches are live and only
+    // their order decides which one answers.
+    it('answers an unknown type before it asks about the dictionary', async () => {
+      const unknownId = '2026-08-18:crossword:5e4d3c2b'
+      setupPack({
+        ...phrazlePack,
+        puzzles: [{ ...phrazlePuzzle, id: unknownId, type: 'crossword' as typeof phrazlePuzzle.type }],
+      })
+
+      renderGated({ status: 'absent', words: null }, unknownId)
+
+      expect(await screen.findByRole('heading', { level: 1, name: UNKNOWN_TYPE_MESSAGE })).toBeInTheDocument()
     })
   })
 })

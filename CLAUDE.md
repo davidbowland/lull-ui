@@ -21,12 +21,12 @@ pushed. What catches drift is the vendored tests running in this suite and a war
 neither calls the other.
 
 **A puzzle component gets no router, no storage, and no API client.** It receives
-`{ puzzle, progress, onProgress, onReset, onSolved }` and nothing else. The shell owns routing,
-persistence, and the network. This is what keeps the display-only rule structural rather than
-aspirational.
+`{ puzzle, progress, onProgress, onReset, onSolved, dictionary }` and nothing else. The shell owns
+routing, persistence, and the network. This is what keeps the display-only rule structural rather
+than aspirational.
 
 `onReset` is a lifecycle signal, not game state — "the player started this puzzle over." **A board
-may name an event; it may never name a key, a route, or an endpoint.** That is the line five props
+may name an event; it may never name a key, a route, or an endpoint.** That is the line six props
 has to stay on, and it is the line worth stating, because what changed with `onReset` is that a
 board can now cause a storage write it does not understand. "The board learns nothing back from it"
 is true and does not do the work: it would also permit `onSaveDraft(text)`, which hands the shell a
@@ -38,6 +38,25 @@ are not a reset: `encode({})` in `cryptogram/mapping.ts` when the last letter is
 `missingvowels` when the text is deleted, and goFigure's Undo and Clear — which under the current
 grammar write `''` only when no rung has been spent, since a cleared board with rungs spent stores
 `_______|2|`.
+
+**A board may receive a FACT; it may never receive a CAPABILITY.** `dictionary?: ReadonlySet<string>`
+is the second prop to widen this contract, and it sits on the line `onReset` drew. `onReset()` takes
+no argument and names no destination, so a board can cause a storage write it does not understand
+without naming the key. `dictionary` is a set of strings and no callable, so a board can reject a
+guess without knowing where the words came from. Not a FROZEN set: `ReadonlySet` is a compile-time
+view of a live `Set`, and `Object.freeze` does not stop `Set.prototype.add`, so the guarantee is the
+type rather than the value. It carries no URL, no version, no cache name, no status, no error, and
+no way to tell whether the words came off the network or out of a cache last month. It is ambient in
+exactly the way the theme is ambient.
+
+What would break the line is a `refresh()`, a `status`, or an `error` reaching a board — each hands
+the board a decision that is the shell's, and the first is an API client wearing a prop's clothes.
+**It is optional and the board reads `dictionary ?? EMPTY`**, so every board that predates it
+compiles unchanged and a board handed nothing refuses every guess rather than throwing.
+`DictionaryProvider` stays the shell's — it owns the fetch, the cache, the retry and the timers —
+and `PuzzleFrame` reads `useDictionary()` and hands the set down at its one mount site. **A board
+may never call that hook.** The rule is not "no hooks in a board"; it is that the contract is
+readable off `PuzzleComponentProps`, and a hook is exactly the thing that is not.
 
 **Never let the service worker answer for the manifest.** `public/sw.js` bails out before
 intercepting `/site.webmanifest`. Firefox fetches the manifest inside `requestIdleCallback` with no

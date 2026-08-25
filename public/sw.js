@@ -16,6 +16,27 @@ var PRECACHE = ['/']
 
 var CACHE_NAME = 'lull-' + CACHE_VERSION
 
+// The dictionary cache is a SIBLING, keyed by the DICTIONARY version rather than by the build --
+// so it must survive a deploy. caches.keys() is origin-wide and the activate sweep deletes
+// everything that is not the current build's cache, which would take it with every release. Putting
+// the dictionary inside CACHE_NAME instead is worse, not simpler: that cache is dropped wholesale on
+// each version bump, so every installed device would re-download the word list on deploy day --
+// ~123KB on the wire, 366KB decoded -- against a route throttled at 2 requests per second across ALL
+// CALLERS: the synchronized stampede on a schedule.
+//
+// This worker never DELETES a stale dictionary version either, and that is deliberate rather than a
+// leak left open: the only code that knows which version is current is src/services/dictionary.ts,
+// and it prunes its own siblings the moment it successfully installs the current one.
+//
+// It also never intercepts the download. The fetch handler returns early on any cross-origin
+// request, and the dictionary is served from the API host.
+//
+// The one residual risk is a future CACHE_VERSION that happens to start with 'dict-', which would
+// make CACHE_NAME itself match this prefix and exempt the build cache from its own sweep. It is
+// impossible today -- generate-sw-manifest.js writes a build hash -- and is worth this sentence
+// rather than a runtime assertion.
+var DICT_PREFIX = 'lull-dict-'
+
 // IMPORTANT: this mirrors UiUrlRewriteFunction in template.yaml. CloudFront runs that
 // rewrite at the edge, and offline there is no edge -- so /p/<id> would miss the cache
 // entirely without it. The exported shell is written to the literal out/p/[puzzleId]/
@@ -96,7 +117,7 @@ self.addEventListener('activate', function (event) {
         return Promise.all(
           keys
             .filter(function (key) {
-              return key !== CACHE_NAME
+              return key !== CACHE_NAME && key.indexOf(DICT_PREFIX) !== 0
             })
             .map(function (key) {
               return caches.delete(key)

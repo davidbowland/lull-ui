@@ -19,6 +19,9 @@
   --lull-on-accent: #f5f3f1;
   --lull-rule: #7a7371;
   --lull-hair: #c9c3bd;
+  --lull-tile-green: #2f6146;
+  --lull-tile-yellow: #7a5a12;
+  --lull-tile-purple: #5a3a72;
   --lull-floor: #2a2628;
   --lull-floor-ink: #f2efec;
   --lull-floor-muted: #b4adaa;
@@ -62,15 +65,18 @@
      to look at it.
 
      It is a token rather than a per-bench number because that is the whole claim: one
-     edit here moves the seam on all three benches at once, and no bench can drift from
-     the other two by accident.
+     edit here moves the seam on all four benches at once, and no bench can drift from
+     the other three by accident.
 
      The budget it has to cover, measured rather than assumed:
 
        ribbon      52  (TWO reserved lines of text-[13px]/1.35, plus py-2 and a hairline)
-       instrument 179  (7 x 4 keys at 44px with 1px gridlines -- 26 letters + Undo +
-                        Delete is exactly 28, which is exactly 7 x 4, which is why the
-                        pad never reflows and never orphans a row)
+       instrument 179  (7 x 4 keys at 44px with 1px gridlines -- 26 letters plus two
+                        utility keys is exactly 28, which is exactly 7 x 4, which is why
+                        the pad never reflows and never orphans a row. The cipher bench
+                        spends the two on Undo and Delete and the guess bench on Guess and
+                        Delete; the arithmetic is what this token depends on, not which
+                        two they are)
        safe strip   9
        ----------------
                   240
@@ -130,6 +136,9 @@ html.dark {
   --lull-on-accent: #191718;
   --lull-rule: #7c7476;
   --lull-hair: #3b3638;
+  --lull-tile-green: #7fbb96;
+  --lull-tile-yellow: #d6b25c;
+  --lull-tile-purple: #af87c9;
   --lull-floor: #141314;
   --lull-floor-ink: #eee9e6;
   --lull-floor-muted: #a79f9d;
@@ -166,7 +175,7 @@ body {
 
 /* The band order, declared in one place because that is the only place the whole order
    can be read. The board and the instrument both come out of the SAME puzzle component —
-   which is what keeps its four-prop contract intact — but they belong in different bands,
+   which is what keeps its six-prop contract intact — but they belong in different bands,
    with the shell's own hint bar between them. The frame gives the component's wrapper
    `display: contents`, so both become flex items of the screen column directly and `order`
    puts them in their bands. Neither side learns anything about the other.
@@ -227,12 +236,13 @@ body {
 
    It is drawn on the bench's own plate with NO rule under it, which is what keeps the working
    surface continuous. The bands that are ruled off are the ones drawn in the darker ground -- the
-   breadcrumb above and, on the two benches that have one, the sign row below. They are told apart
+   breadcrumb above and, on the three benches that have one, the sign row below. They are told apart
    by their ground, not by a border on their neighbor.
 
-   The sign row belongs to the PUZZLE COMPONENT rather than to this file, because both facts on it
-   (the category, and how much of the board is filled) are read off the puzzle's own data, which
-   the shell deliberately cannot see. Its band is `.lull-signrow`. */
+   The sign row belongs to the PUZZLE COMPONENT rather than to this file, because everything on it
+   is read off the puzzle's own data, which the shell deliberately cannot see. It holds up to two
+   facts — a category on the left and how far the board has got on the right — and the guess bench
+   ships no category, so its left slot is simply empty. Its band is `.lull-signrow`. */
 .lull-title {
   flex: 0 0 auto;
   order: 2;
@@ -250,7 +260,7 @@ body {
 
    The geometry is the SHELL's even though the content is the component's. A board that
    forgot to flex would take the seam with it, and no board can be trusted with a promise
-   the other two benches also depend on. */
+   the other three benches also depend on. */
 .lull-board {
   flex: 1 1 0%;
   min-height: 96px;
@@ -266,11 +276,12 @@ body {
 /* The sign row: a 34px strip of the darker ground ruled across the raised working surface, holding
    what this phrase IS on the left and where the player stands on the right.
 
-   It is a class here rather than a string in one component because two benches draw it and it is
-   the same band on both -- the shared grammar this design is built out of, as opposed to a shared
-   container. What changes between benches is the two facts in it; the band never does. It stays
-   inside the puzzle components because both facts are read off the puzzle's own data, which the
-   shell deliberately cannot see. */
+   It is a class here rather than a string in one component because three benches draw it and it is
+   the same band on all three -- the shared grammar this design is built out of, as opposed to a
+   shared container. What changes between benches is what stands in it -- the guess bench ships no
+   category, so its left slot is empty -- and the band itself never does. It stays inside the puzzle
+   components because those facts are read off the puzzle's own data, which the shell deliberately
+   cannot see. */
 .lull-signrow {
   align-items: center;
   background-color: var(--lull-ground);
@@ -287,19 +298,8 @@ body {
   padding-right: var(--lull-gutter-right);
 }
 
-/* The one band that escapes the page gutter, and it has to.
-
-   The keypad is 7 columns of 44px keys, sized so that 26 letters plus Undo and Delete make
-   exactly 28 and exactly 7 x 4 -- no reflow, no orphan row. That arithmetic assumes the
-   full viewport width: at 320px a full-bleed key is (320 - 6 gaps) / 7 = 44.86px. Inside
-   the page's 16px-a-side gutter it is 40.3px, which is under the 44x44 touch target this
-   project holds itself to, on the narrowest device and for every key on the board.
-
-   Canceled with the gutter token rather than a literal, so the two can never drift: if
-   the page's inset changes, this follows it. The board and every other band keep the
-   gutter, because text against a screen edge is a different and worse problem. */
 /* The one band that takes NO gutter, only the physical inset. The keypad is 7 columns sized so
-   that 26 letters plus Undo and Delete make exactly 28 and exactly 7 x 4 — no reflow, no orphan
+   that 26 letters plus two utility keys make exactly 28 and exactly 7 x 4 — no reflow, no orphan
    row — and that arithmetic assumes the full width: at 320px a full-bleed key is
    (320 - 6 gaps) / 7 = 44.86px, where inside a 16px-a-side gutter it is 40.3px, under the 44x44
    touch target on the narrowest device and for every key. So the band goes edge to edge and puts

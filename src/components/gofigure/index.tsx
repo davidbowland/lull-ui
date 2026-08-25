@@ -286,7 +286,9 @@ const forReading = (tokens: string[]): string =>
 // the wire, and `isValidPuzzle` deliberately leaves `data` opaque -- so a pack cached before that
 // deploy is a VALID pack whose `hints` is an array of strings. `Array.isArray` waves it through,
 // `HintBar` counts three of them and offers "Open hint 1 of 3", and the first press destructures
-// `undefined` and takes the page down with no error boundary between here and the root.
+// `undefined`. That throw is inside an event handler, which an error boundary does NOT catch --
+// React routes only render-phase throws to one -- so it escapes to window.onerror and leaves the
+// board wedged mid-press with nothing on screen to say why.
 //
 // `hintsOf` cannot be reused for this: it is shared with the two phrase benches, whose rungs
 // legitimately carry no metadata, so it checks the prose and nothing else. The narrowing belongs
@@ -302,7 +304,8 @@ const forReading = (tokens: string[]): string =>
 //   `metadata: null`   -- `typeof null` is 'object', so a null sailed through a check that had
 //                         already written `hint !== null` one term earlier for the outer object and
 //                         then omitted the identical clause for the inner one. The first press
-//                         destructured it and took the page down with no error boundary above.
+//                         destructured it and wedged the board -- a handler throw, which no error
+//                         boundary sees.
 //   `metadata: {}`     -- structurally fine, and `applyHint` writes `operators[undefined] = undefined`
 //                         into a board that encodes unchanged. The player is charged a rung, nothing
 //                         appears, and no error is raised anywhere.
@@ -1254,7 +1257,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
           </div>
 
           {/* Tile-bench furniture, not a shared margin: a teaching column every bench inherited
-              would be the shared frame this redesign rejects, and the other two benches have
+              would be the shared frame this redesign rejects, and the other three benches have
               nothing to teach that a hint cannot carry.
 
               THE ONE THING ON THIS BOARD THAT SCROLLS, in a box of its own rather than by letting

@@ -1,4 +1,5 @@
 import {
+  CrypticClueData,
   CryptogramData,
   GoFigureData,
   GoFigureHintLadder,
@@ -7,7 +8,11 @@ import {
   MissingVowelsData,
   Pack,
   PackDate,
+  PhrazleData,
+  PhrazleHintLadder,
   Puzzle,
+  ThemedAnagramsData,
+  ThemedAnagramsHintLadder,
 } from '@types'
 
 export const packDate: PackDate = '2026-08-18'
@@ -15,9 +20,9 @@ export const packDate: PackDate = '2026-08-18'
 // Rung order 1, 0, 2 -- the difficulty-4 order, which is deliberately NOT left to right. A test that
 // passes with hints[slot] instead of hints[rung].metadata.slot is a test that never saw this.
 export const goFigureHints: GoFigureHintLadder = [
-  { metadata: { operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
-  { metadata: { operator: '+', slot: 0 }, text: 'The 1st operator from the left is "+".' },
-  { metadata: { operator: '*', slot: 2 }, text: 'The 3rd operator from the left is "×".' },
+  { metadata: { kind: 'gofigure-operator', operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
+  { metadata: { kind: 'gofigure-operator', operator: '+', slot: 0 }, text: 'The 1st operator from the left is "+".' },
+  { metadata: { kind: 'gofigure-operator', operator: '*', slot: 2 }, text: 'The 3rd operator from the left is "×".' },
 ]
 
 // The original TI-83 puzzle: goal 154 from the bank 6,9,7,7. goFigure evaluates
@@ -50,9 +55,18 @@ export const quickPuzzle: Puzzle<GoFigureData> = {
     bank: [1, 2, 3, 4],
     goal: 10,
     hints: [
-      { metadata: { operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
-      { metadata: { operator: '+', slot: 0 }, text: 'The 1st operator from the left is "+".' },
-      { metadata: { operator: '+', slot: 2 }, text: 'The 3rd operator from the left is "+".' },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '+', slot: 1 },
+        text: 'The 2nd operator from the left is "+".',
+      },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '+', slot: 0 },
+        text: 'The 1st operator from the left is "+".',
+      },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '+', slot: 2 },
+        text: 'The 3rd operator from the left is "+".',
+      },
     ] as GoFigureHintLadder,
     operators: ['+', '-', '*', '/'],
   },
@@ -159,3 +173,232 @@ export const cryptogramPack: Pack = {
   date: packDate,
   puzzles: [cryptogramPuzzle],
 }
+
+// Cryptic Clue
+//
+// Built from the wire example so the fixture and the contract cannot drift. `Dance hidden in instant
+// angora` is 30 characters: [0, 5) is `Dance` and [16, 30) is `instant angora`, inside which
+// `instanT ANGOra` hides TANGO. Every offset here was checked against the string it indexes, which
+// is the whole discipline this type needs -- a span that is valid and wrong renders a confident lie.
+export const crypticCluePuzzleId = '2026-08-18:crypticclue:abcd1234'
+
+// Text only, no `metadata`. Rungs of this type carry prose and nothing else, and the wire example's
+// order is device, then the quoted definition, then the enumeration and initial -- naming the
+// device first because for a hidden clue, naming which half is the definition hands the solver the
+// wordplay half by elimination.
+export const crypticClueHints: HintLadder = [
+  {
+    text: "The wordplay is a hidden word: the answer's letters sit consecutively inside the clue, spanning a word break.",
+  },
+  { text: 'The definition is "Dance".' },
+  { text: 'Five letters, beginning with T.' },
+]
+
+export const crypticCluePuzzle: Puzzle<CrypticClueData> = {
+  data: {
+    answer: 'TANGO',
+    clue: 'Dance hidden in instant angora',
+    definitionSpan: { end: 5, start: 0 },
+    device: 'hidden',
+    enumeration: [5],
+    fodderSpan: { end: 30, start: 16 },
+    hints: crypticClueHints,
+  },
+  difficulty: 3,
+  estimatedSeconds: 120,
+  id: crypticCluePuzzleId,
+  type: 'crypticclue',
+}
+
+// The only way to cover the second wordplay line. `device` is what the reveal reads, and it is the
+// field's only reader in the whole app.
+export const anagramCrypticClue: Puzzle<CrypticClueData> = {
+  ...crypticCluePuzzle,
+  data: { ...crypticCluePuzzle.data, device: 'anagram' },
+}
+
+// THREE broken-span fixtures rather than one with a parameter, so each names the state it exists
+// for and a test that stops covering one fails by leaving an unused export rather than by quietly
+// sharing a fixture with the test next to it.
+//
+// An end past the clue: the degradation path a real pack could produce. State 8 -- no mark, the
+// heading and the wordplay line only.
+export const brokenSpanCrypticClue: Puzzle<CrypticClueData> = {
+  ...crypticCluePuzzle,
+  data: { ...crypticCluePuzzle.data, definitionSpan: { end: 99, start: 0 } },
+}
+
+// The mirror case, and the only fixture that can reach state 9 -- mark, heading and the definition
+// line, with no wordplay line.
+export const brokenFodderCrypticClue: Puzzle<CrypticClueData> = {
+  ...crypticCluePuzzle,
+  data: { ...crypticCluePuzzle.data, fodderSpan: { end: 99, start: 16 } },
+}
+
+// Both past the end, and the only fixture that can reach state 10, where the reveal does not render
+// at all. A landmark named "How the clue worked" containing nothing is worse than silence.
+export const brokenSpansCrypticClue: Puzzle<CrypticClueData> = {
+  ...crypticCluePuzzle,
+  data: {
+    ...crypticCluePuzzle.data,
+    definitionSpan: { end: 99, start: 0 },
+    fodderSpan: { end: 99, start: 16 },
+  },
+}
+
+// State 14: the one branch in this board that a well-formed pack never takes. Without the guard an
+// empty array paints a bare "()" beside the clue and an sr-only " letters." with a leading space.
+export const noEnumerationCrypticClue: Puzzle<CrypticClueData> = {
+  ...crypticCluePuzzle,
+  data: { ...crypticCluePuzzle.data, enumeration: [] },
+}
+
+export const crypticCluePack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [crypticCluePuzzle],
+}
+
+// Themed Anagrams
+//
+// The wire example, so the fixture and the specification cannot drift. Every scramble was checked
+// against its answer as a multiset: ELKTET/KETTLE, UNASAPCE/SAUCEPAN, LKSETIL/SKILLET,
+// TPSLAAU/SPATULA. Lengths run 6, 8, 7, 7, which is deliberately NOT sorted -- a board that tidied
+// the rows short-to-long would break every ordinal in the ladder, and a fixture already in that
+// order could not tell a sort from a passthrough.
+export const themedAnagramsPuzzleId = '2026-08-18:themedanagrams:7c1e4b90'
+
+// Rungs 2, 3, 1 by entryIndex, which is deliberately not row order: the backend orders a ladder by
+// how much each rung reveals and nothing promises the rungs run down the board. The third rung is
+// the one the ordinal test walks -- `The 2nd answer is SAUCEPAN.` carries entryIndex 1, so the
+// 1-based sentence and the 0-based metadata name the same row on screen.
+export const themedAnagramsHints: ThemedAnagramsHintLadder = [
+  {
+    metadata: { entryIndex: 2, kind: 'themedanagrams-entry', reveal: 'initial' },
+    text: 'The 3rd answer starts with S.',
+  },
+  {
+    metadata: { entryIndex: 3, kind: 'themedanagrams-entry', reveal: 'bookends' },
+    text: 'The 4th answer starts with S and ends with A.',
+  },
+  {
+    metadata: { entryIndex: 1, kind: 'themedanagrams-entry', reveal: 'answer' },
+    text: 'The 2nd answer is SAUCEPAN.',
+  },
+]
+
+export const themedAnagramsPuzzle: Puzzle<ThemedAnagramsData> = {
+  data: {
+    entries: [
+      { answer: 'KETTLE', scramble: 'ELKTET' },
+      { answer: 'SAUCEPAN', scramble: 'UNASAPCE' },
+      { answer: 'SKILLET', scramble: 'LKSETIL' },
+      { answer: 'SPATULA', scramble: 'TPSLAAU' },
+    ],
+    hints: themedAnagramsHints,
+    theme: 'Kitchen tools',
+  },
+  difficulty: 2,
+  estimatedSeconds: 180,
+  id: themedAnagramsPuzzleId,
+  type: 'themedanagrams',
+}
+
+// THE FIXTURE THAT EXERCISES THE EMPTY-GUESS GUARD in themedanagrams/index.tsx's `isRight`.
+// normalizeAnswer maps a string with no alphanumerics to '', so on this pack the equality alone
+// reports every empty box as right: four chips paint at mount, the tally reads 4 of 4 right, and
+// onSolved fires on a board nobody has touched. Without this fixture that guard's test passes
+// whether or not the guard is there.
+export const blankAnswerThemedAnagrams: Puzzle<ThemedAnagramsData> = {
+  ...themedAnagramsPuzzle,
+  data: {
+    ...themedAnagramsPuzzle.data,
+    entries: [
+      { answer: '', scramble: 'ELKTET' },
+      { answer: 'SAUCEPAN', scramble: 'UNASAPCE' },
+      { answer: 'SKILLET', scramble: 'LKSETIL' },
+      { answer: 'SPATULA', scramble: 'TPSLAAU' },
+    ],
+  },
+}
+
+// The other half of the same guard, and the half that LATCHES. `data` is JSON off the network that
+// isValidPuzzle leaves opaque, so an answer can be absent entirely -- and normalizeAnswer on a
+// non-string throws. The board writes progress before it adjudicates, so the write lands and the
+// render does not: every later load restores that keystroke at mount and throws before the player
+// can touch anything. The cast is what a pack can actually deliver, said out loud.
+export const unusableAnswerThemedAnagrams: Puzzle<ThemedAnagramsData> = {
+  ...themedAnagramsPuzzle,
+  data: {
+    ...themedAnagramsPuzzle.data,
+    entries: [
+      { answer: undefined as unknown as string, scramble: 'ELKTET' },
+      { answer: 'SAUCEPAN', scramble: 'UNASAPCE' },
+      { answer: 'SKILLET', scramble: 'LKSETIL' },
+      { answer: 'SPATULA', scramble: 'TPSLAAU' },
+    ],
+  },
+}
+
+export const themedAnagramsPack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [themedAnagramsPuzzle],
+}
+
+// Phrazle
+//
+// TOE HOLD, which is the phrase every fixture in the vendored mark-guess suite is built around --
+// so a board test and a rule test that disagree are disagreeing about the same board.
+export const phrazlePuzzleId = '2026-08-18:phrazle:5e4d3c2b'
+
+// The 0-based/1-based mismatch is DELIBERATE and this fixture is where it is visible: `word` and
+// `position` are 0-based because a renderer indexes a board from zero, and the sentence counts from
+// one because a sentence does. The rungs walk word 0, word 1, word 0 -- rung k takes the first
+// still-unrevealed position of word `k mod wordCount`, which for a two-word phrase is T, H, O.
+export const phrazleHints: PhrazleHintLadder = [
+  {
+    metadata: { kind: 'phrazle-reveal', letter: 'T', position: 0, word: 0 },
+    text: 'Letter 1 of word 1 is T.',
+  },
+  {
+    metadata: { kind: 'phrazle-reveal', letter: 'H', position: 0, word: 1 },
+    text: 'Letter 1 of word 2 is H.',
+  },
+  {
+    metadata: { kind: 'phrazle-reveal', letter: 'O', position: 1, word: 0 },
+    text: 'Letter 2 of word 1 is O.',
+  },
+]
+
+// NO `category` KEY, and its absence is load-bearing. Phrazle never ships one, so a fixture that
+// carried it would let a board reserve space for something that cannot arrive -- and the sign row's
+// left slot is genuinely empty on this bench.
+//
+// NO `maxGuesses` KEY EITHER, and that absence is load-bearing in the same way. The guess limit came
+// off the wire because this game cannot be lost, so a fixture still carrying one would let a board
+// read a field no real pack ships.
+//
+// `answer` is the CANONICAL FORM: uppercase A-Z words separated by single spaces, which is what
+// splitPhrase produces and what markGuess marks.
+export const phrazlePuzzle: Puzzle<PhrazleData> = {
+  data: {
+    answer: 'TOE HOLD',
+    hints: phrazleHints,
+  },
+  difficulty: 3,
+  estimatedSeconds: 240,
+  id: phrazlePuzzleId,
+  type: 'phrazle',
+}
+
+export const phrazlePack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [phrazlePuzzle],
+}
+
+// Seven words: small enough to read in one line, and rich enough that a rejection test has a real
+// near-miss in HOLE -- four letters, one away from HOLD, and absent from the phrase. HOT and HAND
+// are here because HOT HAND is the committed guess every marking assertion in the board's suite uses.
+export const phrazleDictionary: ReadonlySet<string> = new Set(['TOE', 'HOLD', 'HOT', 'HAND', 'HOLE', 'OLD', 'TEA'])

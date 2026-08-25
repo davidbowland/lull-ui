@@ -1,5 +1,12 @@
 import { answerOf, hintsOf } from './hints'
-import { goFigureData, goFigureHints, goFigurePuzzle, missingVowelsHints, missingVowelsPuzzle } from '@test/__mocks__'
+import {
+  goFigureData,
+  goFigureHints,
+  goFigurePuzzle,
+  missingVowelsHints,
+  missingVowelsPuzzle,
+  themedAnagramsPuzzle,
+} from '@test/__mocks__'
 import { Puzzle } from '@types'
 
 describe('hintsOf', () => {
@@ -56,8 +63,81 @@ describe('answerOf', () => {
   // `acceptedSolutions`, several of which are right. The board composes its own line; this function
   // must decline rather than invent one, and today the shell never renders a bar for that bench
   // anyway.
-  it('declines a puzzle that carries no phrase answer', () => {
+  //
+  // NAMED FOR THE FIXTURE, not for a rule. "Carries no phrase answer" stopped being a reason to
+  // decline the moment the entries branch existed -- a themed anagrams puzzle carries no phrase
+  // answer either and gets a sentence. What is true of goFigure is that it carries NEITHER shape.
+  it('declines a goFigure puzzle, which carries neither shape', () => {
     expect(answerOf(goFigurePuzzle)).toBeNull()
+  })
+
+  // ROW ORDER, so a player can read the sentence straight down the board. Serial comma, which is
+  // American English and which also keeps the last two from reading as one item. Pinned as a whole
+  // string rather than with a substring match, because a list is a place where "KETTLE, SAUCEPAN"
+  // appearing inside something longer would be a different sentence.
+  it('names every answer a themed anagrams puzzle carries, in row order', () => {
+    expect(answerOf(themedAnagramsPuzzle)).toBe('The answers are KETTLE, SAUCEPAN, SKILLET, and SPATULA.')
+  })
+
+  // TWO words join with `and` and NO comma. Three or more take the serial comma before the last.
+  // The wire type is a four-tuple, so neither of these two rows can arrive from a generator -- they
+  // are here because this function is structural over untrusted JSON and a shorter array is a shape
+  // it has to have an answer for.
+  it('joins two answers with and, and no comma', () => {
+    expect(answerOf(withData({ entries: [{ answer: 'KETTLE' }, { answer: 'SAUCEPAN' }] }))).toBe(
+      'The answers are KETTLE and SAUCEPAN.',
+    )
+  })
+
+  // THE SINGULAR, and it is why the branch exists at all: a one-entry array must not produce
+  // "The answers are KETTLE."
+  it('takes the singular for a one-entry list', () => {
+    expect(answerOf(withData({ entries: [{ answer: 'KETTLE' }] }))).toBe('The answer is KETTLE.')
+  })
+
+  // THREE IS WHERE THE SERIAL COMMA FIRST APPEARS, and until this row nothing pinned it. The
+  // two-entry row takes one side of `words.length < 3` and the four-entry row takes the other, so
+  // branch coverage read 100% while the boundary itself was free to move: `< 4` printed `KETTLE and
+  // SAUCEPAN and SKILLET` and the whole suite stayed green. Measured, not supposed.
+  it('takes the serial comma from three answers on', () => {
+    expect(answerOf(withData({ entries: [{ answer: 'KETTLE' }, { answer: 'SAUCEPAN' }, { answer: 'SKILLET' }] }))).toBe(
+      'The answers are KETTLE, SAUCEPAN, and SKILLET.',
+    )
+  })
+
+  // PRECEDENCE, stated rather than left to statement order. No wire type carries both, so this is a
+  // rule about a pack that is already wrong -- and the older, narrower branch is the one that wins.
+  it('prefers a top-level answer to a list of entries', () => {
+    expect(answerOf(withData({ answer: 'TANGO', entries: [{ answer: 'KETTLE' }, { answer: 'SAUCEPAN' }] }))).toBe(
+      'The answer is TANGO.',
+    )
+  })
+
+  // EVERY MEMBER, never the first: a partial list prints "The answers are KETTLE, , SKILLET, and
+  // SPATULA.", which spends the player's last press to say something malformed. That is the same
+  // refusal a blank top-level answer already gets, for the same reason.
+  //
+  // The generic on `it.each` is load-bearing, exactly as it is on the cryptic bench's shape tables:
+  // without it the rows infer as a union of seven object literals and every row is a type error at
+  // the call site.
+  //
+  // ONE ROW HERE ISOLATES NOTHING, and it is named rather than left to be rediscovered. `an entry is
+  // not an object` cannot be reddened by any mutation of the object check: drop `typeof entry ===
+  // 'object'` and `'SAUCEPAN'.answer` is undefined, so the member check below refuses it anyway;
+  // drop `entry !== null` and the null row catches that instead. The only thing the typeof clause
+  // uniquely stops is an `undefined` array member, which JSON.parse cannot produce. It stays as a
+  // specification row -- `hintsOf` documents the same reasoning two functions up, that a string
+  // failing a property check is an accident rather than a guarantee -- but it defends no line.
+  it.each<[string, unknown]>([
+    ['entries is not an array', { entries: 'KETTLE' }],
+    ['entries is empty', { entries: [] }],
+    ['an entry is not an object', { entries: [{ answer: 'KETTLE' }, 'SAUCEPAN'] }],
+    ['an entry is null', { entries: [{ answer: 'KETTLE' }, null] }],
+    ['an entry has no answer at all', { entries: [{ answer: 'KETTLE' }, { scramble: 'UNASAPCE' }] }],
+    ['an entry answer is not a string', { entries: [{ answer: 'KETTLE' }, { answer: 42 }] }],
+    ['an entry answer is blank', { entries: [{ answer: 'KETTLE' }, { answer: '   ' }] }],
+  ])('returns null when %s', (_description, data) => {
+    expect(answerOf(withData(data))).toBeNull()
   })
 
   // Structural, in the same register as hintsOf: a pack is JSON off the network that was persisted,

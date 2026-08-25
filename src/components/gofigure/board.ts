@@ -131,9 +131,9 @@ export const decode = (progress: string | null, data: GoFigureData): BoardState 
   // `isValidPuzzle` in the storage service deliberately leaves `data` opaque -- it checks what the
   // shell dereferences, not what a puzzle type means -- so a pack cached before the hints deploy is
   // a VALID pack that happens to arrive with `data.hints` undefined. A throw here would land in
-  // render with no error boundary above it, the root would unmount to a white page, and the storage
-  // self-heal would never fire, because the pack really is valid. It would stay broken until the
-  // player cleared site data. Structural, in the register `hintsOf` already uses: shape in, or
+  // render, where ErrorBoundary (_app.tsx) catches it and replaces the whole app with "Lull got
+  // stuck" -- so the cost is every surface, not this board -- and the storage self-heal would never
+  // fire, because the pack really is valid. It would stay broken until the player cleared site data. Structural, in the register `hintsOf` already uses: shape in, or
   // nothing out.
   if (!Array.isArray(data.bank) || !Array.isArray(data.operators)) return EMPTY_BOARD
   if (progress === null || progress === '') return EMPTY_BOARD
@@ -239,8 +239,8 @@ export const decode = (progress: string | null, data: GoFigureData): BoardState 
       // unnecessary. A pack cached before the ladder shipped carries three bare strings, which is an
       // array and passes `Array.isArray` intact -- and `'…'.metadata` is undefined, so reading
       // `.slot` off it throws. This runs inside the board's `useState` initializer, so that throw
-      // lands in render with no error boundary above it and the root unmounts to a white page, for a
-      // player whose only fault was having played yesterday. Rejecting to an empty board is the same
+      // lands in render, and ErrorBoundary answers it by replacing the whole app with "Lull got
+      // stuck" -- for a player whose only fault was having played yesterday. Rejecting to an empty board is the same
       // answer every other malformed shape gets here.
       const rung = ladder.findIndex((hint) => (hint as GoFigureHint)?.metadata?.slot === slot)
       return rung >= 0 && rung < opened && operators[slot] === (ladder[rung] as GoFigureHint)?.metadata?.operator

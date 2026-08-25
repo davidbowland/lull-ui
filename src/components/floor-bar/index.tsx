@@ -65,7 +65,7 @@ const WELL = {
 // survives.
 //
 // It clamps the TAIL, and that is the point. An earlier draft let the text grow upward out of the
-// band, out of flow, over the bottom of the phrase -- and on the two benches that carry a hint bar
+// band, out of flow, over the bottom of the phrase -- and on the three benches that carry a hint bar
 // that bought exactly nothing: the floor's top edge is the bar's bottom edge, so a third line grows
 // into the bar's 60px and every pixel of it is behind an opaque strip. What it changed was which
 // half you lose. Anchored to the bottom, the line that disappears is the FIRST one -- "Every Q is Z

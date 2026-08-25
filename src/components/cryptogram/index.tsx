@@ -185,8 +185,8 @@ const PLATE =
   'pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]'
 
 // The sign over the working surface. `.lull-signrow` (index.css) is the whole band -- height,
-// ground, hairlines and gutter -- because the writing bench draws the same one and a band that
-// two benches share is the grammar rather than a string copied twice.
+// ground, hairlines and gutter -- because the writing bench and the guess bench draw the same one,
+// and a band that three benches share is the grammar rather than a string copied four times.
 //
 // Sticky, so the two facts it holds do not scroll away with the phrase. The board is the one band
 // that flexes and therefore the one that scrolls, and on a short window a three-line phrase
@@ -856,8 +856,10 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     }
 
     // A ciphertext with no letters in it leaves no squares to stand on. Only reachable from a
-    // corrupt pack, and the alternative is a TypeError thrown out of an event handler, where
-    // storage.ts's own comments note there is no error boundary above this.
+    // corrupt pack, and the alternative is a TypeError thrown out of an event handler --
+    // which React does NOT route to ErrorBoundary at all. An error boundary catches throws in
+    // render, not in a handler, so this one escapes to window.onerror and leaves the board
+    // wedged in place with no message. That is worse than the render case, not better.
     const here = squares[cursor]
     if (here === undefined) return
     if (event.key === 'ArrowRight') {
@@ -932,10 +934,12 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // What the ribbon says when it has nothing to report, and the reason it needed one at all.
   //
   // This bench's ribbon is computed from a TRANSIENT -- `message`, set by a move -- where the other
-  // two benches derive theirs from board state. A restored board has made no move, so the band came
-  // back blank; and on a SOLVED board it stays blank for the whole visit, because nothing is left to
-  // move. That is 52px of near-black standing between the phrase and the pad on the one screen where
-  // the floor has something worth saying: the answer.
+  // three benches all have something to say at rest: the writing bench prints a standing
+  // instruction, the tile bench its running total, and the guess bench the answer once the board is
+  // over. A restored board here has made no move, so the band came back blank; and on a SOLVED board
+  // it stays blank for the whole visit, because nothing is left to move. That is 52px of near-black
+  // standing between the phrase and the pad on the one screen where the floor has something worth
+  // saying: the answer.
   //
   // Solved only. An unsolved board at rest has nothing here that the board is not already saying --
   // the standing instruction is a line above the squares and the tally is on the sign row -- and the

@@ -267,9 +267,9 @@ describe('decode', () => {
   // The PACK is untrusted too, and for a reason that is live rather than theoretical. `isValidPuzzle`
   // leaves `data` opaque on purpose -- it checks what the shell dereferences, not what a puzzle type
   // means -- so a pack cached before the hints deploy is still a valid pack and still arrives, with
-  // `data.hints` undefined. A throw here lands in render with no error boundary above it, the root
-  // unmounts to a white page, and the self-heal never fires because the pack really is valid. It
-  // would stay that way until the player cleared site data.
+  // `data.hints` undefined. A throw here lands in render, where ErrorBoundary replaces the whole app
+  // with "Lull got stuck", and the self-heal never fires because the pack really is valid. It would
+  // stay that way until the player cleared site data.
   test('survives a pack cached before the ladder shipped', () => {
     const stale = { ...goFigureData, hints: undefined } as unknown as GoFigureData
     expect(decode('_______|0|', stale)).toEqual(EMPTY_BOARD)
@@ -312,7 +312,7 @@ describe('decode', () => {
     expect(decode('6+9', stale)).toEqual(EMPTY_BOARD)
   })
 
-  // The case the whole migration exists for, and the one the test above was mislabelled as covering.
+  // The case the whole migration exists for, and the one the test above was mislabeled as covering.
   // A legacy string is only ever written by the PRE-HINTS build, whose pack has no ladder -- so this
   // pairing, and not `bank: undefined`, is what a returning player actually arrives with. Packs are
   // never refetched once complete (`lull.ts:20`), so the stale pack does not heal on its own.
@@ -359,9 +359,18 @@ describe('decode', () => {
   // separates them. Slot 0 is named by rung 1, which reveals "*", while `hints[0]` reveals "+".
   test('reads the operator off the rung that names the slot, not off hints[slot]', () => {
     const ladder = [
-      { metadata: { operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
-      { metadata: { operator: '*', slot: 0 }, text: 'The 1st operator from the left is "×".' },
-      { metadata: { operator: '/', slot: 2 }, text: 'The 3rd operator from the left is "÷".' },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '+', slot: 1 },
+        text: 'The 2nd operator from the left is "+".',
+      },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '*', slot: 0 },
+        text: 'The 1st operator from the left is "×".',
+      },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '/', slot: 2 },
+        text: 'The 3rd operator from the left is "÷".',
+      },
     ] as GoFigureHintLadder
     expect(decode('_*_____|2|0', { ...goFigureData, hints: ladder })).toEqual({
       ...EMPTY_BOARD,
@@ -373,9 +382,18 @@ describe('decode', () => {
 
   test('rejects the operator hints[slot] would have named there', () => {
     const ladder = [
-      { metadata: { operator: '+', slot: 1 }, text: 'The 2nd operator from the left is "+".' },
-      { metadata: { operator: '*', slot: 0 }, text: 'The 1st operator from the left is "×".' },
-      { metadata: { operator: '/', slot: 2 }, text: 'The 3rd operator from the left is "÷".' },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '+', slot: 1 },
+        text: 'The 2nd operator from the left is "+".',
+      },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '*', slot: 0 },
+        text: 'The 1st operator from the left is "×".',
+      },
+      {
+        metadata: { kind: 'gofigure-operator', operator: '/', slot: 2 },
+        text: 'The 3rd operator from the left is "÷".',
+      },
     ] as GoFigureHintLadder
     expect(decode('_+_____|2|0', { ...goFigureData, hints: ladder })).toEqual(EMPTY_BOARD)
   })
@@ -693,9 +711,9 @@ describe('matchingSolution', () => {
   // the ladder locked, or the answer on screen contradicts the signs on the board.
   test('skips a solution whose operators the ladder did not name', () => {
     const hints: GoFigureHintLadder = [
-      { metadata: { operator: '*', slot: 1 }, text: 'rung 1' },
-      { metadata: { operator: '+', slot: 0 }, text: 'rung 2' },
-      { metadata: { operator: '*', slot: 2 }, text: 'rung 3' },
+      { metadata: { kind: 'gofigure-operator', operator: '*', slot: 1 }, text: 'rung 1' },
+      { metadata: { kind: 'gofigure-operator', operator: '+', slot: 0 }, text: 'rung 2' },
+      { metadata: { kind: 'gofigure-operator', operator: '*', slot: 2 }, text: 'rung 3' },
     ]
 
     expect(matchingSolution(hints, ['1*2*3*4', '1+2*3*4', '1+2+3*4'])).toBe('1+2*3*4')
@@ -705,9 +723,9 @@ describe('matchingSolution', () => {
   // so there is nothing to match on and no answer to give.
   test('declines a ladder that does not name every slot', () => {
     const hints = [
-      { metadata: { operator: '+', slot: 0 }, text: 'rung 1' },
-      { metadata: { operator: '+', slot: 0 }, text: 'rung 2' },
-      { metadata: { operator: '*', slot: 2 }, text: 'rung 3' },
+      { metadata: { kind: 'gofigure-operator', operator: '+', slot: 0 }, text: 'rung 1' },
+      { metadata: { kind: 'gofigure-operator', operator: '+', slot: 0 }, text: 'rung 2' },
+      { metadata: { kind: 'gofigure-operator', operator: '*', slot: 2 }, text: 'rung 3' },
     ] as GoFigureHintLadder
 
     expect(matchingSolution(hints, goFigureData.acceptedSolutions)).toBeNull()

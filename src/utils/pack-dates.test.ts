@@ -1,4 +1,4 @@
-import { packDateOf, toPackDate, utcPackDate } from './pack-dates'
+import { packDateOf, toPackDate } from './pack-dates'
 
 describe('toPackDate', () => {
   it('formats a date as YYYY-MM-DD', () => {
@@ -13,20 +13,6 @@ describe('toPackDate', () => {
   // west-of-UTC behavior is covered by injecting dates rather than by moving the clock.
   it('reads the calendar date, not the instant', () => {
     expect(toPackDate(new Date(Date.UTC(2026, 7, 18, 23, 59, 59)))).toEqual('2026-08-18')
-  })
-})
-
-describe('utcPackDate', () => {
-  it('names the UTC date for an instant', () => {
-    expect(utcPackDate(() => Date.UTC(2026, 7, 18, 6))).toEqual('2026-08-18')
-  })
-
-  it('stays on the same UTC date one second before midnight', () => {
-    expect(utcPackDate(() => Date.UTC(2026, 7, 18, 23, 59, 59))).toEqual('2026-08-18')
-  })
-
-  it('defaults to the system clock', () => {
-    expect(utcPackDate()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })
 

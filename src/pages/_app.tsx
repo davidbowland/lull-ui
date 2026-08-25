@@ -5,6 +5,7 @@ import Head from 'next/head'
 import React, { useEffect } from 'react'
 
 import '@assets/css/index.css'
+import { DictionaryProvider } from '@components/dictionary-provider'
 import { ErrorBoundary } from '@components/error-boundary'
 import { useKeyboardInset } from '@hooks/useKeyboardInset'
 import { usePrefetch } from '@hooks/usePrefetch'
@@ -72,7 +73,7 @@ export default function App({ Component, pageProps }: AppProps) {
           renders inside the home indicator strip and the system swallows taps there.
 
           It is page-wide and cannot be scoped to one puzzle type: /p/<id> is ONE exported document
-          serving all three. That is why the horizontal padding on every top-level <main> is written
+          serving every type. That is why the horizontal padding on every top-level <main> is written
           as max(today's value, the inset) -- cover lets content reach the notch in landscape, and
           those maxes are what keep it off.
 
@@ -90,17 +91,26 @@ export default function App({ Component, pageProps }: AppProps) {
           shrunk clear of it. Nothing in this repo can answer that; the spec's device checklist asks
           it as a step.
 
-          It manifests on exactly one bench, because Missing Vowels owns the only <input> in the
-          product -- the other two benches read keystrokes off a window-level handler and render no
-          editable field. iOS Safari implements the key not at all, which is what useKeyboardInset
-          in this same file is for. */}
-      <Head>
-        <meta
-          content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
-          name="viewport"
-        />
-      </Head>
-      <Component {...pageProps} />
+          It manifests on exactly one bench, because the writing bench owns every <input> in the
+          product -- the other three benches read keystrokes off a window-level handler and render
+          no editable field. iOS Safari implements the key not at all, which is what
+          useKeyboardInset in this same file is for. */}
+      {/* INSIDE ErrorBoundary, not outside it. The boundary's whole job is to be the last thing
+          standing when a render throws, and a provider above it would be a second thing that could
+          throw with nothing to catch it.
+
+          It is the SHELL'S, and one provider is what makes the word list one fetch and one Set per
+          app open however many surfaces read it -- see the note on DictionaryProvider itself for
+          what it owns and why. A board may never call its hook. */}
+      <DictionaryProvider>
+        <Head>
+          <meta
+            content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+            name="viewport"
+          />
+        </Head>
+        <Component {...pageProps} />
+      </DictionaryProvider>
     </ErrorBoundary>
   )
 }

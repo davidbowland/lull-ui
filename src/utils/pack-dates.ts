@@ -14,9 +14,10 @@ import { PackDate } from '@types'
 export const toPackDate = (date: Date): PackDate =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
-// The date the generator is working to. West of UTC this runs ahead of toPackDate, and
-// the pack for tomorrow's local date already exists -- which is what usePrefetch stages.
-export const utcPackDate = (now = Date.now): PackDate => new Date(now()).toISOString().split('T')[0]
+// utcPackDate is deliberately absent. It named the date the generator is working to,
+// which west of UTC runs a day ahead of toPackDate, and usePrefetch used it to stage
+// tomorrow's pack. Nothing stages anything now -- one local date is requested -- and an
+// unused date helper is an untested one.
 
 // A puzzle id is `${date}:${type}:${shortId}`, and the date prefix is the ONLY part of
 // it a client may read. It exists so progress can be pruned by age. The remainder is

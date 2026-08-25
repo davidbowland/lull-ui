@@ -7,10 +7,10 @@ const config: Config = {
   clearMocks: true,
   collectCoverage: true,
   // public/sw.js is deliberately absent, and its absence is not an oversight. It is
-  // exercised by test/sw-fetch.test.ts -- install, activate, and every branch of the
+  // exercised by test/sw-fetch.test.js -- install, activate, and every branch of the
   // fetch handler -- but it has no module wrapper and is evaluated from a string with
   // `self`, `caches`, `fetch`, and `Response` injected, so istanbul cannot instrument it.
-  // Listing it here would report a permanent 0% for a file with 19 tests against it,
+  // Listing it here would report a permanent 0% for a file with 20 tests against it,
   // which is more misleading than saying nothing. The mutation checks in that file's
   // header are what stand in for a coverage number.
   collectCoverageFrom: ['src/**/*'],

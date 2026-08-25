@@ -30,9 +30,9 @@ describe('InstallCard', () => {
       expect(screen.getByRole('heading', { name: 'Have tomorrow ready' })).toBeInTheDocument()
     })
 
-    // The reason the card exists at all: usePrefetch gates the whole seven-day window on
-    // isInstalled(), so a visitor who never installs gets one day and the offline
-    // premise never engages.
+    // Pinned as the copy that ships, not as a claim about behavior. usePrefetch asks for
+    // one date whether or not the app is installed, so this sentence now overstates what
+    // the app does -- see the note beside it in install-card.
     it('says what the device keeps either way', () => {
       renderCard()
 

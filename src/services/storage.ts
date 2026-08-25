@@ -1,4 +1,4 @@
-import { Meta, Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
+import { Meta, Pack, PackDate, Puzzle, PuzzleProgress, RetryState } from '@types'
 import { packDateOf } from '@utils/pack-dates'
 
 // Ported from connections-ui/src/services/storage.ts. The comments came with it: they
@@ -12,6 +12,13 @@ const PACK_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const PROGRESS_PREFIX = 'lull:progress:'
 const HINTS_PREFIX = 'lull:hints:'
 const META_KEY = 'lull:meta'
+
+// A SINGLE FIXED KEY, like lull:meta, not a scanned family -- so it needs no date pattern, because
+// nothing scans it. Checked rather than assumed: it starts with none of `lull:pack:`,
+// `lull:progress:` or `lull:hints:`, so all three prefix scans miss it and pruneOutsideWindow never
+// touches it. That is correct -- the retry schedule is about the DEVICE, not about a day.
+const DICT_RETRY_KEY = 'lull:dict:retry'
+
 const VERSION = 1
 
 // localStorage tells this tab nothing about its own writes -- the native storage event
@@ -225,6 +232,67 @@ export const removeHints = (puzzleId: string): void => {
 // is what collects it.
 export const cachedHintIds = (): string[] =>
   keysWithPrefix(HINTS_PREFIX).filter((puzzleId) => packDateOf(puzzleId) !== null)
+
+// The dictionary's retry schedule
+
+// Persisted so a device that closed the tab mid-wait does not restart at zero on reopen. That is
+// the difference between backoff and a delay.
+//
+// A NaN nextAt is the case this guard is really for. `mayAttempt` compares `now() >= state.nextAt`
+// and every comparison against NaN is false, so a NaN would stop the device retrying for the life
+// of the install -- silently, with no error anywhere. It is reachable: JSON.stringify writes NaN as
+// `null`, and a hand-edited key can hold anything.
+const isRetryState = (value: unknown): value is RetryState => {
+  if (typeof value !== 'object' || value === null) return false
+  const state = value as Record<string, unknown>
+  return (
+    Number.isInteger(state.attempt) &&
+    (state.attempt as number) >= 0 &&
+    // `Number.isFinite` IS THE WHOLE nextAt GUARD. It does not coerce, so it already refuses a
+    // string, a null, an undefined and an object -- everything a `typeof === 'number'` clause beside
+    // it would have refused, which is why that clause was deleted rather than kept: no fixture could
+    // redden it, and the compiler narrows without it.
+    Number.isFinite(state.nextAt)
+  )
+}
+
+// SELF-HEALS BY REMOVING, the way readPack does, and NOT by rewriting the way readHints does. A
+// hint count has a meaningful zero to fall back to and a retry schedule does not: the honest
+// fallback for a corrupt one is "no schedule", which is null, which is mayAttempt returning true.
+// Remove it and let the next attempt write a fresh record.
+export const readDictRetry = (): RetryState | null => {
+  const raw = safeRead(DICT_RETRY_KEY)
+  if (raw === null) return null
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRetryState(parsed)) {
+      console.error('discarding a malformed stored retry schedule', { raw })
+      safeRemove(DICT_RETRY_KEY)
+      return null
+    }
+    return parsed
+  } catch (error: unknown) {
+    console.error('retry schedule parse failed, discarding', { error })
+    safeRemove(DICT_RETRY_KEY)
+    return null
+  }
+}
+
+// NOT ANNOUNCED, unlike every other writer in this file, and the difference is not an oversight.
+// announce() exists so this tab learns about its own writes for anything that RENDERS off a key,
+// and nothing renders off this one -- the provider holds its status in React state. Announcing
+// would also re-enter the provider's own STORAGE_EVENT listener from inside its own failure
+// branch, which is a loop waiting for a reason.
+export const writeDictRetry = (state: RetryState): void => {
+  safeWrite(DICT_RETRY_KEY, JSON.stringify(state))
+}
+
+// Called on a successful install, so a device that recovers does not carry a 60-second floor into
+// its next miss.
+export const clearDictRetry = (): void => {
+  safeRemove(DICT_RETRY_KEY)
+}
 
 // Meta
 

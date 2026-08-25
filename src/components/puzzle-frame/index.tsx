@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 
+import { useDictionary } from '@components/dictionary-provider'
 import { HintBar } from '@components/hint-bar'
 import { Crumb, Spine } from '@components/spine'
 import { entryFor, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
@@ -126,6 +127,15 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // in the bag.
   const [wasSolved] = useState(() => wasSolvedBefore(puzzle.id))
 
+  // THE ONE PRODUCTION WIRING OF THE SIXTH PROP. `dictionary` is optional by design, so a frame
+  // that forgot the line below would fail nowhere and the compiler would say nothing -- which is
+  // why it is asserted behaviorally, by typing a guess on a mounted board, rather than by reading
+  // props.
+  //
+  // The hook is the SHELL'S. A board may never call it: the board's contract has to be readable off
+  // PuzzleComponentProps, and a context is exactly the thing that is not.
+  const { words } = useDictionary()
+
   // The shell owns persistence; the board is handed three callbacks and no storage.
   const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])
   const onSolved = useCallback(() => markSolved(puzzle.id), [puzzle.id])
@@ -229,7 +239,7 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
       </div>
 
       {/* The board and the instrument both come out of the SAME component -- that is what keeps
-          its five-prop contract intact -- but they belong in different bands, with the shell's
+          its six-prop contract intact -- but they belong in different bands, with the shell's
           own hint bar between them. `display: contents` dissolves this wrapper, so the two
           elements the component marks `.lull-board` and `.lull-instrument` become flex items of
           the screen column directly and index.css orders them into their bands. Neither side
@@ -252,7 +262,17 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           seam down. That box IS the seam, so it stays whole and the component owns it. The
           frame owns the order it appears in, which is the whole of what a shell needs to own. */}
       <div className="contents">
-        <Component onProgress={onProgress} onReset={onReset} onSolved={onSolved} progress={progress} puzzle={puzzle} />
+        {/* `words ?? undefined` because the state's absent value is null and the prop's is
+            undefined. Every other board is handed it too and reads nothing; that costs one property
+            on a render and keeps this to ONE mount site a reviewer or a grep can find. */}
+        <Component
+          dictionary={words ?? undefined}
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={progress}
+          puzzle={puzzle}
+        />
       </div>
 
       {/* Ordered BETWEEN two elements this frame does not own and cannot reach into. The bar
@@ -290,6 +310,9 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
 
 export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameProps): React.ReactNode => {
   const [resolution, setResolution] = useState<Resolution | null>(null)
+  // The shell's hook, read here so the gate below can refuse to mount a board this build cannot
+  // run. A board may never call it.
+  const { status } = useDictionary()
 
   // The date prefix is the ONE part of a puzzle id a client may read. The rest
   // (`${type}:${shortId}`) is opaque: it is matched against the pack's own ids and never taken
@@ -380,11 +403,58 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
 
   // lull-api can ship a generator before the UI that draws it, so a pack off the network can
   // name a type this build has never heard of. Destructuring the missing registry entry would
-  // throw during a render with no error boundary above it.
+  // throw during render, and ErrorBoundary (_app.tsx) would answer it by replacing the whole
+  // app with "Lull got stuck" -- so the cost is the entire surface, not this one row.
   if (entry === undefined) {
     return (
       <DeadEnd trail={trailFor(date, locale)}>
         <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">{UNKNOWN_TYPE_MESSAGE}</h1>
+      </DeadEnd>
+    )
+  }
+
+  // STILL LOOKING, so this surface says nothing a player could act on. Every cold open passes
+  // through here: `readPack` above is synchronous and the provider's Cache API read is not, so the
+  // first painted frame of a Phrazle deep link lands before the word list has been looked for. The
+  // panel below would tell a player with the word list already on their device to reconnect and try
+  // again, which is false twice over.
+  //
+  // It keeps the spine, and that is the whole reason it is a DeadEnd rather than the frame's
+  // aria-hidden placeholder. The manifest is display: standalone -- no back button, no address bar
+  // -- so a blank screen on a slow first download is a screen with no way off it. The live region
+  // is the same one the "Looking for this puzzle…" branch above uses, for the same reason and with
+  // the same known limit: it is mounted with its text.
+  //
+  // BELOW the entry guard above, for the reason that guard states: an unknown type has no entry to
+  // read needsDictionary off.
+  if (entry.needsDictionary && status === 'loading') {
+    return (
+      <DeadEnd trail={trailFor(date, locale, entry.label)}>
+        <p className="text-[var(--lull-muted)]" role="status">
+          Getting this puzzle ready…
+        </p>
+      </DeadEnd>
+    )
+  }
+
+  // Reached when a Phrazle id is opened directly -- a share link, a bookmark, a row that was a link
+  // a moment ago -- and the dictionary is absent. It is the gate that keeps the board free of a
+  // spinner, a retry button and an error message it has no business owning: the board never has to
+  // handle the dictionary's absence, because this refuses to mount it without one.
+  //
+  // 'absent' AND NOT `!== 'ready'`, which used to lump the window above in with a word list that is
+  // genuinely not here. Only a failed attempt reaches this, and reconnecting is then the true next
+  // action.
+  //
+  // The spine names the puzzle -- trailFor's third argument -- because the entry is KNOWN here.
+  // That is the whole difference between this dead end and "That puzzle isn't here".
+  if (entry.needsDictionary && status === 'absent') {
+    return (
+      <DeadEnd trail={trailFor(date, locale, entry.label)}>
+        <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">{`${entry.label} needs a one-time download`}</h1>
+        <p className="text-[var(--lull-muted)]">
+          The word list downloads once and then works offline. Reconnect and open this puzzle again.
+        </p>
       </DeadEnd>
     )
   }

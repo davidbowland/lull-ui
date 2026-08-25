@@ -41,29 +41,71 @@ export const hintsOf = (puzzle: Puzzle<unknown>): HintLadder | null => {
   return isLadder ? (hints as HintLadder) : null
 }
 
+// WRITTEN OUT rather than described, because "a serial comma" is the kind of sentence two people
+// implement differently. Two words join with `and` and no comma; three or more take the serial comma
+// before the last, which is American English and which also stops the last two reading as one item.
+//
+// Module-private. Nothing outside this file may build this sentence: `HintBar` renders what it is
+// handed verbatim, and a second composer would be a second place for the wording to drift.
+const listOf = (words: string[]): string =>
+  words.length < 3 ? words.join(' and ') : `${words.slice(0, -1).join(', ')}, and ${words.at(-1)}`
+
 /**
  * The sentence the bar prints once every rung is spent, or null.
  *
- * PHRASE PUZZLES ONLY, and the narrowness is the point. `PhrasePuzzleData.answer` is one string that
- * is the answer; goFigure ships `acceptedSolutions`, an array of expressions several of which are
- * right, so there is no answer here to state. That bench composes its own line -- it has to redraw
- * the operators with × and ÷, and it has to hedge, because its ladder pins an operator tuple rather
- * than an expression -- and it renders its own bar, so it never reaches this function.
+ * TWO SHAPES, AND IT DISPATCHES ON THE SHAPE RATHER THAN ON THE TYPE. A phrase puzzle carries one
+ * `answer` string and gets "The answer is X."; Themed Anagrams carries `entries`, four objects each
+ * with an `answer`, and gets one sentence naming all four in ROW ORDER. Neither branch reads
+ * `puzzle.type`, which is what keeps the shell type-blind: the registry is the only place in this app
+ * that knows what a type is.
+ *
+ * A TOP-LEVEL `answer` WINS, stated rather than left to fall out of statement order. No wire type
+ * carries both -- Themed Anagrams deliberately has no top-level answer -- so this is a rule about a
+ * pack that is already wrong, and the phrase branch is the older and narrower of the two.
+ *
+ * It names all four rather than the three a spent ladder has not already given away. Subtracting one
+ * would mean reading `metadata.entryIndex` and `metadata.reveal` -- the first metadata read in the
+ * shell -- and it cannot be done correctly anyway, because the rung order is the BACKEND's and
+ * nothing promises the ladder spends a rung on a full answer at all.
+ *
+ * goFigure reaches neither branch, and it DOES reach this function -- the two are different claims and
+ * only the first one is true. puzzle-frame/index.tsx:176 evaluates `answerOf(puzzle) ?? undefined` for
+ * every puzzle it opens; `hasHintBar` on line 194 gates which bar is DRAWN, not whether this is called,
+ * and hints.test.ts calls it on the goFigure fixture directly. What that bench ships is
+ * `acceptedSolutions`, an array of expressions several of which are right, so there is no answer here to
+ * state and neither `data.answer` nor `data.entries` is present: both guards decline and the result is
+ * null. That bench composes its own line -- it has to redraw the operators with × and ÷, and it has to
+ * hedge, because its ladder pins an operator tuple rather than an expression -- and it renders its own
+ * bar.
  *
  * The SENTENCE and not the answer, because the caller is a wire-up: `HintBar` renders what it is
  * handed verbatim, the same contract `hint.text` has, and a component that took a bare answer would
  * have to know which bench's phrasing to wrap it in.
  *
- * Structural, like `hintsOf` above and for the same reason -- a pack is JSON off the network that
- * was persisted, and `isValidPuzzle` deliberately leaves `data` opaque. A blank answer is refused
- * rather than printed: "The answer is ." spends the player's last press to say nothing.
+ * Structural, like `hintsOf` above and for the same reason -- a pack is JSON off the network that was
+ * persisted, and `isValidPuzzle` deliberately leaves `data` opaque. A blank answer is refused rather
+ * than printed, and one blank member refuses the whole list: "The answer is ." and "The answers are
+ * KETTLE, , SKILLET, and SPATULA." both spend the player's last press to say nothing.
  */
 export const answerOf = (puzzle: Puzzle<unknown>): string | null => {
   const data = puzzle.data as Record<string, unknown> | null
   if (typeof data !== 'object' || data === null) return null
 
   const answer = data.answer
-  if (typeof answer !== 'string' || answer.trim() === '') return null
+  if (typeof answer === 'string' && answer.trim() !== '') return `The answer is ${answer}.`
 
-  return `The answer is ${answer}.`
+  const entries = data.entries
+  if (!Array.isArray(entries) || entries.length === 0) return null
+
+  // EVERY MEMBER, not the first: a partial list prints "The answers are KETTLE, , SKILLET, and
+  // SPATULA.", which spends the player's last press to say something malformed. Same refusal the
+  // blank answer above gets, for the same reason.
+  const words = entries.map((entry: unknown) =>
+    typeof entry === 'object' && entry !== null ? (entry as { answer?: unknown }).answer : null,
+  )
+  if (!words.every((word): word is string => typeof word === 'string' && word.trim() !== '')) return null
+
+  // The singular exists because this function is structural over untrusted JSON: the wire type is a
+  // four-tuple, but a one-entry array must not produce "The answers are KETTLE."
+  return words.length === 1 ? `The answer is ${words[0]}.` : `The answers are ${listOf(words)}.`
 }

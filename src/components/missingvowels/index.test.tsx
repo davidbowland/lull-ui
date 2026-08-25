@@ -98,7 +98,7 @@ describe('MissingVowelsBoard', () => {
 
     // A phrase with its vowels removed is not a word, so every helper the platform offers would
     // fight the player: autocorrect rewrites the guess, autocomplete offers last week's answers,
-    // and a capitalised first letter is one more thing to undo.
+    // and a capitalized first letter is one more thing to undo.
     //
     // The three data-* attributes are about a different helper. A lone text input at the bottom of
     // the viewport beside a submit-shaped button is the shape Chrome and every password manager
@@ -349,9 +349,35 @@ describe('MissingVowelsBoard', () => {
 
     // An empty guess normalizes to an empty string, and so would an answer of pure punctuation.
     // Without the guard those compare equal and a blank box would solve the puzzle.
+    //
+    // It cannot see the guard, though: this fixture answers a real phrase, so '' and it compare
+    // unequal either way. What it catches is a board that reported the win from a mount effect. The
+    // degenerate rows below are the ones that exercise the comparison itself.
     it('does not solve an empty box', () => {
       setup()
 
+      expect(onSolved).not.toHaveBeenCalled()
+    })
+
+    // THE ONE THAT LATCHES, and these have to TYPE to fail -- at mount the board is fine either way,
+    // because the empty-guess operand short-circuits before the answer is read. On the first
+    // keystroke `onProgress` persists and only then does `normalizeAnswer(answer)` throw, so the
+    // write lands and the render does not. Every later load restores that character at mount and
+    // throws before the player can act; the pack is valid so `readPack` keeps it, and nothing
+    // validates a progress string, so the puzzle stays unopenable until site data is cleared.
+    it.each<[string, unknown]>([
+      ['left out of the pack', undefined],
+      ['null', null],
+      ['a number', 5],
+    ])('takes a guess against an answer that arrived %s', async (_description, answer) => {
+      const { user } = setup({
+        ...missingVowelsPuzzle,
+        data: { ...missingVowelsPuzzle.data, answer: answer as string },
+      })
+
+      await user.type(screen.getByRole('textbox'), 'T')
+
+      expect(screen.getByRole('textbox')).toHaveValue('T')
       expect(onSolved).not.toHaveBeenCalled()
     })
 

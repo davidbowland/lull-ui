@@ -35,6 +35,11 @@ const TEXT_ON_SURFACE: [keyof Palette, keyof Palette][] = [
   ['floorInk', 'floor'],
   ['floorMuted', 'floor'],
   ['floorAccent', 'floor'],
+  // The letter on a marked Phrazle tile is onAccent in BOTH themes, which is why three tokens are
+  // added and not six. 4.5:1, because the letter is normal-size text.
+  ['onAccent', 'tileGreen'],
+  ['onAccent', 'tilePurple'],
+  ['onAccent', 'tileYellow'],
 ]
 
 // 1.4.11 Non-text Contrast. A control outline a player cannot see is a control they
@@ -57,6 +62,24 @@ const BOUNDARY_ON_SURFACE: [keyof Palette, keyof Palette][] = [
   // mode -- a pair a real primitive drew on a real surface, checked by nothing.
   ['floorAccent', 'floor'],
   ['rule', 'floor'],
+  // A marked tile is a GRAPHICAL OBJECT required to understand the content (1.4.11), so its fill
+  // is held to 3:1 against the plate it sits on. The gray tile is not here and needs no row: it
+  // takes no token at all -- plate ground, muted ink, and a `rule` border, all three of which are
+  // already asserted above. `hair` may not draw that border, because hair is decorative and this
+  // boundary carries state.
+  ['tileGreen', 'plate'],
+  ['tilePurple', 'plate'],
+  ['tileYellow', 'plate'],
+  // THE LEGEND'S SEGMENT BARS, which are the same graphical object as a tile's and are drawn on the
+  // plate rather than on a fill. They were painted `onAccent` -- correct inside a marked tile, and
+  // 1.095:1 light and 1.076:1 dark against the plate, so the key that teaches the whole segment
+  // mnemonic rendered four rows of blank gap and a label. `onAccent` on `plate` was in neither list,
+  // so nothing failed. The bars now take `currentColor`, which is `muted` in the legend.
+  //
+  // IT IS DOMINATED TODAY by the 4.5:1 muted-on-plate row above, and it is here anyway: the day
+  // muted stops being body text on the plate -- the legend moves, the paragraph is restyled -- that
+  // row goes and this one is the only floor left under a mark a player has to be able to see.
+  ['muted', 'plate'],
 ]
 
 // Why the floor band needs its own focus ring, asserted rather than left in a comment.
