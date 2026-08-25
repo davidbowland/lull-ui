@@ -2,7 +2,7 @@ import { everyWordInDictionary, isValidGuess, splitPhrase } from '@rules/is-vali
 import { markGuess, TileState } from '@rules/mark-guess'
 import React, { useEffect, useRef, useState } from 'react'
 
-import { DEFAULT_WIDTH, LETTER_GAP, ROW_GAP, tileSize, WORD_GAP } from './layout'
+import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, tileSize, WORD_GAP, WRAP_GAP } from './layout'
 import { decode, encode } from './progress'
 import { FloorBar } from '@components/floor-bar'
 import { PhrazleData, PuzzleComponentProps } from '@types'
@@ -29,19 +29,50 @@ const EMPTY: ReadonlySet<string> = new Set()
 // tiles were sized against. Nothing measures the band's height any more; see layout.ts.
 
 // THE FOUR STATES ARE ASSIGNMENT OUTCOMES, NOT MEMBERSHIP TESTS, and this table is where that rule
-// is kept. `no copy left`, never `not in the phrase`: markGuess's own fixture ships a gray H on a
-// phrase that CONTAINS an H, because the phrase's one H was already spent by a green, so a
-// membership claim there is a lie the player can disprove by looking.
+// is kept. Never `not in the phrase`: markGuess's own fixture ships a gray H on a phrase that
+// CONTAINS an H, because the phrase's one H was already spent by a green, so a membership claim on
+// a TILE is a lie the player can disprove by looking. (A KEY may say it, and the reason the same
+// sentence is true there and false here is worked out at KEY_PHRASE below.)
+//
+// `no more of this letter`, and it replaced `no copy left`. The old wording was the marking rule's
+// own vocabulary -- markGuess keeps a ledger and debits a COPY per colored tile -- read straight
+// out of the rule and onto the board. It is exactly right and it is jargon: nothing on screen ever
+// mentions copies or a ledger, so a player met the word cold, in the one state that is hardest to
+// reason about anyway, and had to reverse-engineer an accounting metaphor to reach "this letter
+// cannot help me". The replacement says the same thing in words the board has already used.
 //
 // The same four phrases serve the tile names and the ribbon, so the board says one thing in one
 // voice, and the vendored TileState literals are the keys -- no second vocabulary, no translation
 // layer that can drift from the rule.
 const PHRASE: Record<TileState, string> = {
-  gray: 'no copy left',
+  gray: 'no more of this letter',
   green: 'in place',
   purple: 'in another word',
   yellow: 'elsewhere in this word',
 }
+
+// WHAT A KEY KNOWS, and it is deliberately THREE states against the tiles' four rather than a
+// summary of them.
+//
+// A tile is inside a word and a key is not, so half the tile vocabulary cannot be spoken here: a
+// key reading `elsewhere in this word` names a word it is not in, and `in place` claims a position
+// it does not have. What survives the move off the grid is the one question a keyboard is actually
+// scanned for -- is this letter worth pressing again -- so green, yellow and purple collapse into
+// `in the phrase` and only gray is left to answer no.
+//
+// AND A KEY MAY SAY `not in the phrase` THOUGH A TILE MAY NOT. That is not the membership claim
+// PHRASE above forbids; it is a claim about EVERY marking a letter has ever received, and it holds
+// on markGuess's own passes. Take a letter the phrase contains and a guess containing it: pass 1
+// gives a green to any position that matches, pass 2 drains that word's unspent copies into
+// yellows, and pass 3 drains the phrase's into purples -- so a tile only falls through to gray once
+// no unspent copy is left anywhere, which means some earlier tile of that same letter, in that same
+// guess, took one and is not gray. A letter in the phrase therefore cannot be gray on every tile of
+// any guess it appears in, and a letter that IS gray everywhere is a letter the phrase does not
+// have. The tile's claim is about one position and is false; the key's is about the whole record
+// and is a theorem.
+const KEY_PHRASE = { absent: 'not in the phrase', present: 'in the phrase' } as const
+
+type KeyStatus = keyof typeof KEY_PHRASE | 'untried'
 
 // SEGMENTS COUNT DISTANCE FROM HOME. One unbroken bar: the letter is home. Two: it belongs in this
 // word, somewhere else. Three: it belongs in another word. None: no unspent copy is left anywhere.
@@ -64,31 +95,44 @@ const FILL: Record<TileState, string> = {
 }
 
 // A TILE NOBODY HAS MARKED YET IS NOT A GRAY TILE, and giving it FILL.gray would make the row the
-// player is typing look exactly like a row of `no copy left` verdicts. The composing tile takes the
+// player is typing look exactly like a row of `no more of this letter` verdicts. The composing tile takes the
 // RAISED surface with a `rule` border and full ink -- the same three tokens the cipher bench's
 // square takes, all three of which contrast.test.ts already holds -- so the live row reads as the
 // nearest thing on the board and the future rows stay flat plate behind it.
 const COMPOSING = 'border border-[var(--lull-rule)] bg-[var(--lull-raised)] text-[var(--lull-ink)]'
 
-const INSTRUCTION = 'Each word must be a real word of that length. Press Guess to have it marked.'
+// `Press Guess to mark it`, not `to have it marked`. The passive named no actor and the sentence
+// beside it is an imperative, so one line asked the player to do something and the next described
+// something happening to them.
+const INSTRUCTION = 'Each word must be a real word of that length. Press Guess to mark it.'
 // Drawn with the ACTUAL bar segments the tiles use, so the key is the mark rather than a description
 // of it. Ordered home, this word, another word, nowhere -- the order the states run in, which is the
 // order the segment count counts in.
 //
-// SENTENCE CASE ON ALL FOUR, including the last. It read `no bar, no copy left` beside three
-// capitalized siblings, which is the spec's wording quoted verbatim into a list that did not exist
-// when the spec was written. `no copy left` survives unchanged as the WORDING -- it is the phrase
-// every gray tile's accessible name uses and the reason it is not `not in the phrase` -- and only
-// the leading capital is added, because a list of four items reading three one way and one another
-// is a typo to every reader who is not holding the spec.
+// SENTENCE CASE ON ALL FOUR, including the last, which once read `no bar, no copy left` beside
+// three capitalized siblings -- the spec's wording quoted verbatim into a list that did not exist
+// when the spec was written. A list of four items reading three one way and one another is a typo
+// to every reader who is not holding the spec.
+//
+// THE WORDING IS PHRASE.gray's, still, and that is the rule this entry lives under rather than the
+// capital: the gray tile's accessible name and this label have to be the same sentence, so a player
+// who reads the key and a player who hears the tile learn one thing. `no copy left` is what it used
+// to be and the reason for the change is at PHRASE. The `No bar` prefix stays, because the gray
+// entry is the one whose mark is the ABSENCE of a mark and there is nothing beside the label to
+// look at.
 const LEGEND: [TileState, string][] = [
   ['green', 'In place'],
   ['yellow', 'Elsewhere in this word'],
   ['purple', 'In another word'],
-  ['gray', 'No bar, no copy left'],
+  ['gray', 'No bar, no more of this letter'],
 ]
 
-const ROW_FULL = 'Row full. Press Guess.'
+// `Every tile is full`, not `Row full`. The board counts GUESSES everywhere a player can read a
+// number -- the sign row says `Guess 2`, every spent row is named `Guess 1` -- so `row` was a third
+// noun for a thing already called two others, and a player who had just filled the last square was
+// told about a row they had never been told they were filling. `tile` is the word the sentence
+// below it already uses, and the shape matches the cipher bench's `Every square is full.`
+const ROW_FULL = 'Every tile is full. Press Guess.'
 const FILL_FIRST = 'Fill every tile first.'
 const NOT_IN_LIST = (word: string): string => `${word} isn’t in the word list. Change it and press Guess.`
 const FINISHED = 'This board is finished. Press Again to start over.'
@@ -111,12 +155,45 @@ const PLATE =
   'flex flex-1 flex-col bg-[var(--lull-plate)] pt-[var(--lull-s5)] pr-[var(--lull-gutter-right)] ' +
   'pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]'
 const SIGN_ROW = 'lull-signrow sticky top-0'
+// SHAPE ONLY. Every color a key can take now comes from exactly one of the TONE values below, and
+// that split is load-bearing rather than tidy: this string and KEY_UTILITY both used to set a text
+// color, so the two utility keys carried `text-[var(--lull-floor-ink)]` and
+// `text-[var(--lull-floor-accent)]` at once and which one painted was down to the order Tailwind
+// happened to emit them in. One color source per key is what makes the state below assertable as
+// something other than a coin toss.
 const KEY =
-  'flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center gap-[2px] ' +
-  'bg-[var(--lull-floor)] leading-none font-semibold text-[var(--lull-floor-ink)] ' +
-  'hover:text-[var(--lull-floor-accent)] active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
+  'flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center gap-[2px] leading-none font-semibold'
 const KEY_LETTER = 'text-[17px]'
-const KEY_UTILITY = 'text-[11.5px] tracking-[0.05em] text-[var(--lull-floor-accent)]'
+const KEY_UTILITY = 'text-[11.5px] tracking-[0.05em]'
+
+// THE THREE LETTER-KEY TONES, and no token in them is new: floorAccent-on-floor and
+// floorMuted-on-floor are both already held by contrast.test.ts, and contrast is symmetric, so the
+// filled key's `floor` ink on a `floorAccent` ground is the same 7.074:1 (light) and 8.780:1 (dark)
+// pair read the other way round. The tile fills are deliberately NOT reused: colors.ts scopes them
+// to the plate, and tileGreen on the light floor is 1.9:1 -- a fill nobody can see.
+//
+// COLOR IS NOT A CHANNEL ON ITS OWN HERE EITHER. `present` is a filled block against 25 unfilled
+// ones and `absent` carries a strike through its letter, so the three states differ by ink, by
+// ground, and by whether a mark is drawn -- and a player who sees no hue at all still sorts them.
+//
+// NOTHING IS EVER DISABLED. A ruled-out key stays a live control that types its letter: a player
+// spelling a word that happens to contain a dead letter is doing something ordinary, and 26 keys
+// that come and go under a thumb is a keyboard that cannot be learned.
+const TONE: Record<KeyStatus, string> = {
+  absent:
+    'bg-[var(--lull-floor)] text-[var(--lull-floor-muted)] hover:text-[var(--lull-floor-ink)] ' +
+    'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]',
+  present:
+    'bg-[var(--lull-floor-accent)] text-[var(--lull-floor)] hover:bg-[var(--lull-floor-ink)] active:bg-[var(--lull-floor-ink)]',
+  untried:
+    'bg-[var(--lull-floor)] text-[var(--lull-floor-ink)] hover:text-[var(--lull-floor-accent)] ' +
+    'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]',
+}
+// The two utility keys take no state -- Guess and Delete are not letters and are never ruled out --
+// so they keep the accent ink they have always had, now as their only color source.
+const TONE_UTILITY =
+  'bg-[var(--lull-floor)] text-[var(--lull-floor-accent)] hover:text-[var(--lull-floor-ink)] ' +
+  'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
 const TILE =
   'flex shrink-0 flex-col items-center justify-center gap-[2px] rounded-[var(--lull-r-sm)] ' + 'leading-none lull-sign'
 
@@ -168,6 +245,62 @@ const Bar = ({ state, width }: { state: TileState; width: number }): React.React
   </span>
 )
 
+// THE RULED-OUT MARK, and it is an ELEMENT for the same reason the segments above are: a
+// `line-through` would put the whole non-color channel in a stylesheet, where nothing in this repo
+// can assert it and jsdom lays nothing out. Drawn as a sibling of the letter, the mark is DOM and a
+// test can count it.
+//
+// `currentColor` again, so it is whatever ink the key's tone set -- floorMuted at rest, floorInk
+// under a pointer, floor while pressed -- and it can never be the one thing on the key that fails
+// to change with it. It overhangs the letter by 3px a side, because a strike that stops at the
+// glyph reads as an underline that has slipped.
+//
+// aria-hidden, because the key's accessible name already ends in `not in the phrase` and a screen
+// reader must not hear the same verdict twice.
+const Strike = (): React.ReactNode => (
+  <span
+    aria-hidden="true"
+    className="absolute inset-x-[-3px] top-1/2 h-[1.5px] -translate-y-1/2 rounded-[1px] bg-current"
+    data-struck=""
+  />
+)
+
+// THE HAIRLINE BETWEEN ONE GUESS AND THE NEXT, drawn in `rule` rather than in `hair`. hair is
+// documented as decorative and forbidden from carrying meaning, and this line carries the only
+// thing on the board that says where one attempt ends: a sixteen-letter phrase wraps at 390, so
+// without it two guesses are four evenly spaced lines. `rule` on plate is 3.836:1 in light and
+// 3.644:1 in dark, both held by contrast.test.ts.
+//
+// AN ELEMENT RATHER THAN A BORDER, on the Bar's reasoning exactly: a `border-t` on the row below
+// would be a promise no test in this repo can read. Counted by the suite as `rows - 1`.
+const GuessRule = (): React.ReactNode => (
+  <span aria-hidden="true" className="h-px w-full shrink-0 bg-[var(--lull-rule)]" data-guess-rule="" />
+)
+
+// THE ONE FACT EVERY KEY IS DRAWN FROM, folded out of the markings the grid is already showing
+// rather than recomputed from the answer. No new rule is authored: markGuess decides the tiles, and
+// this walks the tiles it decided.
+//
+// PRESENT WINS AND NEVER LOSES. A letter is gray in one guess and green in another all the time --
+// type H twice when the phrase has one H and the second H is gray on the very board that proves the
+// letter is in the phrase -- so `absent` is written only where nothing has claimed the letter yet,
+// and any non-gray marking anywhere overwrites it for good. Reading the guesses in order with the
+// two branches the other way round would report a live letter as ruled out.
+const keyStatuses = (guesses: string[], marked: TileState[][][]): Record<string, KeyStatus> => {
+  const statuses: Record<string, KeyStatus> = {}
+  marked.forEach((words, index) => {
+    // The guess's letters in the same order the marks come out in, which is what lets one flat walk
+    // line them up. Both sides come from the same stored string, so they cannot fall out of step.
+    const letters = guesses[index].replace(/ /g, '')
+    words.flat().forEach((state, at) => {
+      const letter = letters[at]
+      if (state !== 'gray') statuses[letter] = 'present'
+      else if (statuses[letter] === undefined) statuses[letter] = 'absent'
+    })
+  })
+  return statuses
+}
+
 // THE PROPS ARE ANNOTATED ON THE PARAMETER, not on the const, and the difference is a lint rule
 // rather than a preference: `react/prop-types` cannot read a destructured parameter's shape off a
 // `PuzzleComponent<PhrazleData>` annotation on the binding and reports every prop as unvalidated.
@@ -210,7 +343,10 @@ export const PhrazleBoard = ({
 
   const [guesses, setGuesses] = useState<string[]>(() => decode(progress, phrase).guesses)
   const [typed, setTyped] = useState('')
-  const [message, setMessage] = useState({ nonce: 0, text: '' })
+  // `detail` is the half of an announcement that is never drawn -- see FloorBar's prop. Only the
+  // marking of a committed guess ever fills it; every other message on this bench is one short
+  // sentence that belongs on screen.
+  const [message, setMessage] = useState({ detail: '', nonce: 0, text: '' })
   // A WIDTH, not a box. The height went with the guess limit: a grid that grows cannot be sized to
   // fit a band, so it scrolls instead and the tiles hold their size.
   const [width, setWidth] = useState(DEFAULT_WIDTH)
@@ -294,11 +430,15 @@ export const PhrazleBoard = ({
     composingRef.current?.scrollIntoView({ block: 'nearest' })
   }, [guesses.length])
 
-  const say = (text: string): void => setMessage((previous) => ({ nonce: previous.nonce + 1, text }))
+  // The detail DEFAULTS TO EMPTY rather than carrying, so a caller that says one plain sentence
+  // cannot inherit the previous guess's marking and announce a transcript of a row that is no
+  // longer the subject.
+  const say = (text: string, detail = ''): void =>
+    setMessage((previous) => ({ detail, nonce: previous.nonce + 1, text }))
   // Clears the band WITHOUT announcing. FloorBar renders nothing at all for '', so the live region
   // goes back to empty and the next message is an announcement rather than a re-read. The nonce is
   // carried rather than bumped, because nothing was said.
-  const hush = (): void => setMessage((previous) => ({ nonce: previous.nonce, text: '' }))
+  const hush = (): void => setMessage((previous) => ({ detail: '', nonce: previous.nonce, text: '' }))
 
   const wordsOf = (letters: string): string[] =>
     lengths.map((length, index) => letters.slice(offsets[index], offsets[index] + length))
@@ -313,7 +453,7 @@ export const PhrazleBoard = ({
   const noteForKey = (): string => {
     if (!drawable) return ''
     if (over) return 'this board is finished'
-    if (typed.length >= total) return 'the row is full'
+    if (typed.length >= total) return 'every tile is full'
     const word = lengths.findIndex((length, index) => typed.length < offsets[index] + length)
     return `fills word ${word + 1} letter ${typed.length - offsets[word] + 1}`
   }
@@ -400,11 +540,14 @@ export const PhrazleBoard = ({
     // NO LOSS BRANCH, because there is no loss. This is where `Out of guesses. The answer is X.`
     // was said, and the product's only ending is now the one above it.
 
-    // HEAD-FIRST, because the ribbon clamps to two lines and keeps its head: what survives visually
-    // is the guess itself, and what is clamped away is the per-letter tail a sighted player is
-    // reading off the grid. The whole string stays in the DOM, so the live region announces it
-    // entire. Word groups are separated by a full stop so a screen reader pauses at the word
-    // boundary -- which is the boundary the purple state is about.
+    // TWO ARGUMENTS, AND THE SPLIT IS THE POINT. This was one string handed to a two-line clamp,
+    // which is the same division made by the wrong instrument: the head is the guess and the tail is
+    // a per-letter transcript of a grid the sighted player is looking at, so the clamp spent both
+    // visible lines on the transcript and then trailed off mid-word. Passed as a detail the tail is
+    // announced entire and drawn not at all, and the ribbon says one short sentence.
+    //
+    // Word groups are separated by a full stop so a screen reader pauses at the word boundary --
+    // which is the boundary the purple state is about.
     //
     // THE HEAD USED TO CARRY A COUNT -- `4 guesses left` -- and it is gone rather than reworded.
     // There is no number to put there: `guess 7` is the sign row's job and saying it twice makes the
@@ -413,7 +556,7 @@ export const PhrazleBoard = ({
     const tail = tiles
       .map((word, index) => `${word.map((tile, at) => `${words[index][at]} ${PHRASE[tile]}`).join(', ')}.`)
       .join(' ')
-    say(`${words.join(' ')}. ${tail}`)
+    say(`${words.join(' ')}.`, tail)
   }
 
   const again = (): void => {
@@ -539,6 +682,12 @@ export const PhrazleBoard = ({
   const letter = Math.round(tile * 0.58)
   const bar = Math.round(tile * 0.6)
 
+  const statuses = keyStatuses(guesses, marked)
+  // COMPUTED ONCE, not once per key. This used to be called twice inside every one of the 26 letter
+  // buttons -- 52 walks of the word lengths per render -- for a value that cannot vary between them:
+  // the note is about the caret, and there is one caret.
+  const note = noteForKey()
+
   // The row the player is looking at: the one being composed, or -- once the board is solved -- the
   // last one spent. The finished branch is what stops a solved board advancing to a row that will
   // never be composed.
@@ -632,64 +781,77 @@ export const PhrazleBoard = ({
               stops called `Empty`. There are no future rows to hide now: `rows` is the guesses made
               plus the one being composed, so all three of those branches were unreachable and are
               gone rather than left to be reasoned about. */}
-          <div aria-label="Guesses" className="flex flex-col" role="group" style={{ gap: `${ROW_GAP}px` }}>
+          <div aria-label="Guesses" className="flex flex-col" role="group" style={{ gap: `${GUESS_GAP}px` }}>
             {Array.from({ length: rows }, (_unused, index) => index).map((index) => {
               const done = index < guesses.length
               const isComposing = !over && index === guesses.length
               const letters = done ? guesses[index].replace(/ /g, '') : typed
 
               return (
-                <div
-                  // Absent on every other row, never "false": there is no
-                  // this-is-not-the-current-row state worth saying on every row above.
-                  aria-current={isComposing ? 'true' : undefined}
-                  // `Guess 3`, matching the sign row, for the same reason: there is no total to be
-                  // three of.
-                  aria-label={isComposing ? `Your guess, ${composed}` : `Guess ${index + 1}, ${guesses[index]}`}
-                  className="flex flex-wrap"
-                  key={index}
-                  // The one row worth keeping in view, so the effect above has something to point
-                  // at. Undefined on every other row: React would otherwise call a cleanup callback
-                  // with null for every spent row on every render and leave the ref holding whichever
-                  // row rendered last.
-                  ref={isComposing ? composingRef : undefined}
-                  role="group"
-                  style={{ columnGap: `${WORD_GAP}px`, rowGap: `${ROW_GAP}px` }}
-                >
-                  {/* WORDS NEVER BREAK: word shape is a solving cue and a broken word reads as two
-                      words. The row wraps BETWEEN words instead, identically on every row because
-                      every row has identical word lengths, and the grid gets taller and scrolls. */}
-                  {wordsOf(letters).map((word, wordIndex) => (
-                    <div className="flex" key={wordIndex} style={{ gap: `${LETTER_GAP}px` }}>
-                      {Array.from({ length: lengths[wordIndex] }, (_unused, at) => at).map((at) => {
-                        const state = done ? marked[index][wordIndex][at] : undefined
-                        const shown = word[at] ?? ''
+                // A FRAGMENT, so the hairline is a SIBLING of the row rather than a child of it.
+                // Inside the row it would land within a `role="group"` named `Guess 1, HOT HAND`
+                // and inherit the wrap gap instead of the guess gap; outside, it takes its share of
+                // GUESS_GAP on each side and the separation between two guesses is the gap, the
+                // line, and the gap again -- against one wrap gap inside a guess.
+                //
+                // Before the FIRST guess there is nothing to separate, so `index > 0` draws exactly
+                // `rows - 1` of them, which is what the suite counts.
+                <React.Fragment key={index}>
+                  {index > 0 && <GuessRule />}
+                  <div
+                    // Absent on every other row, never "false": there is no
+                    // this-is-not-the-current-row state worth saying on every row above.
+                    aria-current={isComposing ? 'true' : undefined}
+                    // `Guess 3`, matching the sign row, for the same reason: there is no total to be
+                    // three of.
+                    aria-label={isComposing ? `Your guess, ${composed}` : `Guess ${index + 1}, ${guesses[index]}`}
+                    className="flex flex-wrap"
+                    // The one row worth keeping in view, so the effect above has something to point
+                    // at. Undefined on every other row: React would otherwise call a cleanup callback
+                    // with null for every spent row on every render and leave the ref holding whichever
+                    // row rendered last.
+                    ref={isComposing ? composingRef : undefined}
+                    role="group"
+                    // WRAP_GAP, never GUESS_GAP. This is the gap a SINGLE guess breaks at when its
+                    // words do not fit the width, and the two were one constant until a sixteen-letter
+                    // phrase drew two guesses as four identical lines.
+                    style={{ columnGap: `${WORD_GAP}px`, rowGap: `${WRAP_GAP}px` }}
+                  >
+                    {/* WORDS NEVER BREAK: word shape is a solving cue and a broken word reads as two
+                        words. The row wraps BETWEEN words instead, identically on every row because
+                        every row has identical word lengths, and the grid gets taller and scrolls. */}
+                    {wordsOf(letters).map((word, wordIndex) => (
+                      <div className="flex" key={wordIndex} style={{ gap: `${LETTER_GAP}px` }}>
+                        {Array.from({ length: lengths[wordIndex] }, (_unused, at) => at).map((at) => {
+                          const state = done ? marked[index][wordIndex][at] : undefined
+                          const shown = word[at] ?? ''
 
-                        // role="img" WITH A NAME. A tile is not a control and must not be a button --
-                        // that would put 126 stops in the tab order for elements nothing can do
-                        // anything with. It is not plain text either: the visible letter alone would
-                        // announce `H` and lose the mark, and the mark IS the information. `img` with
-                        // a name is the standard way to say "this graphic means this sentence", and
-                        // it makes the tile one stop for a screen reader working the row rather than
-                        // two.
-                        return (
-                          <span
-                            aria-label={tileName(shown, state)}
-                            className={`${TILE} ${state === undefined ? COMPOSING : FILL[state]}`}
-                            key={at}
-                            role="img"
-                            style={{ height: `${tile}px`, width: `${tile}px` }}
-                          >
-                            <span aria-hidden="true" style={{ fontSize: `${letter}px` }}>
-                              {shown}
+                          // role="img" WITH A NAME. A tile is not a control and must not be a button --
+                          // that would put 126 stops in the tab order for elements nothing can do
+                          // anything with. It is not plain text either: the visible letter alone would
+                          // announce `H` and lose the mark, and the mark IS the information. `img` with
+                          // a name is the standard way to say "this graphic means this sentence", and
+                          // it makes the tile one stop for a screen reader working the row rather than
+                          // two.
+                          return (
+                            <span
+                              aria-label={tileName(shown, state)}
+                              className={`${TILE} ${state === undefined ? COMPOSING : FILL[state]}`}
+                              key={at}
+                              role="img"
+                              style={{ height: `${tile}px`, width: `${tile}px` }}
+                            >
+                              <span aria-hidden="true" style={{ fontSize: `${letter}px` }}>
+                                {shown}
+                              </span>
+                              {state !== undefined && <Bar state={state} width={bar} />}
                             </span>
-                            {state !== undefined && <Bar state={state} width={bar} />}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  ))}
-                </div>
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </React.Fragment>
               )
             })}
           </div>
@@ -699,7 +861,7 @@ export const PhrazleBoard = ({
       {/* FloorBar takes no className, and CSS cannot move a box into another parent -- so the band
           class goes on a wrapper around it rather than on the bar itself. */}
       <div className="lull-instrument">
-        <FloorBar message={announced} resting={restingLine()}>
+        <FloorBar detail={message.detail} message={announced} resting={restingLine()}>
           {/* 7x4, full bleed, no horizontal padding: at 320 the keys are 44.86 wide and 44 tall,
               which is 2.5.5's target size on the control this board is tapped on most. The 1px gaps
               are the gridlines. 4 rows of 44 and 3 gaps of 1 is 179, the instrument's whole budget. */}
@@ -713,19 +875,35 @@ export const PhrazleBoard = ({
             className="grid shrink-0 grid-cols-7 gap-px bg-[var(--lull-floor-rule)]"
             role="group"
           >
-            {ALPHABET.map((plain) => (
-              <button
-                aria-label={noteForKey() === '' ? plain : `${plain}, ${noteForKey()}`}
-                className={KEY}
-                key={plain}
-                onClick={() => press(plain)}
-                type="button"
-              >
-                <span aria-hidden="true" className={KEY_LETTER}>
-                  {plain}
-                </span>
-              </button>
-            ))}
+            {ALPHABET.map((plain) => {
+              const status = statuses[plain] ?? 'untried'
+
+              return (
+                <button
+                  // LETTER, THEN VERDICT, THEN CARET, and the order is the order a player needs
+                  // them in: which key this is, whether it is worth pressing, and what pressing it
+                  // would fill. An untried key contributes no verdict at all rather than a third
+                  // phrase saying so -- `A, fills word 2 letter 1` is a key nobody has spent a
+                  // guess on, and naming that absence would put a sentence on 26 keys at mount.
+                  //
+                  // Both middle terms drop out on an undrawable pack, where the note is '' and no
+                  // guess has been marked, leaving the bare letter.
+                  aria-label={[plain, KEY_PHRASE[status as keyof typeof KEY_PHRASE], note].filter(Boolean).join(', ')}
+                  className={`${KEY} ${TONE[status]}`}
+                  key={plain}
+                  onClick={() => press(plain)}
+                  type="button"
+                >
+                  {/* `relative` is here rather than on the button so the strike is measured against
+                      the LETTER and not against a 44px key -- a line spanning the whole key reads as
+                      a divider between rows of the pad. */}
+                  <span aria-hidden="true" className={`relative ${KEY_LETTER}`}>
+                    {plain}
+                    {status === 'absent' && <Strike />}
+                  </span>
+                </button>
+              )
+            })}
             {/* ONE KEY SWAPPED IN PLACE, never a pad replaced. 28 keys vanishing under a keyboard
                 player's focus drops focus to <body> and restarts the next Tab at the top of the
                 page, and a pad left inert reads as 28 broken keys. Swapping in place keeps the same
@@ -735,7 +913,7 @@ export const PhrazleBoard = ({
                 contained in the name -- the same trick HintBar uses for `Hint 1 of 3`. */}
             <button
               aria-label={over ? 'Play again' : undefined}
-              className={`${KEY} ${KEY_UTILITY}`}
+              className={`${KEY} ${KEY_UTILITY} ${TONE_UTILITY}`}
               onClick={over ? again : commit}
               type="button"
             >
@@ -744,7 +922,7 @@ export const PhrazleBoard = ({
             {/* Delete, and it IS Backspace -- the same `erase`, reached by a key on the pad instead
                 of a key on a hardware keyboard. There is no Undo on this bench: a committed guess is
                 permanent, that is the game, and an Undo here would be a rule this app authored. */}
-            <button className={`${KEY} ${KEY_UTILITY}`} onClick={erase} type="button">
+            <button className={`${KEY} ${KEY_UTILITY} ${TONE_UTILITY}`} onClick={erase} type="button">
               Delete
             </button>
           </div>

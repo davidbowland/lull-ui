@@ -27,18 +27,20 @@ describe('InstallCard', () => {
     it('says what installing buys', () => {
       renderCard()
 
-      expect(screen.getByRole('heading', { name: 'Have tomorrow ready' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Put Lull on your home screen' })).toBeInTheDocument()
     })
 
-    // Pinned as the copy that ships, not as a claim about behavior. usePrefetch asks for
-    // one date whether or not the app is installed, so this sentence now overstates what
-    // the app does -- see the note beside it in install-card.
+    // Pinned as the copy that ships AND as a claim about behavior, which it could not be before.
+    // The old sentence promised that each day's puzzles were waiting before the app was opened;
+    // usePrefetch asks for one date, today's, only once the app is running, so the promise was
+    // false and was flagged as false in a comment rather than fixed. These words are true of the
+    // code as written, precondition included.
     it('says what the device keeps either way', () => {
       renderCard()
 
       expect(
         screen.getByText(
-          'Install Lull and each day’s puzzles are waiting on your phone before you open it — no connection needed.',
+          'It opens like an app. Open it once a day and that day’s puzzles keep working with no connection.',
         ),
       ).toBeInTheDocument()
     })
@@ -199,7 +201,7 @@ describe('InstallCard', () => {
         <InstallCard mode="card" onDismiss={onDismiss} onInstall={onInstall} onReopen={onReopen} platform="ios" />,
       )
 
-      expect(screen.getByRole('heading', { name: 'Have tomorrow ready' })).toHaveFocus()
+      expect(screen.getByRole('heading', { name: 'Put Lull on your home screen' })).toHaveFocus()
     })
 
     // A card that appears because the browser finally fired its event must not snatch

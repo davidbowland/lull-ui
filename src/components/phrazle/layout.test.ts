@@ -1,4 +1,4 @@
-import { DEFAULT_WIDTH, MAX_TILE, MIN_TILE, tileSize } from './layout'
+import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, MAX_TILE, MIN_TILE, tileSize, WORD_GAP, WRAP_GAP } from './layout'
 
 // The grid box's CONTENT width at a 390 viewport and at a 320 one, after the plate's own 16px a
 // side. Measured with a ResizeObserver in the board, never derived from the viewport -- so these
@@ -22,6 +22,24 @@ describe('the sizes themselves', () => {
   // thing this bench must not teach is that a tile can be pressed.
   it('caps a tile below the keypad key', () => {
     expect(MAX_TILE).toEqual(40)
+  })
+
+  // THE ORDERING IS THE BUG FIX, so it is pinned as arithmetic rather than left to the two literals
+  // agreeing by accident. One `ROW_GAP` used to be spent on both breaks a row can take, which drew
+  // a wrapped guess and a pair of guesses at exactly the same 6px -- four evenly spaced lines with
+  // nothing saying which pair was one attempt. Equalizing them again is a one-character edit, and
+  // this is the assertion that refuses it. CLAUDE.md forbids style assertions, so the constants are
+  // the only place the relationship can be checked at all.
+  it('separates one guess from the next by more than a wrapped line', () => {
+    expect(GUESS_GAP).toBeGreaterThan(WRAP_GAP)
+  })
+
+  // The whole ladder in one line, and it is the mnemonic the grid is read by: letters cling into
+  // words, words sit apart inside a guess, a wrapped line hangs below its own guess, and one guess
+  // stands clear of the next. Break any rung and two things that mean different things start to
+  // look alike.
+  it('keeps the four gaps in reading order', () => {
+    expect([LETTER_GAP, WRAP_GAP, GUESS_GAP, WORD_GAP]).toStrictEqual([2, 6, 8, 12])
   })
 
   // The board paints with this before its first ResizeObserver measurement lands, so a typo here is

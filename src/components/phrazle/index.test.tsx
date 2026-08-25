@@ -23,8 +23,8 @@ describe('PhrazleBoard', () => {
   const mockTileSize = tileSize as jest.Mock
   // Every user-facing string this suite asserts, quoted from the spec verbatim and declared once.
   // The curly apostrophes are the codebase's, not a typo: `isn’t` and `didn’t` and `you’re`.
-  const INSTRUCTION = 'Each word must be a real word of that length. Press Guess to have it marked.'
-  const ROW_FULL = 'Row full. Press Guess.'
+  const INSTRUCTION = 'Each word must be a real word of that length. Press Guess to mark it.'
+  const ROW_FULL = 'Every tile is full. Press Guess.'
   const FILL_FIRST = 'Fill every tile first.'
   // HELD rather than HOLE, and the swap is the fixture's doing rather than the copy's. HOLE is IN
   // phrazleDictionary -- `OLD HOLE` and `HOT HOLE` are both guesses this file plays or restores --
@@ -39,7 +39,7 @@ describe('PhrazleBoard', () => {
   // IT ALTERNATES, and every assertion below is written against the arithmetic rather than around
   // it. `say` increments the nonce before the mark is drawn from it and the board appends the mark
   // on an ODD nonce, so a test's FIRST message carries one and its SECOND carries none -- the same
-  // arithmetic themedanagrams asserts. Filling the row is itself a message (`Row full.`), so every
+  // arithmetic themedanagrams asserts. Filling the row is itself a message (`Every tile is full.`), so every
   // press of Guess that follows a full row is a second message and its text stands alone. Pinning
   // both by value is what says the two consecutive messages DIFFER, which is the whole mechanism.
   const REPEAT_MARK = '\u200b'
@@ -47,14 +47,14 @@ describe('PhrazleBoard', () => {
   // markGuess on TOE HOLD / HOT HAND, worked through by hand and written here so a reader can check
   // the assertions below without running the rule: the phrase's ONE H is spent by HAND's green, so
   // HOT's H has nothing left to draw from and is GRAY on a phrase that contains an H. That is the
-  // fixture the whole `no copy left` copy rule exists for.
+  // fixture the whole `no more of this letter` copy rule exists for.
   //
   // NO COUNT BETWEEN THE GUESS AND THE MARKING. This read `HOT HAND. 5 guesses left. H no copy
   // left, ...` while there was a limit to count down from. Nothing is running out now, so the head
   // is the guess and the rest is the marking.
   const COMMITTED =
-    'HOT HAND. H no copy left, O in place, T elsewhere in this word. ' +
-    'H in place, A no copy left, N no copy left, D in place.'
+    'HOT HAND. H no more of this letter, O in place, T elsewhere in this word. ' +
+    'H in place, A no more of this letter, N no more of this letter, D in place.'
 
   // OLD HOLE is the ONE valid guess against TOE HOLD that produces all four states at once --
   // yellow O, gray L, purple D, then green H, green O, green L, purple E -- so the four segment
@@ -250,7 +250,7 @@ describe('PhrazleBoard', () => {
       expect(screen.getByText('In place')).toBeInTheDocument()
       expect(screen.getByText('Elsewhere in this word')).toBeInTheDocument()
       expect(screen.getByText('In another word')).toBeInTheDocument()
-      expect(screen.getByText('No bar, no copy left')).toBeInTheDocument()
+      expect(screen.getByText('No bar, no more of this letter')).toBeInTheDocument()
     })
 
     // THE KEY IS THE MARK RATHER THAN A DESCRIPTION OF IT, asserted the same way a tile's mark is:
@@ -267,7 +267,7 @@ describe('PhrazleBoard', () => {
       ['In place', 1],
       ['Elsewhere in this word', 2],
       ['In another word', 3],
-      ['No bar, no copy left', 0],
+      ['No bar, no more of this letter', 0],
     ])('draws the key for %s with the same bar the tiles use', (label, segments) => {
       renderBoard()
 
@@ -314,7 +314,7 @@ describe('PhrazleBoard', () => {
 
       await type(user, 'TOEHOLD')
 
-      expect(keyNamed(/^T,/)).toHaveAccessibleName('T, the row is full')
+      expect(keyNamed(/^T,/)).toHaveAccessibleName('T, every tile is full')
       // The first message of the test, so the nonce is odd and the mark is due.
       expect(ribbon()).toHaveProperty('textContent', `${ROW_FULL}${REPEAT_MARK}`)
     })
@@ -376,7 +376,7 @@ describe('PhrazleBoard', () => {
     })
 
     // `hush()` IN `press`, which nothing reached either: the only test that pressed a letter with a
-    // sentence already standing in the ribbon was one where the sentence was `Row full.`, and that
+    // sentence already standing in the ribbon was one where the sentence was `Every tile is full.`, and that
     // press returns at the guard above before it can hush anything. So a player who pressed Guess on
     // a short row and then went on typing kept `Fill every tile first.` in the live region over a row
     // that was no longer short.
@@ -431,7 +431,7 @@ describe('PhrazleBoard', () => {
       await type(user, 'TOEHELD')
       await user.click(keyNamed(/^Guess$/))
 
-      // `Row full.` was message one, so this is message two and stands alone.
+      // `Every tile is full.` was message one, so this is message two and stands alone.
       expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST)
       expect(screen.getByText('Guess 1')).toBeInTheDocument()
       expect(onProgress).not.toHaveBeenCalled()
@@ -456,19 +456,265 @@ describe('PhrazleBoard', () => {
     })
   })
 
+  // ONE GUESS TOLD APART FROM THE NEXT, which a 6px gap spent in both places a row can break could
+  // not do. A guess wider than the plate wraps between its words, and that wrap used the same
+  // constant as the gap between guesses -- so at a 390 viewport a three-word phrase of sixteen
+  // letters drew two attempts as four evenly spaced lines with nothing saying which pair was which.
+  //
+  // ASSERTED BY COUNTING ELEMENTS, because CLAUDE.md forbids style assertions and jsdom lays nothing
+  // out: the hairline is a real `[data-guess-rule]` sibling for the same reason the tiles' segments
+  // are `[data-seg]` siblings. A `border-t` would be a promise nothing in this repo can read.
+  describe('the boundary between one guess and the next', () => {
+    const hairlines = (container: HTMLElement): NodeListOf<Element> => container.querySelectorAll('[data-guess-rule]')
+
+    // Nothing above the first row to divide it from, so a fresh board draws no line at all -- a
+    // single rule floating above one empty row is a boundary between a guess and nothing.
+    it('draws no line on a board with a single row', () => {
+      const { container } = renderBoard()
+
+      expect(rows()).toHaveLength(1)
+      expect(hairlines(container)).toHaveLength(0)
+    })
+
+    // BETWEEN EVERY ADJACENT PAIR, and the composing row counts as one of the pair: the row being
+    // typed is an attempt like any other and has to be told apart from the marked one above it.
+    // Five restored guesses plus the composing row is six rows and therefore five lines.
+    it('draws one line between each row and the row above it', () => {
+      const { container } = renderBoard(phrazlePuzzle, FIVE_SPENT)
+
+      expect(rows()).toHaveLength(6)
+      expect(hairlines(container)).toHaveLength(5)
+    })
+
+    // GROWS WITH THE GRID. A committed guess adds a row and therefore a line, which is the arithmetic
+    // that would silently stop holding if the rules were rendered from a fixed list rather than from
+    // the row count.
+    it('gains a line with every guess committed', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'HOTHAND')
+      await user.click(keyNamed(/^Guess$/))
+
+      expect(rows()).toHaveLength(2)
+      expect(hairlines(container)).toHaveLength(1)
+    })
+
+    // A FINISHED BOARD DRAWS NO COMPOSING ROW, so the line that would have separated it goes too --
+    // otherwise a solved board ends in a rule with nothing under it.
+    it('draws no line below the last row of a finished board', () => {
+      const { container } = renderBoard(phrazlePuzzle, WON_ON_SIX)
+
+      expect(rows()).toHaveLength(6)
+      expect(hairlines(container)).toHaveLength(5)
+    })
+
+    // aria-hidden and OUTSIDE the row groups, both of which matter. Inside a group the hairline would
+    // sit within `Guess 1, HOT HAND` and take the wrap gap instead of the guess gap; audible, it
+    // would put a meaningless stop between every pair of rows for a screen-reader user who already
+    // hears each row named.
+    it('keeps the lines out of the accessibility tree and out of the rows', () => {
+      const { container } = renderBoard(phrazlePuzzle, FIVE_SPENT)
+
+      for (const line of hairlines(container)) {
+        expect(line).toHaveAttribute('aria-hidden', 'true')
+        expect(line.closest('[role="group"]')).toBe(grid())
+      }
+    })
+  })
+
+  // WHAT A KEY KNOWS, and the whole feature is one question: is this letter worth pressing again.
+  // Three states, not the tiles' four -- a key is not inside a word, so `elsewhere in this word` and
+  // `in place` are claims it cannot make.
+  describe('the state a letter key carries', () => {
+    const struck = (container: HTMLElement): NodeListOf<Element> => container.querySelectorAll('[data-struck]')
+
+    // HOT HAND against TOE HOLD marks H gray then green, O green, T yellow, A gray, N gray, D green.
+    // So the guess splits the alphabet three ways in one move: five letters the phrase has, two it
+    // does not, and nineteen nobody has asked about.
+    const afterHotHand = async (): Promise<{ container: HTMLElement; user: ReturnType<typeof userEvent.setup> }> => {
+      const { container, user } = renderBoard()
+      await type(user, 'HOTHAND')
+      await user.click(keyNamed(/^Guess$/))
+      return { container, user }
+    }
+
+    // An untried key contributes NO verdict rather than a third phrase saying so. Naming the absence
+    // would put a sentence on 26 keys at mount, every one of it saying nothing happened yet.
+    it('says nothing about a letter nobody has guessed', () => {
+      renderBoard()
+
+      expect(keyNamed(/^B,/)).toHaveAccessibleName('B, fills word 1 letter 1')
+    })
+
+    it('marks a letter the phrase has', async () => {
+      await afterHotHand()
+
+      expect(keyNamed(/^O,/)).toHaveAccessibleName('O, in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^T,/)).toHaveAccessibleName('T, in the phrase, fills word 1 letter 1')
+    })
+
+    it('marks a letter the phrase does not have', async () => {
+      await afterHotHand()
+
+      expect(keyNamed(/^A,/)).toHaveAccessibleName('A, not in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^N,/)).toHaveAccessibleName('N, not in the phrase, fills word 1 letter 1')
+    })
+
+    // THE ONE CASE THAT DECIDES THE PRECEDENCE, and it is on the very first guess. HOT HAND spells H
+    // twice: the phrase's single H is taken by HAND's green, so HOT's H is GRAY on the board that
+    // proves the letter is in the phrase. Written with the branches the other way round, the key
+    // would report a live letter as ruled out.
+    //
+    // REDDENS ON: swapping the two arms of keyStatuses, or dropping the `undefined` guard on the
+    // gray one.
+    it('keeps a letter marked present when a later copy of it comes back gray', async () => {
+      await afterHotHand()
+
+      expect(keyNamed(/^H,/)).toHaveAccessibleName('H, in the phrase, fills word 1 letter 1')
+    })
+
+    // THE SAME PRECEDENCE READ THE OTHER WAY, and the guesses arrive in the other order. L is gray in
+    // OLD and green in HOLE within one marking, so a walk that stopped at the first verdict it found
+    // for a letter would report it ruled out.
+    it('keeps a letter marked present when an earlier copy of it came back gray', () => {
+      renderBoard(phrazlePuzzle, FOUR_STATES)
+
+      expect(keyNamed(/^L,/)).toHaveAccessibleName('L, in the phrase, fills word 1 letter 1')
+    })
+
+    // COLOR IS NOT A CHANNEL ON ITS OWN, and this is the assertion that says so. The strike is a real
+    // element for the same reason the tiles' segments are: a `line-through` lives in a stylesheet,
+    // where style assertions are forbidden and jsdom lays nothing out, so the whole non-color channel
+    // would be a promise nothing here can read.
+    //
+    // TWO, and exactly two -- one per ruled-out letter. Drawn on `present` keys as well, the mark
+    // would say the opposite of the name beside it.
+    it('strikes the ruled-out keys and only those', async () => {
+      const { container } = await afterHotHand()
+
+      expect(struck(container)).toHaveLength(2)
+    })
+
+    it('draws no strike before any guess has been marked', () => {
+      const { container } = renderBoard()
+
+      expect(struck(container)).toHaveLength(0)
+    })
+
+    // The mark is redundant with the name, so a screen reader must not meet it as a third thing on a
+    // key it has already heard the verdict for.
+    it('keeps the strike out of the accessibility tree', async () => {
+      const { container } = await afterHotHand()
+
+      for (const mark of struck(container)) {
+        expect(mark).toHaveAttribute('aria-hidden', 'true')
+      }
+    })
+
+    // NOTHING IS EVER DISABLED, which is the requirement this feature was asked for under. A player
+    // spelling a real word that happens to contain a dead letter is doing something ordinary, and the
+    // dictionary is what refuses a guess -- never the pad.
+    //
+    // REDDENS ON: a `disabled` or `aria-disabled` reaching the ruled-out key.
+    it('leaves a ruled-out key pressable', async () => {
+      const { user } = await afterHotHand()
+
+      await user.click(keyNamed(/^A,/))
+
+      expect(composing()).toHaveAccessibleName('Your guess, A')
+      // BOTH ATTRIBUTES, because they fail differently and only one of them is what `toBeEnabled`
+      // reads. `disabled` takes the key out of the tab order outright; `aria-disabled` leaves it
+      // reachable and tells a screen reader it does nothing, which is the more tempting edit of the
+      // two and the harder one to notice, since the key would go on working for everyone else.
+      expect(keyNamed(/^A,/)).toBeEnabled()
+      expect(keyNamed(/^A,/)).not.toHaveAttribute('aria-disabled')
+    })
+
+    // THE PAD IS 28 TAB STOPS WHATEVER THE BOARD KNOWS. A verdict is a paint and a name, never a
+    // change to what is reachable -- so a player working the pad from a keyboard finds the same keys
+    // in the same order on guess one and on guess twelve.
+    //
+    // REDDENS ON: a ruled-out key rendered as anything but a focusable <button>.
+    it('keeps every key in the tab order once the verdicts are in', async () => {
+      await afterHotHand()
+
+      expect(
+        within(screen.getByRole('group', { name: 'Letters, Guess and Delete' })).getAllByRole('button'),
+      ).toHaveLength(28)
+    })
+
+    // The verdicts are folded out of the markings on screen, so clearing the board clears them with
+    // it. A key still struck over an empty grid is a board remembering a game it has thrown away.
+    it('forgets every verdict when the board is played again', async () => {
+      const { container, user } = renderBoard(phrazlePuzzle, WON_ON_SIX)
+
+      await user.click(keyNamed(/^Play again$/))
+
+      expect(struck(container)).toHaveLength(0)
+      expect(keyNamed(/^A,/)).toHaveAccessibleName('A, fills word 1 letter 1')
+    })
+
+    // The two utility keys are not letters and can never be ruled out, so they take no verdict at
+    // all -- and the name a group promises has to keep matching the buttons in it.
+    it('gives the utility keys no verdict', async () => {
+      await afterHotHand()
+
+      expect(keyNamed(/^Guess$/)).toHaveAccessibleName('Guess')
+      expect(keyNamed(/^Delete$/)).toHaveAccessibleName('Delete')
+    })
+  })
+
   describe('a guess that is marked', () => {
-    // HEAD-FIRST, because the ribbon clamps to two lines and keeps its head: what survives visually
-    // is the guess and the count remaining, and what is clamped away is the per-letter tail a
-    // sighted player is reading off the grid. The whole string stays in the DOM, so the live region
-    // announces it entire -- which is why this is asserted as an exact textContent and not as a
-    // substring.
-    it('announces the marked row head-first', async () => {
+    // THE WHOLE SENTENCE STILL REACHES THE LIVE REGION, which is why this is asserted as an exact
+    // textContent and not as a substring: splitting the string into a visible head and a hidden tail
+    // must not drop a word or run two sentences together, and textContent concatenates adjacent nodes
+    // with nothing between them, so the space before `H no more of this letter` is exactly the kind
+    // of thing this catches.
+    it('announces the marked row entire', async () => {
       const { user } = renderBoard()
 
       await type(user, 'HOTHAND')
       await user.click(keyNamed(/^Guess$/))
 
       expect(ribbon()).toHaveProperty('textContent', COMMITTED)
+    })
+
+    // AND ONLY THE HEAD IS DRAWN. The tail is a per-letter transcript of a grid the sighted player is
+    // looking at, and the ribbon is two lines tall -- so the clamp spent both of them on the
+    // transcript and trailed off in an ellipsis partway through the second word. The reader it was
+    // written for could not finish it; the reader who needs it hears it either way.
+    //
+    // Asserted through the accessibility tree rather than by class: `getByText` matches the element
+    // whose own text is exactly the head, which exists only once the string has actually been split.
+    // Before the split no node in the ribbon had this text.
+    //
+    // REDDENS ON: passing the tail back into `message`, or dropping the detail prop.
+    it('draws the guess and hides the per-letter marking', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'HOTHAND')
+      await user.click(keyNamed(/^Guess$/))
+
+      expect(within(ribbon()).getByText('HOT HAND.')).toBeInTheDocument()
+      expect(within(ribbon()).queryByText(COMMITTED)).toBeNull()
+    })
+
+    // THE DETAIL DOES NOT CARRY. A plain sentence after a marking must announce that sentence alone,
+    // never that sentence with the previous guess's transcript still hanging off it -- which is what
+    // a `detail` defaulted to the previous value would do.
+    //
+    // REDDENS ON: `say` carrying `previous.detail` instead of defaulting to ''.
+    it('drops the marking when the next message is a plain sentence', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'HOTHAND')
+      await user.click(keyNamed(/^Guess$/))
+      await user.click(keyNamed(/^Guess$/))
+
+      // The test's THIRD message -- `Every tile is full.`, then the marking, then this -- so the
+      // nonce is odd and the mark is due. Nothing follows it, which is the assertion: no space, no
+      // transcript, nothing carried over from the guess before.
+      expect(ribbon()).toHaveProperty('textContent', `${FILL_FIRST}${REPEAT_MARK}`)
     })
 
     // MARKS ARE DERIVED, NEVER STORED. The stored blob is raw guesses and nothing else, so a future
@@ -491,7 +737,9 @@ describe('PhrazleBoard', () => {
 
       expect(screen.getByText('Guess 2')).toBeInTheDocument()
       expect(composing()).toHaveAccessibleName('Your guess,')
-      expect(keyNamed(/^T,/)).toHaveAccessibleName('T, fills word 1 letter 1')
+      // The verdict is now the middle term of every letter key's name. T was yellow in HOT, so the
+      // key carries `in the phrase` from here on and the caret note still follows it.
+      expect(keyNamed(/^T,/)).toHaveAccessibleName('T, in the phrase, fills word 1 letter 1')
     })
 
     it('turns the committed row into read-only marked history', async () => {
@@ -504,12 +752,12 @@ describe('PhrazleBoard', () => {
     })
 
     // EVERY TILE SAYS ITS STATE IN WORDS, and this is the channel that owes nothing to sight at all.
-    // `no copy left`, never `not in the phrase`: the H below IS in the phrase, and a membership
+    // `no more of this letter`, never `not in the phrase`: the H below IS in the phrase, and a membership
     // claim there is a lie the player can disprove by looking.
     it.each<[string, string]>([
       ['a green tile', 'O, in place'],
       ['a yellow tile', 'T, elsewhere in this word'],
-      ['a gray tile', 'A, no copy left'],
+      ['a gray tile', 'A, no more of this letter'],
     ])('names %s in words', async (_description, name) => {
       const { user } = renderBoard()
 
@@ -537,7 +785,7 @@ describe('PhrazleBoard', () => {
       ['a green tile is one unbroken bar', 'H, in place', 1],
       ['a yellow tile is a bar split in two', 'O, elsewhere in this word', 2],
       ['a purple tile is a bar split in three', 'D, in another word', 3],
-      ['a gray tile has no bar at all', 'L, no copy left', 0],
+      ['a gray tile has no bar at all', 'L, no more of this letter', 0],
     ])('%s', (_description, name, segments) => {
       renderBoard(phrazlePuzzle, FOUR_STATES)
 
@@ -572,10 +820,10 @@ describe('PhrazleBoard', () => {
       await type(user, 'HOTHOLE')
       await user.click(keyNamed(/^Guess$/))
 
-      // NOT `stringContaining('left.')`, which the marking tail matches on its own -- `no copy left`
+      // NOT `stringContaining('left.')`, which the marking tail matches on its own -- `no more of this letter`
       // is one of the four state phrases and ends a word group with a full stop. The two forms the
       // deleted clause could take are what this excludes.
-      expect(ribbon()).toHaveProperty('textContent', expect.stringContaining('HOT HOLE. H no copy left,'))
+      expect(ribbon()).toHaveProperty('textContent', expect.stringContaining('HOT HOLE. H no more of this letter,'))
       expect(ribbon()).toHaveProperty('textContent', expect.not.stringContaining('guess left'))
       expect(ribbon()).toHaveProperty('textContent', expect.not.stringContaining('guesses left'))
     })
@@ -633,7 +881,7 @@ describe('PhrazleBoard', () => {
       await type(user, 'TOEHOLD')
       await user.click(keyNamed(/^Guess$/))
 
-      // `Row full.` was message one, so the win is message two and its text stands alone.
+      // `Every tile is full.` was message one, so the win is message two and its text stands alone.
       expect(ribbon()).toHaveProperty('textContent', SOLVED)
       expect(onSolved).toHaveBeenCalledTimes(1)
     })
@@ -834,7 +1082,11 @@ describe('PhrazleBoard', () => {
       await user.tab()
       await user.tab()
 
-      expect(screen.getByRole('button', { name: 'A, this board is finished' })).toHaveFocus()
+      // A is gray in all six restored guesses and appears in none of the phrase, so the key that
+      // takes focus is a ruled-out one -- which is what makes this the tab stop worth pinning: a
+      // ruled-out key is still a control, still focusable, and still refuses for the board's reason
+      // rather than for its own.
+      expect(screen.getByRole('button', { name: 'A, not in the phrase, this board is finished' })).toHaveFocus()
 
       await user.keyboard('{Enter}')
 
@@ -1448,7 +1700,7 @@ describe('PhrazleBoard', () => {
       screen.getByRole('region', { name: 'Open hints' }).focus()
       await user.keyboard('{Enter}')
 
-      // `Row full.` was message one, so this is message two and its text stands alone.
+      // `Every tile is full.` was message one, so this is message two and its text stands alone.
       expect(boardRibbon(container)).toHaveProperty('textContent', HIDE_TO_TYPE)
       expect(onProgress).not.toHaveBeenCalled()
       expect(composing()).toHaveAccessibleName('Your guess, TOE HOLD')

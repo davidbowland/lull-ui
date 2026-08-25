@@ -807,7 +807,9 @@ describe('PuzzleFrame', () => {
 
       expect(await screen.findByRole('heading', { name: 'Phrazle needs a one-time download' })).toBeInTheDocument()
       expect(
-        screen.getByText('The word list downloads once and then works offline. Reconnect and open this puzzle again.'),
+        screen.getByText(
+          'The word list downloads once and then works offline. Open this puzzle again while you’re online.',
+        ),
       ).toBeInTheDocument()
     })
 
@@ -842,7 +844,7 @@ describe('PuzzleFrame', () => {
       expect(screen.queryByRole('heading', { name: 'Phrazle needs a one-time download' })).toBeNull()
       expect(
         screen.queryByText(
-          'The word list downloads once and then works offline. Reconnect and open this puzzle again.',
+          'The word list downloads once and then works offline. Open this puzzle again while you’re online.',
         ),
       ).toBeNull()
     })

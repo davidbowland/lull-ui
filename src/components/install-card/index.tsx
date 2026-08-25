@@ -108,21 +108,26 @@ export const InstallCard = ({ mode, onDismiss, onInstall, onReopen, platform }: 
   return (
     <div className={CARD}>
       <p className={EYEBROW}>Notice</p>
+      {/* THE PROMISE NOW MATCHES THE PRODUCT, and the words it replaced were flagged as
+          overstated in this spot rather than quietly reworded, because rewriting a user-facing
+          promise is a UX decision and not a side effect of a hook change. This is that decision,
+          taken.
+          `Have tomorrow ready` and `each day's puzzles are waiting on your phone before you
+          open it` both claimed a prefetch that does not happen: usePrefetch asks for exactly one
+          date -- today's, local -- installed or not, nothing arrives before the app is opened,
+          and installing changes nothing at all about what is fetched. A player who installed on
+          the strength of that sentence and opened Lull on a plane the next morning found an
+          empty shelf and a promise broken.
+          What installing actually buys is a launcher icon, a standalone window, and today's pack
+          surviving a dead connection once the app has been opened that day. Both sentences below
+          say that and nothing more. The precondition is IN the copy -- `open it once a day` --
+          because it is the whole of what the offer is worth and burying it is how the last
+          version went wrong. */}
       <h3 className={HEADING} ref={headingRef} tabIndex={-1}>
-        Have tomorrow ready
+        Put Lull on your home screen
       </h3>
-      {/* OVERSTATED as of the one-date prefetch, and left standing on purpose: rewriting a
-          user-facing promise is a UX decision, not a side effect of a hook change, so it is
-          named here rather than quietly reworded.
-          usePrefetch now asks for exactly one date -- today's, local -- installed or not.
-          Nothing arrives before you open the app, and installing changes nothing about what
-          is fetched. What installing still buys is a launcher icon, a standalone window,
-          and today's pack surviving a dead connection once the app has been opened that
-          day. Both this sentence and the heading above it need new words for that, and the
-          seven-day claim the earlier copy made is further out of reach than ever: pruning
-          keeps a week, but only of days the player actually opened. */}
       <p className={BODY}>
-        Install Lull and each day’s puzzles are waiting on your phone before you open it — no connection needed.
+        It opens like an app. Open it once a day and that day’s puzzles keep working with no connection.
       </p>
       {steps !== undefined && (
         // A button here would be a promise the browser cannot keep: neither platform

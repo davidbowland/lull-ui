@@ -453,7 +453,11 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
       <DeadEnd trail={trailFor(date, locale, entry.label)}>
         <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">{`${entry.label} needs a one-time download`}</h1>
         <p className="text-[var(--lull-muted)]">
-          The word list downloads once and then works offline. Reconnect and open this puzzle again.
+          {/* `while you’re online`, not `Reconnect`. The app says `while you’re online` in four
+              other dead ends -- the shelf's, the registry's unknown type, and both boards that can
+              meet a half-arrived pack -- so this was the one place a player was asked to perform a
+              named technical act instead of being told when to come back. */}
+          The word list downloads once and then works offline. Open this puzzle again while you’re online.
         </p>
       </DeadEnd>
     )

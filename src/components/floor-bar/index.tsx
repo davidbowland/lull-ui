@@ -2,6 +2,21 @@ import React from 'react'
 
 export interface FloorBarProps {
   children: React.ReactNode
+  // The half of an announcement a SIGHTED player is already reading off the board. It is announced
+  // with the message and never drawn, so the ribbon says one short thing and a screen reader hears
+  // the whole of it.
+  //
+  // IT EXISTS BECAUSE THE CLAMP WAS DECIDING THIS BADLY. Two lines of ribbon against a per-letter
+  // marking runs out inside the first word -- the guess bench's `HOT HAND. H no more of this
+  // letter, O in place, T elsewhere in this word...` filled both lines with a transcript of the
+  // grid and then trailed off in an ellipsis, so the one reader it was drawn for could not finish
+  // it and the one reader who needs it never saw it in the first place. Splitting the string is
+  // what the clamp was standing in for.
+  //
+  // INSIDE the live region and AFTER the visible text, so the region announces head then tail in
+  // one utterance. It is not a second region and must never become one: two live regions in one
+  // band race each other.
+  detail?: string
   message: string
   // What the ribbon says when the bench has reported nothing. Optional, and empty is the same as
   // absent: a bench with nothing standing to say leaves the band blank rather than filling it with
@@ -102,7 +117,13 @@ const RESTING =
   'absolute inset-0 flex items-center px-[var(--lull-s4)] py-[var(--lull-s2)] text-[13px] ' +
   'leading-[1.35] text-[var(--lull-floor-muted)]'
 
-export const FloorBar = ({ children, message, resting = '', variant = 'seam' }: FloorBarProps): React.ReactNode => (
+export const FloorBar = ({
+  children,
+  detail = '',
+  message,
+  resting = '',
+  variant = 'seam',
+}: FloorBarProps): React.ReactNode => (
   <div
     // lull-floor is not decoration: index.css scopes the focus ring to it, because the global ring
     // is keyed to an accent chosen to read on a LIGHT ground and this band is dark in both themes.
@@ -132,6 +153,15 @@ export const FloorBar = ({ children, message, resting = '', variant = 'seam' }: 
           <>
             <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[var(--lull-floor-accent)]" />
             <span className="line-clamp-2">{message}</span>
+            {/* THE SPACE IS INSIDE THE TEMPLATE, not between the two elements, and that is not
+                cosmetic: textContent concatenates adjacent nodes with nothing between them, so a
+                detail rendered as a bare `{detail}` would announce `HOT HAND.H no more of this
+                letter` -- two sentences run together in the one place nobody can see them to catch
+                it.
+
+                Rendered only alongside a message, like the dot is, so the region is still empty at
+                mount and the first announcement is not spent on standing text. */}
+            {detail !== '' && <span className="sr-only">{` ${detail}`}</span>}
           </>
         )}
       </p>

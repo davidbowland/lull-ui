@@ -4,9 +4,9 @@ import React from 'react'
 import { FloorBar } from './index'
 
 describe('FloorBar', () => {
-  const renderFloor = (message = '', resting?: string): ReturnType<typeof render> =>
+  const renderFloor = (message = '', resting?: string, detail?: string): ReturnType<typeof render> =>
     render(
-      <FloorBar message={message} resting={resting}>
+      <FloorBar detail={detail} message={message} resting={resting}>
         <button type="button">A</button>
       </FloorBar>,
     )
@@ -35,6 +35,49 @@ describe('FloorBar', () => {
     renderFloor('Every Q is T.')
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'false')
+  })
+
+  // THE HALF A SIGHTED PLAYER IS ALREADY LOOKING AT. The ribbon is two lines tall, and a bench whose
+  // announcement ends in a per-letter transcript of its own board spent both of them on the
+  // transcript and then trailed off in an ellipsis -- the clamp deciding badly what the caller
+  // should have decided. A detail is announced with the message and drawn nowhere.
+  describe('the detail', () => {
+    // ONE UTTERANCE, so the region's whole text is the two joined -- with a space, because
+    // textContent concatenates adjacent nodes with nothing between them and `HOT HAND.H no more of
+    // this letter` is a defect only a screen reader would ever meet.
+    it('announces it after the message', () => {
+      renderFloor('HOT HAND.', undefined, 'H no more of this letter, O in place.')
+
+      expect(screen.getByRole('status')).toHaveProperty(
+        'textContent',
+        'HOT HAND. H no more of this letter, O in place.',
+      )
+    })
+
+    // Split into its OWN node, which is the whole mechanism: the visible span holds the head alone,
+    // so the clamp has one short sentence to fit rather than a paragraph to truncate.
+    it('leaves the message its own node to be drawn from', () => {
+      renderFloor('HOT HAND.', undefined, 'H no more of this letter.')
+
+      expect(screen.getByText('HOT HAND.')).toBeInTheDocument()
+    })
+
+    // NEVER ON ITS OWN, for the reason the accent dot is never on its own: text present in a
+    // role="status" at mount is announced by nothing and costs the bench its first real
+    // announcement. A detail with no message is a caller's mistake, and the band stays empty.
+    it('says nothing without a message to attach to', () => {
+      renderFloor('', undefined, 'H no more of this letter.')
+
+      expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    })
+
+    // Every bench that predates the prop hands nothing, and the region has to read exactly as it did
+    // -- no stray space, no empty node.
+    it('changes nothing for a bench that hands none', () => {
+      renderFloor('Every Q is T.')
+
+      expect(screen.getByRole('status')).toHaveProperty('textContent', 'Every Q is T.')
+    })
   })
 
   // The ribbon is reserved space and it is empty until the player's first move -- on a restored

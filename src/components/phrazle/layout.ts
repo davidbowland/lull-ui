@@ -4,11 +4,22 @@
 // carries them.
 export const LETTER_GAP = 2
 export const WORD_GAP = 12
-// Between rows. Rows of the same phrase are stacked here, and they have to read as a column of
-// attempts rather than as one block of tiles -- so the row gap is larger than the letter gap and
-// smaller than the word gap. It is a GAP ONLY now: it used to be subtracted from a height budget as
-// well, and there is no height budget left to subtract it from.
-export const ROW_GAP = 6
+// TWO GAPS WHERE THERE WAS ONE, and splitting them is a bug fix rather than a refinement. A single
+// `ROW_GAP` was spent in both places a row can be broken -- between one guess and the next, and
+// between the wrapped lines of a SINGLE guess whose words did not fit the width -- so at 390 a
+// three-word phrase of sixteen letters drew two guesses as four evenly spaced lines with nothing on
+// screen saying which pair belonged together. The name is what hid it: "row" meant a guess in one
+// call site and a line of tiles in the other.
+//
+// WRAP_GAP is the smaller one, INSIDE a guess. It stays at 6 -- larger than the letter gap and
+// smaller than the word gap, so a wrapped line still reads as a continuation of the line above it.
+export const WRAP_GAP = 6
+// GUESS_GAP is the larger one, BETWEEN guesses, and the board draws a hairline in it. Two channels,
+// because one is not enough: a gap alone asks a reader to judge 8px against 6px, and a rule alone
+// puts the whole boundary in a single hairline. The board asserts the hairlines by counting DOM
+// elements; this constant is what stops the gap being quietly equalized again, which is the exact
+// regression that produced the four-identical-lines board.
+export const GUESS_GAP = 8
 
 // The floor, and it is NOT cryptogram's MIN_SQUARE. That constant is 24 because 24x24 is WCAG 2.5.8
 // Target Size (Minimum) -- a criterion about CONTROLS. A Phrazle tile is not a control: it is never
