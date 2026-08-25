@@ -2,6 +2,11 @@ import React from 'react'
 
 export interface ButtonProps {
   'aria-controls'?: string
+  // For a control that must say WHY it is refusing, in the same breath it refuses. The day panel's
+  // offline month face is the one caller: it is aria-disabled and points here at "Older days need a
+  // connection", because a name alone cannot carry a reason. It contributes no accessible name, so
+  // a broken IDREF here rots in total silence -- resolve both ends wherever one is built.
+  'aria-describedby'?: string
   'aria-disabled'?: boolean
   'aria-expanded'?: boolean
   'aria-label'?: string
@@ -21,6 +26,11 @@ export interface ButtonProps {
   // exists to close.
   keepsFocusOnPress?: boolean
   onClick?: () => void
+  // FOR RETURNING FOCUS, and for nothing else. A disclosure has to put the keyboard back on the
+  // control that opened it when its panel goes away, and the opener is a Button -- so the shelf
+  // needs a handle on the element itself. React 19 passes `ref` as an ordinary prop, so this is a
+  // declaration rather than a forwardRef wrapper.
+  ref?: React.Ref<HTMLButtonElement>
   size?: 'md' | 'sm'
   trailing?: React.ReactNode
   variant?: 'default' | 'floorPrimary' | 'primary' | 'quiet'
@@ -79,6 +89,7 @@ const NUB = 'flex size-8 items-center justify-center rounded-[var(--lull-pill)] 
 
 export const Button = ({
   'aria-controls': ariaControls,
+  'aria-describedby': ariaDescribedby,
   'aria-disabled': ariaDisabled,
   'aria-expanded': ariaExpanded,
   'aria-label': ariaLabel,
@@ -87,6 +98,7 @@ export const Button = ({
   disabled,
   keepsFocusOnPress,
   onClick,
+  ref,
   size = 'md',
   trailing,
   variant = 'default',
@@ -121,6 +133,7 @@ export const Button = ({
   return (
     <button
       aria-controls={ariaControls}
+      aria-describedby={ariaDescribedby}
       aria-disabled={ariaDisabled}
       aria-expanded={ariaExpanded}
       aria-label={ariaLabel}
@@ -133,6 +146,7 @@ export const Button = ({
       onClick={handleClick}
       onMouseDown={refusePress}
       onPointerDown={refusePress}
+      ref={ref}
       type="button"
     >
       {children}

@@ -92,6 +92,26 @@ describe('Button', () => {
     expect(screen.getByRole('button', { expanded: true })).toHaveAttribute('aria-controls', 'hints')
   })
 
+  // A control that refuses a press has to say why in the same breath. aria-describedby contributes
+  // no accessible name, so nothing about the button's name changes when this stops being forwarded
+  // -- which is exactly why it is asserted here rather than left to a role query.
+  it('carries the description a refusing control points at', () => {
+    render(
+      <>
+        <Button aria-describedby="why" aria-disabled size="sm">
+          Choose a month
+        </Button>
+        <p id="why">Older days need a connection.</p>
+      </>,
+    )
+
+    const button = screen.getByRole('button', { name: 'Choose a month' })
+
+    expect(document.getElementById(button.getAttribute('aria-describedby') ?? '')).toHaveTextContent(
+      'Older days need a connection.',
+    )
+  })
+
   // The composer contract the writing bench needs: a press that does not take focus off the
   // field the player is typing in, so the software keyboard stays up and nothing moves at the
   // moment the message lands. The click still firing is the half worth asserting, because losing
@@ -171,6 +191,18 @@ describe('Button', () => {
       render(<Button className="w-full">Check</Button>)
 
       expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
+    })
+
+    // A ref reaches the <button> itself, which is what lets a disclosure put the keyboard back on
+    // the control that opened it once its panel is gone. React 19 passes `ref` as an ordinary
+    // prop, so this is a declaration on ButtonProps rather than a forwardRef wrapper -- and a
+    // dropped `ref={ref}` would fail nowhere else, since focus simply would not move.
+    it('hands the caller the button itself', () => {
+      const ref = React.createRef<HTMLButtonElement>()
+
+      render(<Button ref={ref}>Check</Button>)
+
+      expect(ref.current).toEqual(screen.getByRole('button', { name: 'Check' }))
     })
   })
 })

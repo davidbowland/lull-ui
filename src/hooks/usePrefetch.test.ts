@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 
-import { retentionFloor, usePrefetch } from './usePrefetch'
+import { keepThisSession, retentionFloor, usePrefetch } from './usePrefetch'
 import { fetchPack } from '@services/lull'
 import { readHints, readPack, readProgress, writeHints, writePack, writeProgress } from '@services/storage'
 import { pack } from '@test/__mocks__'
@@ -230,15 +230,50 @@ describe('usePrefetch', () => {
       expect(readPack('2026-08-19')).toEqual(packFor('2026-08-19'))
     })
 
-    // Progress prunes by the YYYY-MM-DD prefix of the puzzle id -- the one part of an id
-    // a client may read.
-    it('drops progress for a puzzle older than the window', async () => {
+    // THE AGE RULE NAMES, PRECISELY, THE DAYS THIS FEATURE EXISTS TO REACH. A player who asks for
+    // 14 March waits thirty seconds for a pack five months past the floor. run() fires on open,
+    // reconnect and RESUME, and the hook is mounted in _app for the life of the page -- so
+    // `abandoned` is never true in practice, and backgrounding the app to read a text was enough to
+    // delete the day out from under the screen showing it. The shelf then found it no longer held,
+    // rewrote the address bar to `/`, and bounced the player to today with no message.
+    //
+    // The date here is used by no other case in this file, deliberately: the exemption is a
+    // module-level Set with the session's lifetime, so a date one test exempts stays exempt for the
+    // rest of the file, and a shared fixture date would make these cases depend on their order.
+    it('keeps a day this session went and got, however far past the floor it is', async () => {
+      setup()
+      writePack('2026-03-14', packFor('2026-03-14'))
+      keepThisSession('2026-03-14')
+
+      await renderPrefetch()
+
+      expect(readPack('2026-03-14')).toEqual(packFor('2026-03-14'))
+    })
+
+    // The other half: the exemption covers the day that was asked for and nothing beside it. Without
+    // this, "keeps a day this session went and got" would still pass against a prune that had simply
+    // stopped working.
+    it('collects a day of the same age that nobody asked for', async () => {
+      setup()
+      writePack('2026-03-15', packFor('2026-03-15'))
+
+      await renderPrefetch()
+
+      expect(readPack('2026-03-15')).toBeNull()
+    })
+
+    // Progress is NOT pruned by age. It was, until reaching a day older than the window became
+    // possible: a player who opened 14 March, started a puzzle and closed the app lost the board
+    // on next open, because run() fires on open, reconnect and resume. Packs are the weight this
+    // function exists to collect -- kilobytes a day -- and a progress string is hundreds of bytes at
+    // its largest, which is the same argument lull:meta.solved already keeps solved ids forever on.
+    it('keeps progress for a puzzle older than the window', async () => {
       setup()
       writeProgress('2026-08-10:gofigure:9f3a1c02', '6+9')
 
       await renderPrefetch()
 
-      expect(readProgress('2026-08-10:gofigure:9f3a1c02')).toBeNull()
+      expect(readProgress('2026-08-10:gofigure:9f3a1c02')).toEqual('6+9')
     })
 
     it('keeps progress for a puzzle inside the window', async () => {
@@ -250,17 +285,15 @@ describe('usePrefetch', () => {
       expect(readProgress('2026-08-14:gofigure:9f3a1c02')).toEqual('6+9')
     })
 
-    // The one lull: prefix nothing else collects. Reveal state is written on every reveal and
-    // deliberately never cleared by solving, so without this it grows without bound. Puzzle ids
-    // carry a random shortId, so a regenerated pack never reuses one -- a stale hint key orphans
-    // rather than collides, and pruning is what collects it.
-    it('drops hint counts for a puzzle older than the window', async () => {
+    // Hints follow progress for the same reason and are smaller still -- one integer per puzzle.
+    // A player returning to a March puzzle finds the rungs they paid for, not a reset ladder.
+    it('keeps hint counts for a puzzle older than the window', async () => {
       setup()
       writeHints('2026-08-10:missingvowels:9f8e7d6c', 2)
 
       await renderPrefetch()
 
-      expect(readHints('2026-08-10:missingvowels:9f8e7d6c', 3)).toBe(0)
+      expect(readHints('2026-08-10:missingvowels:9f8e7d6c', 3)).toBe(2)
     })
 
     it('keeps hint counts for a puzzle inside the window', async () => {

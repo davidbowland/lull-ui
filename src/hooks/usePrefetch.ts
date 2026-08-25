@@ -1,16 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { fetchPack } from '@services/lull'
-import {
-  cachedHintIds,
-  cachedPackDates,
-  cachedProgressIds,
-  removeHints,
-  removePack,
-  removeProgress,
-} from '@services/storage'
+import { cachedPackDates, removePack } from '@services/storage'
 import { PackDate } from '@types'
-import { packDateOf, toPackDate } from '@utils/pack-dates'
+import { toPackDate } from '@utils/pack-dates'
 
 // Seven days of packs are kept on the device, whether or not this run fetched them. This
 // is emphatically NOT the fetch window: exactly one date is ever requested, so a pruning
@@ -37,34 +30,80 @@ const recentPackDates = (count: number, from: PackDate): PackDate[] => {
 export const retentionFloor = (localToday: PackDate): PackDate =>
   recentPackDates(RETENTION_WINDOW, localToday)[RETENTION_WINDOW - 1]
 
-// New relative to connections, which never prunes and does not have to: it accumulates
-// ~1KB a day. A Lull pack is ~15KB of JSON, and localStorage stores UTF-16, so a year is
-// ~11MB against a ~5MB ceiling.
+// THE DAYS THIS SESSION WENT AND GOT, exempt from the age rule below.
 //
-// Keep the record, drop the content: solved ids stay in lull:meta, a few bytes each, so
-// an old solved puzzle still shows as solved and re-downloads if opened.
+// An age rule was the whole story while nothing could reach a day older than the window: every
+// cached pack was one this app had put there itself, within the last seven days, so "older than the
+// floor" and "nobody wants this" were the same sentence. Reaching an earlier day breaks that
+// identity outright. A player who names 14 March and waits thirty seconds for it has a pack that is
+// five months past the floor and is the ONE pack on the device they are looking at -- so the rule
+// that collects by age now names, precisely, the set of days this feature exists to reach.
+//
+// It is not a corner. run() fires on open, reconnect and RESUME, and the hook is mounted in _app for
+// the life of the page, so `abandoned` is never true in practice: background the app to read a text,
+// come back, and visibilitychange deletes 14 March out from under the screen showing it. removePack
+// announces, the shelf re-reads, the day is no longer held, and the address bar is rewritten to `/`
+// -- the player is bounced to today with no message, and the March row in the panel goes on saying
+// "Here now" about a day that is gone.
+//
+// SESSION-SCOPED ON PURPOSE, and this is the half worth arguing rather than the exemption itself.
+// The spec's rejected alternative was a STORED set of requested days, and that objection still
+// stands: a key that outlives the tab turns "I looked at March once" into a permanent lease on the
+// budget, needs its own collector to ever give the space back, and hands the next reader a second
+// retention rule to reconcile with this one. A module-level Set is bounded by the page: it is empty
+// on the next load, so a day reached yesterday is collected on tomorrow's first run exactly as it
+// would have been, and it can only grow by one entry per thirty-second round trip a human sat
+// through. Nothing else may write to it -- see keepThisSession, which is the only door in.
+const requestedThisSession = new Set<PackDate>()
+
+// The one writer, called by the shelf when a day the player named has actually landed. It takes a
+// date and answers nothing: the caller learns no more about the retention rule than that the day it
+// just fetched is worth keeping.
+export const keepThisSession = (date: PackDate): void => {
+  requestedThisSession.add(date)
+}
+
+// PACKS ONLY, and new relative to connections, which never prunes and does not have to: it
+// accumulates ~1KB a day. Packs are the one family whose per-day weight is measured in kilobytes. A
+// five-puzzle day with its hint ladders measures ~2.5KB of JSON against the fixtures in
+// test/__mocks__.ts, and localStorage stores UTF-16, so it is ~5KB on the device and a year is
+// ~1.8MB against a ~5MB ceiling. Dropping one costs nothing a player notices: reaching a past day
+// needs a connection anyway, so the pack is re-requested the moment it is wanted.
+//
+// Keep the record, drop the content: solved ids stay in lull:meta, a few bytes each, so an old
+// solved puzzle still shows as solved and re-downloads if opened.
+//
+// Progress and hints are hundreds of bytes INCLUDING THE KEY, which is most of the total and is the
+// easy part to forget: `lull:progress:2026-08-10:missingvowels:9f8e7d6c` is 47 characters, 94 bytes
+// stored, before any value at all. Call it ~230 bytes for a puzzle a player both started and took a
+// rung on, and ~1.5KB for the largest thing any board writes -- a full Phrazle board, whose codec
+// caps itself at 25 canonical guesses. A year of playing all five puzzles every day is therefore
+// ~400KB, a quarter of what a year of packs costs, which is the bet lull:meta.solved already makes
+// on solved ids.
+//
+// Not free forever, and worth saying so rather than rounding it to zero: a DECADE of that is
+// megabytes, because the key is paid on every entry. Two things answer for it. writeProgress caps a
+// single value, so no one board can run away with the budget. And the day this genuinely needs
+// collecting, the rule has to be "oldest first, under pressure" -- never "older than N days", which
+// is the rule that deleted a board the player was still sitting in front of.
+//
+// The two blocks that used to sit here -- progress and hints -- were therefore deleted rather than
+// narrowed. They pruned by the date prefix of a puzzle id, which was sound while nothing could reach
+// a day older than the window: no old day could hold progress, so no old progress could be lost.
+// Reaching an earlier day puts exactly that on the feature's primary path -- open 14 March, start a
+// puzzle, close the app, and the next run() takes the board and the revealed rungs with it.
+//
+// So an old pack is dropped and re-requested if the day is opened again, while everything the PLAYER
+// put there survives.
+//
+// Age AND the session exemption, never age alone -- see requestedThisSession above for why an age
+// rule stopped being the whole story the moment a day older than the window became reachable.
 const pruneOutsideWindow = (localToday: PackDate): void => {
   const floor = retentionFloor(localToday)
 
   cachedPackDates()
-    .filter((date) => date < floor)
+    .filter((date) => date < floor && !requestedThisSession.has(date))
     .forEach(removePack)
-
-  // The date prefix of a puzzle id is the one part of it a client may parse. The rest
-  // (`${type}:${shortId}`) is opaque and carries no position, so never index into a pack
-  // or infer order from an id. cachedProgressIds has already rejected anything without a
-  // valid prefix, which is why the parse cannot fail here.
-  cachedProgressIds()
-    .filter((puzzleId) => packDateOf(puzzleId)! < floor)
-    .forEach(removeProgress)
-
-  // A third lull: prefix, and the only one that would otherwise grow without bound: reveal state is
-  // written on every reveal and deliberately never cleared by solving, so nothing but this collects
-  // it. cachedHintIds has already rejected anything without a valid date prefix, which is why the
-  // parse cannot fail here.
-  cachedHintIds()
-    .filter((puzzleId) => packDateOf(puzzleId)! < floor)
-    .forEach(removeHints)
 }
 
 export const usePrefetch = (now = Date.now): void => {
@@ -108,9 +147,10 @@ export const usePrefetch = (now = Date.now): void => {
       // and was swallowed, leaving an empty app where playable content sat a moment
       // earlier.
       //
-      // The quota argument for pruning first does not survive measurement: a real
-      // five-puzzle pack is ~1.3KB, not the ~15KB the spec assumed for a 14-puzzle
-      // four-type day. A week is under 10KB against a ~5MB budget.
+      // The quota argument for pruning first does not survive measurement: a day's pack is a couple
+      // of kilobytes, not the order of magnitude more the spec assumed for a 14-puzzle four-type
+      // day, so a week of them is tens of kilobytes against a ~5MB budget. The measured sizes are
+      // stated once, above pruneOutsideWindow.
       //
       // Nobody is left to receive a write for a screen that is gone.
       if (abandoned.current) return

@@ -1,12 +1,13 @@
 import { Meta, Pack, PackDate, Puzzle, PuzzleProgress, RetryState } from '@types'
-import { packDateOf } from '@utils/pack-dates'
 
 // Ported from connections-ui/src/services/storage.ts. The comments came with it: they
 // document behavior, not code.
 //
 // The prefixes are the FULL keys, not the `lull:` namespace they share with lull:meta.
-// A bare `lull:` scan sweeps in meta and progress, and the pattern filters below are the
-// other half of the same guarantee.
+// A bare `lull:` scan sweeps in meta and progress, and the pattern filter on the one
+// family that IS scanned -- packs -- is the other half of the same guarantee. The
+// progress and hints prefixes are addressed key by key and never scanned; see the note
+// where their read side used to be.
 const PACK_PREFIX = 'lull:pack:'
 const PACK_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const PROGRESS_PREFIX = 'lull:progress:'
@@ -15,8 +16,9 @@ const META_KEY = 'lull:meta'
 
 // A SINGLE FIXED KEY, like lull:meta, not a scanned family -- so it needs no date pattern, because
 // nothing scans it. Checked rather than assumed: it starts with none of `lull:pack:`,
-// `lull:progress:` or `lull:hints:`, so all three prefix scans miss it and pruneOutsideWindow never
-// touches it. That is correct -- the retry schedule is about the DEVICE, not about a day.
+// `lull:progress:` or `lull:hints:`, so every prefix scan in this file misses it -- and
+// pruneOutsideWindow, which now scans `lull:pack:` and nothing else, was never going to reach it
+// either way. That is correct -- the retry schedule is about the DEVICE, not about a day.
 const DICT_RETRY_KEY = 'lull:dict:retry'
 
 const VERSION = 1
@@ -169,17 +171,47 @@ export const cachedPackDates = (): PackDate[] =>
 // business.
 export const readProgress = (puzzleId: string): PuzzleProgress | null => safeRead(`${PROGRESS_PREFIX}${puzzleId}`)
 
+// THE ONLY BOUND ON A VALUE NOTHING ELSE BOUNDS. Progress is whatever a board hands over, and two
+// boards -- Missing Vowels and Cryptic Clue -- hand over the contents of a bare <input> with no
+// maxLength, so a paste is a paste of any size. That used to be self-correcting: the key was
+// collected within seven days. Nothing collects progress by age any more, so an unbounded value is
+// now permanent, and safeWrite deliberately swallows QuotaExceededError -- which turns a filled
+// origin into "the app quietly stops caching anything", packs included, with only a console line to
+// say so.
+//
+// 8192 characters, measured against the largest value any board legitimately writes. Phrazle is the
+// only one storing JSON, bounded at MAX_STORED = 25 canonical guesses (see phrazle/progress.ts), and
+// 25 guesses of a 26-character phrase encode to 738 characters -- ~1.5KB stored, since localStorage
+// holds UTF-16. That is better than ten times the headroom, and the cap itself is ~16KB stored: room
+// for a board nobody has designed yet, and still small enough that one pathological key cannot crowd
+// out a week of packs.
+const MAX_PROGRESS_LENGTH = 8192
+
 export const writeProgress = (puzzleId: string, progress: PuzzleProgress): void => {
+  // REFUSED, NOT TRUNCATED, and left alone rather than removed. A truncated value is a board state
+  // no board ever wrote -- Phrazle would read back JSON that stops mid-string, Cryptogram half a
+  // mapping -- and that reads to a player as the app corrupting their board rather than declining to
+  // grow it. Keeping the previous value means the worst case is a board that stops saving, which is
+  // what every other failure in this file already degrades to.
+  if (progress.length > MAX_PROGRESS_LENGTH) {
+    console.error('storage write refused, progress too long', { length: progress.length, puzzleId })
+    return
+  }
   safeWrite(`${PROGRESS_PREFIX}${puzzleId}`, progress)
   announce()
 }
 
-export const removeProgress = (puzzleId: string): void => safeRemove(`${PROGRESS_PREFIX}${puzzleId}`)
-
-// Same derived-index rule as packs, validated by the one part of a puzzle id a client
-// may read. Pruning walks this list and keys on that date prefix.
-export const cachedProgressIds = (): string[] =>
-  keysWithPrefix(PROGRESS_PREFIX).filter((puzzleId) => packDateOf(puzzleId) !== null)
+// THERE IS NO removeProgress AND NO cachedProgressIds, and both are absent deliberately. They were
+// the remove and the read halves of a collector that no longer exists: pruning walked
+// cachedProgressIds and keyed on the date prefix of each id, until a player could reach a day older
+// than the retention window -- see writeHints below for the argument, which is the same one. The
+// collector went, and a tested export with no caller is a contract nobody signed, so they went with
+// it. Starting a puzzle over does not need a remove either: a board's Play again writes `''` through
+// onProgress, and empty progress reads as no progress everywhere it is read.
+//
+// The day this family genuinely needs collecting, do not restore either of these first. The rule has
+// to be "oldest first, under pressure", which wants sizes and a budget rather than a filtered list
+// of ids -- see the block above pruneOutsideWindow in usePrefetch.ts.
 
 // Hints
 
@@ -187,8 +219,20 @@ export const cachedProgressIds = (): string[] =>
 // set would.
 //
 // Written independently of solve state and never cleared by solving, so reopening a solved puzzle
-// shows the rungs the player opened. That is also why usePrefetch has to prune this prefix -- it is
-// the one lull: key nothing else collects.
+// shows the rungs the player opened.
+//
+// NOTHING COLLECTS THIS PREFIX BY AGE, AND THAT IS DELIBERATE -- do not add it back. usePrefetch
+// pruned `lull:hints:` and `lull:progress:` on the date prefix of the puzzle id, which was safe only
+// while no day older than the retention window could be opened: an old day held nothing, so nothing
+// old could be lost. The day a player could reach back past the window, that same rule started
+// deleting the board and the paid-for rungs of a puzzle they were in the middle of, on the next
+// open. Keeping both families rests on the argument lull:meta.solved already rests on: one integer
+// here and a couple of hundred bytes there, against a pack's kilobytes a day. See the block above
+// pruneOutsideWindow in usePrefetch.ts for the measured version, including what it costs at ten
+// years and what would have to change first.
+//
+// What DOES remove a key here is removeHints, called by the shell when a board reports onReset. A
+// player who starts a puzzle over gives up the ladder; a player who walks away for a month does not.
 export const writeHints = (puzzleId: string, revealed: number): void => {
   safeWrite(`${HINTS_PREFIX}${puzzleId}`, `${revealed}`)
   announce()
@@ -227,11 +271,11 @@ export const removeHints = (puzzleId: string): void => {
   announce()
 }
 
-// Same derived-index rule as packs and progress. Puzzle ids carry a random shortId, so a
-// regenerated pack never reuses one -- a stale hint key orphans rather than collides, and pruning
-// is what collects it.
-export const cachedHintIds = (): string[] =>
-  keysWithPrefix(HINTS_PREFIX).filter((puzzleId) => packDateOf(puzzleId) !== null)
+// THERE IS NO cachedHintIds either, and it is absent for the reason cachedProgressIds is: it
+// indexed this family for the collector, and the collector is gone. Puzzle ids carry a random
+// shortId, so a regenerated pack never reuses one -- a stale hint key orphans rather than collides,
+// and nothing collects it, by the argument above. An orphan is one integer kept forever, which is
+// the price of never taking a rung away from a player who was still using it.
 
 // The dictionary's retry schedule
 

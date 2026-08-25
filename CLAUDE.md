@@ -63,10 +63,27 @@ intercepting `/site.webmanifest`. Firefox fetches the manifest inside `requestId
 try/catch, and one non-2xx answer silently degrades install to a plain bookmark for the whole page
 load. See `~/Projects/pwa-requirements.md`.
 
-**Storage keys are scanned by full prefix and validated by pattern.** `lull:pack:` and
-`lull:progress:` share the `lull:` namespace with `lull:meta`, so a bare `lull:` scan sweeps in the
-wrong keys, and a malformed key without the `/^\d{4}-\d{2}-\d{2}$/` check enters the derived index.
-Both are required.
+**Storage keys are scanned by full prefix and validated by pattern.** Every `lull:` family shares the
+namespace with `lull:meta`, so a bare `lull:` scan sweeps in the wrong keys, and a malformed key
+without the `/^\d{4}-\d{2}-\d{2}$/` check enters the derived index. Both halves are required, and the
+rule binds whatever scans next — it is about how a scan is written, not about which families happen
+to have one today.
+
+**Today exactly one family is scanned: `lull:pack:`, by `cachedPackDates`.** `lull:progress:` and
+`lull:hints:` are never enumerated and never collected by age. That is deliberate and it is the
+thing to understand before adding a collector: pruning them by age was a data-loss bug the moment a
+player could reach a day older than the retention window, because a board started on 14 March and
+left unfinished was deleted on the next app open, silently, along with its revealed rungs. Packs are
+the weight — a five-puzzle day is ~2.5KB of JSON, ~5KB stored, so a year is ~1.8MB against a ~5MB
+ceiling — and an old pack is cheap to re-request, since reaching back needs a connection anyway.
+Progress and hints are ~230 bytes per touched puzzle including the key, which is the same bet
+`lull:meta.solved` already makes on solved ids.
+
+**A collector added later must be "oldest first, under pressure", never "older than N days."** The
+second rule is the one that caused the bug. Measured honestly, a year of daily play is ~400KB and
+free; a decade is ~4.2MB against ~5MB and is not. What holds the line until then is the 8192-character
+cap in `writeProgress` — the only bound on a value two boards feed from a bare `<input>` with no
+`maxLength`.
 
 **Pack dates are UTC.** Tests run under `TZ=UTC`. The shelf renders the device's local date and
 falls back to the most recent available pack when the local date runs ahead of what has been

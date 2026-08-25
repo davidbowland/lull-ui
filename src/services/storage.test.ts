@@ -1,7 +1,5 @@
 import {
-  cachedHintIds,
   cachedPackDates,
-  cachedProgressIds,
   clearDictRetry,
   markSolved,
   readDictRetry,
@@ -11,7 +9,6 @@ import {
   readProgress,
   removeHints,
   removePack,
-  removeProgress,
   setInstallDismissed,
   STORAGE_EVENT,
   writeDictRetry,
@@ -170,50 +167,31 @@ describe('storage', () => {
       expect(readProgress(puzzleId)).toEqual('{"not":"parsed"}')
     })
 
+    // Two boards write the contents of a bare <input> with no maxLength, and nothing collects
+    // progress by age any more, so an unbounded paste would sit on the device forever and quietly
+    // fill the origin -- after which safeWrite swallows QuotaExceededError and the app stops caching
+    // packs. 8192 is over ten times the largest value any board legitimately writes.
+    it('stores a progress value inside the length cap', () => {
+      setup()
+      writeProgress(puzzleId, 'x'.repeat(8192))
+
+      expect(readProgress(puzzleId)).toEqual('x'.repeat(8192))
+    })
+
+    // Refused, and the PREVIOUS value survives. Truncating would store a board state no board wrote,
+    // and removing would take away the one the player still had.
+    it('refuses an over-long progress value and leaves the stored one alone', () => {
+      setup()
+      writeProgress(puzzleId, '6+9')
+      writeProgress(puzzleId, 'x'.repeat(8193))
+
+      expect(readProgress(puzzleId)).toEqual('6+9')
+    })
+
     it('returns null for a puzzle with no progress', () => {
       setup()
 
       expect(readProgress(puzzleId)).toBeNull()
-    })
-
-    it('removes progress', () => {
-      setup()
-      writeProgress(puzzleId, '6+9')
-      removeProgress(puzzleId)
-
-      expect(readProgress(puzzleId)).toBeNull()
-    })
-
-    it('derives the progress id list from the keys themselves', () => {
-      setup()
-      writeProgress(puzzleId, '6+9')
-      writeProgress('2026-08-17:gofigure:abcd1234', '1+2')
-
-      expect(cachedProgressIds().toSorted()).toEqual(['2026-08-17:gofigure:abcd1234', puzzleId])
-    })
-
-    it('keeps pack and meta keys out of the progress id list', () => {
-      setup()
-      writeProgress(puzzleId, '6+9')
-      writePack(packDate, pack)
-      window.localStorage.setItem('lull:meta', '{}')
-
-      expect(cachedProgressIds()).toEqual([puzzleId])
-    })
-
-    it('rejects a progress key that is not a puzzle id', () => {
-      setup()
-      writeProgress(puzzleId, '6+9')
-      window.localStorage.setItem('lull:progress:nonsense', 'x')
-
-      expect(cachedProgressIds()).toEqual([puzzleId])
-    })
-
-    it('reports no stored progress rather than throwing when localStorage is unavailable', () => {
-      setup()
-      denyStorage()
-
-      expect(cachedProgressIds()).toEqual([])
     })
 
     it('announces a progress write', () => {
@@ -294,16 +272,6 @@ describe('storage', () => {
       removeHints(missingVowelsPuzzleId)
 
       expect(readHints(missingVowelsPuzzleId, 3)).toBe(0)
-    })
-
-    // Same derived-index rule as packs and progress, validated by the one part of a puzzle id a
-    // client may read.
-    it('lists only ids carrying a valid date prefix', () => {
-      setup()
-      writeHints(missingVowelsPuzzleId, 1)
-      window.localStorage.setItem('lull:hints:nonsense', '1')
-
-      expect(cachedHintIds()).toEqual([missingVowelsPuzzleId])
     })
   })
 
@@ -417,13 +385,6 @@ describe('storage', () => {
       denyStorage()
 
       expect(() => removePack(packDate)).not.toThrow()
-    })
-
-    it('swallows a failed progress removal', () => {
-      setup()
-      denyStorage()
-
-      expect(() => removeProgress(puzzleId)).not.toThrow()
     })
   })
 

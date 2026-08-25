@@ -397,9 +397,12 @@ export interface PhrazleProgress {
 // UI only. Nothing below this line exists in lull-api.
 // ============================================================================
 
-// The one localStorage record that is never pruned. Solved ids are a few bytes each,
-// so history outlives the pack payloads it refers to: an old solved puzzle still shows
-// as solved and re-downloads if opened.
+// The localStorage record that made the case for keeping history. Solved ids are a few bytes
+// each, so history outlives the pack payloads it refers to: an old solved puzzle still shows
+// as solved and re-downloads if opened. It was the ONLY unpruned record until reaching an
+// earlier day became possible, at which point `lull:progress:` and `lull:hints:` stopped being
+// collected on the same argument -- packs are the family whose weight is measured in kilobytes
+// a day, and they are the only one usePrefetch collects.
 export interface Meta {
   installDismissed: boolean
   solved: string[]

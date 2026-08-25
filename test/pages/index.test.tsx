@@ -8,7 +8,16 @@ import { pack } from '@test/__mocks__'
 // Page tests live under test/ rather than beside the page: next.config.js sets
 // pageExtensions to ts and tsx, so anything named *.tsx inside src/pages is a route,
 // and a test file there would be exported as one.
-jest.mock('next/router', () => ({ useRouter: () => ({ push: jest.fn() }) }))
+//
+// ONE OBJECT, HANDED BACK ON EVERY CALL, because that is what the real hook does: the pages router
+// is a singleton read off a context set once, and useRouter returns the same instance on every
+// render. The shelf's `read` callback depends on it -- it asks the router to clear a `?d=` the device
+// cannot show, rather than writing at the history stack and wiping Next's `__N` marker off the entry
+// -- so a factory returning a fresh literal per call makes that callback a new function every render,
+// which re-runs the effect that calls it, which sets state, forever. The mock has to model the
+// identity and not only the shape. Named with the `mock` prefix so the factory may close over it.
+const mockRouter = { push: jest.fn(), replace: jest.fn() }
+jest.mock('next/router', () => ({ useRouter: () => mockRouter }))
 
 describe('Index', () => {
   const setup = (): void => {

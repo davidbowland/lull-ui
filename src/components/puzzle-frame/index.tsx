@@ -7,12 +7,20 @@ import { entryFor, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readPack, readProgress, removeHints, writeProgress } from '@services/storage'
 import { Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
+import { crumbLabel } from '@utils/date-labels'
 import { answerOf, hintsOf } from '@utils/hints'
 import { difficultyLabel, lengthLabel } from '@utils/labels'
 import { packDateOf } from '@utils/pack-dates'
 
 export interface PuzzleFrameProps {
   locale?: string
+  // INJECTED, and handed to crumbLabel below. That label adds a year only when the day's year
+  // differs from the current one, so a bare call reads the wall clock -- which this repo's
+  // non-determinism rule forbids and which no test can pin. The default is the real mount site's
+  // answer -- pages/p/[puzzleId] passes nothing -- and unlike the shelf's it needs no freezing:
+  // there is exactly ONE clock reading on this surface, in the crumb, so there is no second reading
+  // for it to disagree with across a midnight, and no effect depends on it.
+  now?: () => number
   puzzleId?: string
 }
 
@@ -37,24 +45,15 @@ interface DeadEndProps {
 // until an effect has run on the device.
 const defaultLocale = (): string => globalThis.navigator?.language ?? 'en-US'
 
-// A PackDate is a plain YYYY-MM-DD string, and `new Date()` on one depends on the runtime
-// zone, so the fields are read out and rebuilt in UTC -- the shelf's method, so a crumb can
-// never name a different day than the key it was read from.
+// THE THIRD `dayLabel` IS GONE. This file kept a private one producing what @utils/date-labels calls
+// crumbLabel -- the short cut, for the middle crumb of "Lull > ... > Missing Vowels" in a 40px bar
+// that has to survive a 320px viewport, where "Tuesday, August 18" would spend the whole bar on the
+// crumb nobody came for. That file's own header said the two must stay in step, and they did not:
+// crumbLabel grew a year for a day outside the reader's current year and this copy did not, so from
+// 2027-01-01 the shelf's crumb read "Lull > Sat, 14 Mar 2026" and the puzzle's read
+// "Lull > Sat, 14 Mar > Cryptogram" -- one day, two spellings, one trail, activating on a date
+// certain with no deploy in between. Importing the shared one is what makes that unrepeatable.
 //
-// The cut is shorter than the shelf's. There it is a heading with the row to itself; here it
-// is the middle crumb of "Lull > ... > Missing Vowels" in a 40px bar that has to survive a
-// 320px viewport, and "Tuesday, August 18" spends the whole bar on the one crumb nobody came
-// for.
-const dayLabel = (date: PackDate, locale: string): string => {
-  const [year, month, day] = date.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(locale, {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-    weekday: 'short',
-  })
-}
-
 // The breadcrumb, in place of the Back button every surface used to carry. A crumb with no
 // href is the page you are on, so the trail stops at the last thing actually known: a dead end
 // names the day but never the puzzle, because not knowing what the puzzle was is the whole
@@ -63,7 +62,7 @@ const dayLabel = (date: PackDate, locale: string): string => {
 // Lull and the day point at the same address on purpose. The day directory IS Lull's home --
 // there is exactly one day, and it is today -- so giving the day crumb an href of its own would
 // be advertising a page that does not exist.
-const trailFor = (date: PackDate | null, locale: string, here?: string): Crumb[] => {
+const trailFor = (date: PackDate | null, locale: string, now: () => number, here?: string): Crumb[] => {
   // An id with no date prefix names no day, so there is nothing true to put after Lull -- but
   // Lull itself still gets its href, and that is the only way off this surface.
   //
@@ -75,15 +74,22 @@ const trailFor = (date: PackDate | null, locale: string, here?: string): Crumb[]
   // no way back to the day, which is a worse outcome than the missing puzzle they arrived for.
   if (date === null) return [{ href: '/', label: 'Lull' }]
 
-  const day = dayLabel(date, locale)
+  const day = crumbLabel(date, locale, now)
   if (here === undefined) return [{ href: '/', label: 'Lull' }, { label: day }]
 
   return [{ href: '/', label: 'Lull' }, { href: '/', label: day }, { label: here }]
 }
 
-// Said in one place because it is read in two. Solved ids are never pruned, but progress is
-// pruned with the pack it belongs to, so a puzzle solved last week reopens on an empty board.
+// Said in one place because it is read in two. Solved ids are never pruned, and neither is
+// progress -- so a puzzle solved last week reopens on the board that won it, and this returns
+// false. The state it names is therefore the narrow one: solved, with nothing left on the board.
 // Empty progress counts as none: Play again empties a solved board and stores that.
+//
+// IT USED TO BE THE WIDE STATE. Progress was collected with the pack it belonged to, so any
+// solved puzzle older than the retention window came up blank and landed here. Nothing collects
+// progress by age any more (see writeHints in services/storage.ts), which narrowed this to Play
+// again and to a board that stores nothing at all -- fewer readers see the line, and every one
+// who does is looking at a board that says nothing about the win on its own.
 const wasSolvedBefore = (puzzleId: string): boolean =>
   readMeta().solved.includes(puzzleId) && (readProgress(puzzleId) ?? '') === ''
 
@@ -113,13 +119,13 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // Read once. The board restores from it at mount and owns it from then on; re-reading storage
   // on every render would hand the board back its own writes.
   const [progress] = useState(() => readProgress(puzzle.id))
-  // Solved ids are never pruned, but progress is pruned with the pack it belongs to, so a puzzle
-  // solved last week reopens on an empty board. Frozen at arrival: winning right now is the
-  // board's own news to announce, and a second line appearing above it would say it twice.
+  // Frozen at arrival: winning right now is the board's own news to announce, and a second line
+  // appearing above it would say it twice.
   //
-  // Gated on there being no stored progress as well. Within the retention window a solved puzzle
-  // still holds its winning answer, so the board restores it and says "Solved." itself -- and
-  // this line too would be the same news, twice, on one screen.
+  // Gated on there being no stored progress as well -- see wasSolvedBefore, where the narrowing
+  // is argued. A solved puzzle that still holds its winning answer restores it and says "Solved."
+  // itself, at any age now that nothing collects progress by age, and this line too would be the
+  // same news, twice, on one screen.
   //
   // Empty progress counts as none. Play again empties a solved board and stores that, so an empty
   // string here means the player wiped it rather than left one keystroke in: the board comes up
@@ -308,7 +314,11 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   )
 }
 
-export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameProps): React.ReactNode => {
+export const PuzzleFrame = ({
+  locale = defaultLocale(),
+  now = Date.now,
+  puzzleId,
+}: PuzzleFrameProps): React.ReactNode => {
   const [resolution, setResolution] = useState<Resolution | null>(null)
   // The shell's hook, read here so the gate below can refuse to mount a board this build cannot
   // run. A board may never call it.
@@ -371,7 +381,7 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
   if (puzzle === undefined) {
     if (!resolution.isSettled) {
       return (
-        <DeadEnd trail={trailFor(date, locale)}>
+        <DeadEnd trail={trailFor(date, locale, now)}>
           {/* KNOWN GAP, left deliberately rather than half-fixed. This paragraph is mounted WITH
               its text, which is the case the rest of this codebase documents as routinely missed --
               NVDA and JAWS announce changes inside a region they are already watching, and a region
@@ -390,7 +400,7 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
     }
 
     return (
-      <DeadEnd trail={trailFor(date, locale)}>
+      <DeadEnd trail={trailFor(date, locale, now)}>
         <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">That puzzle isn’t here</h1>
         <p className="text-[var(--lull-muted)]">
           It may have been cleared to make room for newer ones, or the link may be wrong.
@@ -407,7 +417,7 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
   // app with "Lull got stuck" -- so the cost is the entire surface, not this one row.
   if (entry === undefined) {
     return (
-      <DeadEnd trail={trailFor(date, locale)}>
+      <DeadEnd trail={trailFor(date, locale, now)}>
         <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">{UNKNOWN_TYPE_MESSAGE}</h1>
       </DeadEnd>
     )
@@ -429,7 +439,7 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
   // read needsDictionary off.
   if (entry.needsDictionary && status === 'loading') {
     return (
-      <DeadEnd trail={trailFor(date, locale, entry.label)}>
+      <DeadEnd trail={trailFor(date, locale, now, entry.label)}>
         <p className="text-[var(--lull-muted)]" role="status">
           Getting this puzzle ready…
         </p>
@@ -450,7 +460,7 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
   // That is the whole difference between this dead end and "That puzzle isn't here".
   if (entry.needsDictionary && status === 'absent') {
     return (
-      <DeadEnd trail={trailFor(date, locale, entry.label)}>
+      <DeadEnd trail={trailFor(date, locale, now, entry.label)}>
         <h1 className="lull-sign text-2xl text-[var(--lull-ink)]">{`${entry.label} needs a one-time download`}</h1>
         <p className="text-[var(--lull-muted)]">
           {/* `while you’re online`, not `Reconnect`. The app says `while you’re online` in four
@@ -507,7 +517,7 @@ export const PuzzleFrame = ({ locale = defaultLocale(), puzzleId }: PuzzleFrameP
           would make the spine the one band whose place in the column is implied rather than
           declared, and the first reordering would move it without touching this file. */}
       <div className="lull-spine">
-        <Spine trail={trailFor(date, locale, entry.label)} />
+        <Spine trail={trailFor(date, locale, now, entry.label)} />
       </div>
       {/* Keyed on the id, so opening a different puzzle is a different component rather than a
           prop change -- the board restores its state at mount and would otherwise keep the

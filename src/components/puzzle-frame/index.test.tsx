@@ -198,9 +198,11 @@ describe('PuzzleFrame', () => {
       expect(readMeta().solved).toContain(puzzleId)
     })
 
-    // Solved is one bit, and it outlives the pack it names -- progress is pruned with the pack,
-    // so a puzzle solved last week reopens on an empty board. Saying so is the difference
-    // between a fresh puzzle and one already finished.
+    // Solved is one bit, and it outlives the pack it names. This is the case where the win was
+    // recorded and no board was ever stored, so the frame has nothing to restore -- saying so is
+    // the difference between a fresh puzzle and one already finished. Progress used to reach this
+    // state by being pruned with the pack; it is not pruned at all now, which leaves the arrange
+    // block below -- markSolved with no writeProgress -- as the honest way to reach it.
     it('says the puzzle was already solved', async () => {
       setup()
       writePack(packDate, pack)
@@ -280,6 +282,22 @@ describe('PuzzleFrame', () => {
       const trail = await breadcrumb()
 
       expect(within(trail).getByText('Missing Vowels')).toHaveAttribute('aria-current', 'page')
+    })
+
+    // ONE DAY, ONE SPELLING, ACROSS TWO SURFACES OF ONE TRAIL. This file kept a private copy of the
+    // crumb cut that took no clock, while @utils/date-labels' crumbLabel adds a year for a day
+    // outside the reader's current year -- so from 2027-01-01 the shelf's crumb read "Sat, 14 Mar
+    // 2026" and the puzzle's read "Sat, 14 Mar", with no deploy in between to cause it. The year is
+    // the one observable difference between the two cuts, which makes this the only assertion that
+    // can catch the copy coming back.
+    it('gives the day its year in the trail once the year has turned', async () => {
+      setup()
+      writePack(packDate, pack)
+
+      render(<PuzzleFrame locale="en-US" now={() => Date.UTC(2027, 0, 4, 12)} puzzleId={puzzleId} />)
+      const trail = await breadcrumb()
+
+      expect(within(trail).getByRole('link', { name: 'Tue, Aug 18, 2026' })).toHaveAttribute('href', '/')
     })
 
     // The day is formatted for the reader, and which reader that is can only be known on the
@@ -534,10 +552,11 @@ describe('PuzzleFrame', () => {
     //
     // The assertion is on the KEY, not on the count read back through it, because `readHints`
     // answers 0 for three different states and only one of them is right. `writeHints(id, 0)`
-    // leaves an orphan key behind that `cachedHintIds` still indexes and `usePrefetch` still walks
-    // when it prunes, and a `localStorage.clear()` would take the pack and the progress with it and
-    // still read 0 here. Only "the key is gone" distinguishes the deletion this test is named after
-    // from the two implementations that merely look like it.
+    // leaves an orphan key behind that nothing now collects -- this reset is the only thing in the
+    // app that removes a hint key at all -- and a `localStorage.clear()` would take the pack and
+    // the progress with it and still read 0 here.
+    // Only "the key is gone" distinguishes the deletion this test is named after from the two
+    // implementations that merely look like it.
     //
     // `HINTS_PREFIX` is private to storage.ts and the string is written out here on purpose: a test
     // that built the key from the same constant the code builds it from would pass whatever that
