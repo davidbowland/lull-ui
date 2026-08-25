@@ -626,7 +626,7 @@ describe('Shelf', () => {
       const glyph = dictionaryRow().querySelector(`path[d="${REGISTRY.phrazle.glyph}"]`)
 
       expect(screen.getByText('Phrazle')).toBeInTheDocument()
-      expect(screen.getByText('Middling · About 4 min')).toBeInTheDocument()
+      expect(screen.getByText('Medium · About 4 min')).toBeInTheDocument()
       expect(glyph).toBeInTheDocument()
       expect(glyph?.closest('span')).toHaveAttribute('aria-hidden', 'true')
     })

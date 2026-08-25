@@ -207,7 +207,7 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
     <>
       {/* The sign over the bench, read the way a wayfinding sign is read: what this is on the left,
           what it costs you on the right. Both facts were already on the day directory's row, in
-          these words, from @utils/labels -- a player who picked "Middling · About 4 min" off the
+          these words, from @utils/labels -- a player who picked "Medium · About 4 min" off the
           directory finds the same two words at the top of the board rather than a paraphrase.
           Stacked rather than run together with a middot because the row is 64px tall and two short
           lines fit where one long one would have crowded the name beside it.
