@@ -71,12 +71,14 @@
      The budget it has to cover, measured rather than assumed:
 
        ribbon      52  (TWO reserved lines of text-[13px]/1.35, plus py-2 and a hairline)
-       instrument 179  (7 x 4 keys at 44px with 1px gridlines -- 26 letters plus two
-                        utility keys is exactly 28, which is exactly 7 x 4, which is why
-                        the pad never reflows and never orphans a row. The cipher bench
-                        spends the two on Undo and Delete and the guess bench on Guess and
-                        Delete; the arithmetic is what this token depends on, not which
-                        two they are)
+       instrument 179  (3 QWERTY rows at 59px with 1px gridlines. 26 letters plus two
+                        utility keys is 28, and the two tools stand at the ends of the
+                        bottom row so it is nine cells wide like the row above it -- which
+                        is why the pad never reflows and never orphans a row. The cipher
+                        bench spends the two on Undo and Delete and the guess bench on
+                        Guess and Delete; the arithmetic is what this token depends on, not
+                        which two they are. It was 4 alphabetical rows at 44px, which came
+                        to the same 179, so this token did not move when the pad changed)
        safe strip   9
        ----------------
                   240
@@ -298,14 +300,19 @@ body {
   padding-right: var(--lull-gutter-right);
 }
 
-/* The one band that takes NO gutter, only the physical inset. The keypad is 7 columns sized so
-   that 26 letters plus two utility keys make exactly 28 and exactly 7 x 4 — no reflow, no orphan
-   row — and that arithmetic assumes the full width: at 320px a full-bleed key is
-   (320 - 6 gaps) / 7 = 44.86px, where inside a 16px-a-side gutter it is 40.3px, under the 44x44
-   touch target on the narrowest device and for every key. So the band goes edge to edge and puts
-   back only env(safe-area-inset-*), which is zero in portrait and in landscape on a notched phone
-   is what keeps the end keys out from under the cutout. Nothing sets a horizontal padding utility
-   on this element, so the unlayered declarations below have nothing to override. */
+/* The one band that takes NO gutter, only the physical inset. The keypad is a QWERTY keyboard —
+   ten key-widths across, in three rows, with a tool at each end of the last one — and its
+   arithmetic assumes the full width: at 320px a full-bleed key is (320 - 9 gaps) / 10 = 31.1px,
+   where inside a 16px-a-side gutter it is 27.9px. Both clear the 24x24 of WCAG 2.5.8 Target Size
+   (Minimum), which is the AA criterion this app is held to, but 27.9 clears it by under 4px on the
+   control the board is tapped on most, and a gutter buys nothing here. So the band goes edge to
+   edge and puts back only env(safe-area-inset-*), which is zero in portrait and in landscape on a
+   notched phone is what keeps the end keys out from under the cutout. Nothing sets a horizontal
+   padding utility on this element, so the unlayered declarations below have nothing to override.
+
+   The four-row alphabet pad this replaced was 7 columns of 44.86 and spent the same 179px; see
+   src/components/keypad/layout.ts, which holds the height arithmetic and the reason for the
+   order. */
 .lull-instrument {
   /* The floor's own ground, on the WRAPPER and not only on FloorBar inside it. The inset padding
      below belongs to this element, so without a background here that strip paints the bench's

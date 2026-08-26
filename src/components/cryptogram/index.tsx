@@ -3,18 +3,19 @@ import React, { useEffect, useRef, useState } from 'react'
 import { DEFAULT_AVAILABLE, GAP, squareSize } from './layout'
 import { apply, Assignment, cipherLetters, decode, encode, isSolved, Mapping } from './mapping'
 import { FloorBar } from '@components/floor-bar'
+import { Keypad } from '@components/keypad'
 import { CryptogramData, PuzzleComponentProps } from '@types'
 
-// 26 letters plus Undo plus Delete is 28, and 28 is a complete 7x4 rectangle. That is the whole
-// reason those two utilities are on the pad rather than beside it: the grid never reflows, never
-// orphans a row, and every key sits in the same place on every board the player ever opens.
+// 26 letters plus Undo plus Delete is 28, and the two utilities are ON the pad rather than beside it
+// so that every key sits in the same place on every board the player ever opens. The rectangle they
+// complete used to be 7x4 and is now three QWERTY rows with a tool at each end of the last one;
+// keypad/layout.ts holds the shape and the reason for the order.
 //
 // Delete is what the twenty-eighth key spends itself on now, and the rectangle is why that swap was
 // a swap rather than an addition. `Clear` emptied the whole board, and a phone player who wanted one
 // letter back had nothing but that and a single-step Undo -- so the pad's missing eraser was the one
 // gap this bench recorded as unmitigated, and the key sitting in its place was the one control on
 // the board that could lose nine squares to a stray tap.
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
 // How many moves Undo can walk back. A cap rather than an unbounded list because the history is
 // snapshots of a mapping and the board is open for as long as the player leaves the tab open --
@@ -194,32 +195,38 @@ const PLATE =
 // number a player checks most and the only place it is written.
 const SIGN_ROW = 'lull-signrow sticky top-0'
 
-// Drawn on the floor, where the ink and the rule are the floor's own tokens: the global palette is
-// chosen to read on a light ground and every one of these keys sits on a band that is dark in both
-// themes.
+// A KEY'S ONE COLOR SOURCE, drawn on the floor, where the ink and the rule are the floor's own
+// tokens: the global palette is chosen to read on a light ground and every one of these keys sits on
+// a band that is dark in both themes.
 //
 // A spent key stays FULLY legible -- full ink, its annotation at full opacity in the floor accent.
 // Not opacity-40, which would dim the key table exactly when it is being read most.
-const KEY =
-  'flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center gap-[2px] ' +
-  'bg-[var(--lull-floor)] leading-none font-semibold text-[var(--lull-floor-ink)] ' +
+//
+// TONE RATHER THAN KEY, and the rename came with a bug fix. Keypad owns the SHAPE now and sets no
+// color at all, which is what this string and TONE_UTILITY had between them been getting wrong: the
+// old key string set `text-[var(--lull-floor-ink)]` and the old utility string set
+// `text-[var(--lull-floor-accent)]`, so `Undo` and `Delete` carried both and which one painted was
+// down to the order Tailwind happened to emit them in. The guess bench had already split its own
+// for exactly that reason.
+const TONE =
+  'bg-[var(--lull-floor)] text-[var(--lull-floor-ink)] ' +
   'hover:text-[var(--lull-floor-accent)] active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
 
-// On the letter itself rather than on the key, so the two utility keys can set their own size
-// without the two arbitrary font-size utilities racing each other in the generated stylesheet.
-const KEY_LETTER = 'text-[17px]'
 // The two utility keys, accented so the rectangle reads as 26 letters and two tools rather than as
-// 28 undifferentiated keys. Their words say which is which; the accent only groups them.
+// 28 undifferentiated keys. Their words say which is which; the accent only groups them. It is the
+// guess bench's utility tone verbatim, because the two pads are one instrument.
 //
 // WORDS, both of them, and that is why `Delete` was measured rather than shortened by reflex. The
 // tools read as tools because they are words among single letters, and there is no universal undo
 // glyph -- so a glyph beside a word would be worse than either consistent choice, and an icon pair
 // would throw away the one cue that separates the tools from the alphabet. At 11.5px in Source
-// Serif 4 with 0.05em of tracking, `Delete` sets about 36px against the 44.86px key the pad draws
-// at a 320 viewport (320 less six 1px gridlines, over seven columns), so it fits with room on both
-// sides; every fallback in the body stack is narrower still, so the shipped face is the worst case.
-// `Erase` was the shorter real word held in reserve and was not needed.
-const KEY_UTILITY = 'text-[11.5px] tracking-[0.05em] text-[var(--lull-floor-accent)]'
+// Serif 4 with 0.05em of tracking, `Delete` sets about 36px against the 46.6px a utility key draws
+// at a 320 viewport, so it fits with room on both sides -- MORE room than the four-row pad's 44.86
+// gave it, because a tool is a key and a half wide. Every fallback in the body stack is narrower
+// still, so the shipped face is the worst case. `Erase` was the shorter real word held in reserve
+// and was not needed.
+const TONE_UTILITY =
+  'bg-[var(--lull-floor)] text-[var(--lull-floor-accent)] hover:text-[var(--lull-floor-ink)] active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
 const KEY_NOTE = 'text-[9.5px] leading-none font-normal tracking-[0.07em] text-[var(--lull-floor-accent)]'
 
 interface Square {
@@ -1084,66 +1091,65 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
           becomes is exactly as tall as the seam it stands for. */}
       <div className="lull-instrument" ref={instrumentRef}>
         <FloorBar message={announced} resting={resting}>
-          {/* 7x4, full bleed, no horizontal padding: at 320 the keys are 44.86 wide and 44 tall,
-              which is 2.5.5's target size on the control this board is tapped on most. The 1px
-              gaps are the gridlines -- the keys are opaque floor and the grid behind them is the
-              floor rule, so the rectangle reads as one ruled pad rather than 28 loose buttons.
-              4 rows of 44 and 3 gaps of 1 is 179, which is the instrument's whole budget. */}
-          <div
-            aria-label="Letters, and what each one is on"
-            className="grid shrink-0 grid-cols-7 gap-px bg-[var(--lull-floor-rule)]"
-            role="group"
-          >
-            {ALPHABET.map((plain) => {
+          {/* THE SHARED PAD. Full bleed, no horizontal padding, three QWERTY rows inside the same
+              179px the four alphabetical ones spent -- keypad/layout.ts holds that arithmetic, the
+              key sizes, and the reason the letters are in this order rather than in the alphabet
+              this bench used to lay them out in. The 1px gaps are still the gridlines. */}
+          <Keypad
+            label="Letters, and what each one is on"
+            letter={(plain) => {
               const on = letters.find((cipher) => mapping[cipher] === plain)
-              return (
-                <button
-                  aria-label={on === undefined ? `${plain}, not used yet` : `${plain}, on cipher ${on}`}
-                  className={KEY}
-                  key={plain}
-                  onClick={() => press(plain, true)}
-                  type="button"
-                >
-                  {/* The mirror, and the reason there is no map strip, no meter and no legend
-                      anywhere on this bench: the square carries the cipher letter under the
-                      player's guess, and the key carries the cipher letter it is spoken for under
-                      the letter itself. Two stacks, drawn the same way, read the same way. */}
-                  <span aria-hidden="true" className={KEY_LETTER}>
-                    {plain}
-                  </span>
-                  {/* "= Z", not a bare "Z". The key reads as a statement -- this letter IS that
-                      cipher -- where the lone letter read as a second, smaller key sitting under
-                      the first one. The equals sign is scenery, like the pip on the spine: the
-                      key's own name already says "A, on cipher Z". */}
-                  {on !== undefined && (
+
+              return {
+                name: on === undefined ? `${plain}, not used yet` : `${plain}, on cipher ${on}`,
+                // The mirror, and the reason there is no map strip, no meter and no legend anywhere
+                // on this bench: the square carries the cipher letter under the player's guess, and
+                // the key carries the cipher letter it is spoken for under the letter itself. Two
+                // stacks, drawn the same way, read the same way.
+                //
+                // "= Z", not a bare "Z". The key reads as a statement -- this letter IS that cipher
+                // -- where the lone letter read as a second, smaller key sitting under the first
+                // one. The equals sign is scenery, like the pip on the spine: the key's own name
+                // already says "A, on cipher Z".
+                note:
+                  on === undefined ? undefined : (
                     <span aria-hidden="true" className={KEY_NOTE}>
                       {`= ${on}`}
                     </span>
-                  )}
-                </button>
-              )
-            })}
-            {/* Undo, never "Take back": one word, the word every other application on the device
-                uses for this, and the word the player is already looking for. */}
-            <button className={`${KEY} ${KEY_UTILITY}`} onClick={undo} type="button">
-              Undo
-            </button>
-            {/* Delete, and it IS Backspace -- the same `erase`, the same five branches, reached by
-                a key on the pad instead of a key on a hardware keyboard. There is no separate
-                in-place delete for it to be told apart from, because the caret stands ON a square
-                rather than between two of them, so the distinction a text field draws has nothing
-                here to attach to. `true` keeps focus on the key, exactly as every other pad key
-                does.
-
-                It replaces `Clear`, which emptied the whole board. A player who wants one letter
-                back was the reason the pad needed an eraser, and a key that takes nine squares off
-                on a single tap was never the answer to that -- it was the largest destructive action
-                on the bench sitting one thumb-width from the letters, with a single-step Undo behind
-                it. */}
-            <button className={`${KEY} ${KEY_UTILITY}`} onClick={() => erase(true)} type="button">
-              Delete
-            </button>
-          </div>
+                  ),
+                tone: TONE,
+              }
+            }}
+            // `true` keeps focus on the key, exactly as every other pad key does.
+            onPress={(plain) => press(plain, true)}
+            utility={[
+              // Delete, and it IS Backspace -- the same `erase`, the same five branches, reached by
+              // a key on the pad instead of a key on a hardware keyboard. There is no separate
+              // in-place delete for it to be told apart from, because the caret stands ON a square
+              // rather than between two of them, so the distinction a text field draws has nothing
+              // here to attach to.
+              //
+              // It replaces `Clear`, which emptied the whole board. A player who wants one letter
+              // back was the reason the pad needed an eraser, and a key that takes nine squares off
+              // on a single tap was never the answer to that -- it was the largest destructive
+              // action on the bench sitting one thumb-width from the letters, with a single-step
+              // Undo behind it.
+              //
+              // LEFT, and this bench is the one that PAYS for that rule rather than the one that
+              // motivates it -- see keypad's `utility` prop. Delete is the key both pads have, so
+              // Delete is the key that has to be in one place; Undo is what moves.
+              { label: 'Delete', onClick: () => erase(true), tone: TONE_UTILITY },
+              // Undo, never "Take back": one word, the word every other application on the device
+              // uses for this, and the word the player is already looking for.
+              //
+              // RIGHT, which is a promotion rather than a demotion: it is the safety net on a bench
+              // where every other control writes, and it is now the easiest key on the pad to reach.
+              // The cost is that a mis-tap walks a move back with no redo to walk it forward -- a
+              // two-second loss, visible on the board and named in the ribbon, against a shared
+              // eraser that would otherwise sit in a different corner on each of the two pads.
+              { label: 'Undo', onClick: undo, tone: TONE_UTILITY },
+            ]}
+          />
         </FloorBar>
       </div>
     </>

@@ -27,8 +27,15 @@ export const GUESS_GAP = 8
 // from the pad and only from the pad. So 2.5.8 does not reach a tile and the floor here is
 // READABILITY, which is 18. Below it the tile stops shrinking and .lull-board scrolls instead.
 export const MIN_TILE = 18
-// The ceiling, deliberately below the 44px keypad key: a tile the size of a key reads as a key, and
-// the one thing this bench must not teach is that a tile can be pressed.
+// The ceiling. It was set below the pad's 44px key, because a tile the size of a key reads as a key
+// and the one thing this bench must not teach is that a tile can be pressed -- and that argument no
+// longer holds the number up: the pad is a QWERTY keyboard now, whose keys are 31.1 wide and 59
+// tall at a 320 viewport, so a tile is not the size or the shape of a key at any width.
+//
+// 40 STAYS ANYWAY, on the reason that was always underneath the first one: a tile carries a letter
+// and a 2px bar, and past 40 a short phrase in a wide window draws playing cards. What changed is
+// that this is now the whole of the argument, so a future edit is judged on legibility rather than
+// on a key size that has moved.
 export const MAX_TILE = 40
 
 // What the grid box's WIDTH is worth at a 390 viewport before the first ResizeObserver measurement

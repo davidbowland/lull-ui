@@ -1219,16 +1219,36 @@ describe('CryptogramBoard', () => {
       expect(screen.getAllByRole('button', { name: /, (not used yet|on cipher [A-Z])$/ })).toHaveLength(26)
     })
 
-    // 26 letters + Undo + Delete = 28 = a complete 7x4 rectangle, which is the whole reason those
-    // two utilities live on the pad rather than beside it: a 26-key pad orphans a row at every
-    // column count that fits a phone, and a pad that reflows is a pad the player has to find again.
-    // Delete took Clear's place rather than joining it, so the rectangle is the same 28 it was.
+    // 26 letters + Undo + Delete = 28, which is the whole reason those two utilities live on the pad
+    // rather than beside it: a pad that reflows is a pad the player has to find again. They stand at
+    // the two ends of the bottom row, which is what makes that row nine cells wide like the one
+    // above it -- keypad/index.test.tsx holds that placement. Delete took Clear's place rather than
+    // joining it, so the count is the same 28 it was.
     it('is exactly twenty-eight keys', () => {
       setup()
 
       expect(within(pad()).getAllByRole('button')).toHaveLength(28)
       expect(within(pad()).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
       expect(within(pad()).queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument()
+    })
+
+    // DELETE GOES LEFT, ON BOTH PADS, and this bench is the one that PAYS for the rule rather than
+    // the one that motivates it: the guess bench wanted its committing key on the right, Delete is
+    // the only tool both benches have, and so Delete is the key pinned to a corner and Undo is the
+    // one that moved. A player who learns the eraser here finds it in the same place there.
+    //
+    // ASSERTED AS DOM POSITION, because this pad's group name -- `Letters, and what each one is on`
+    // -- names no tool at all, so nothing else in this suite can see the two of them swap. Keypad
+    // draws the tools at index 19 and 27; its own suite pins that arithmetic.
+    //
+    // REDDENS ON: swapping the two entries in the `utility` tuple back.
+    it('puts Delete at the left end of the bottom row and Undo at the right', () => {
+      setup()
+
+      const keys = within(pad()).getAllByRole('button')
+
+      expect(keys[19]).toHaveAccessibleName('Delete')
+      expect(keys[27]).toHaveAccessibleName('Undo')
     })
 
     it('names the group so a screen reader knows it is also the key table', () => {

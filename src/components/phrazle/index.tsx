@@ -5,13 +5,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, tileSize, WORD_GAP, WRAP_GAP } from './layout'
 import { decode, encode } from './progress'
 import { FloorBar } from '@components/floor-bar'
+import { Keypad } from '@components/keypad'
 import { PhrazleData, PuzzleComponentProps } from '@types'
-
-// 26 letters plus Guess plus Delete is 28, and 28 is a complete 7x4 rectangle -- the cipher bench's
-// arithmetic verbatim, at the same key sizes (54.9 x 44 at 390, 44.86 x 44 at 320) inside the same
-// 179px budget. Nothing about the instrument is reinvented, which is the point of naming a bench
-// after its input.
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
 // The floor a board handed no dictionary stands on. everyWordInDictionary is documented and TESTED
 // to reject every word against an empty set, so such a board refuses every guess rather than
@@ -155,16 +150,6 @@ const PLATE =
   'flex flex-1 flex-col bg-[var(--lull-plate)] pt-[var(--lull-s5)] pr-[var(--lull-gutter-right)] ' +
   'pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]'
 const SIGN_ROW = 'lull-signrow sticky top-0'
-// SHAPE ONLY. Every color a key can take now comes from exactly one of the TONE values below, and
-// that split is load-bearing rather than tidy: this string and KEY_UTILITY both used to set a text
-// color, so the two utility keys carried `text-[var(--lull-floor-ink)]` and
-// `text-[var(--lull-floor-accent)]` at once and which one painted was down to the order Tailwind
-// happened to emit them in. One color source per key is what makes the state below assertable as
-// something other than a coin toss.
-const KEY =
-  'flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center gap-[2px] leading-none font-semibold'
-const KEY_LETTER = 'text-[17px]'
-const KEY_UTILITY = 'text-[11.5px] tracking-[0.05em]'
 
 // THE THREE LETTER-KEY TONES, and no token in them is new: floorAccent-on-floor and
 // floorMuted-on-floor are both already held by contrast.test.ts, and contrast is symmetric, so the
@@ -862,70 +847,67 @@ export const PhrazleBoard = ({
           class goes on a wrapper around it rather than on the bar itself. */}
       <div className="lull-instrument">
         <FloorBar detail={message.detail} message={announced} resting={restingLine()}>
-          {/* 7x4, full bleed, no horizontal padding: at 320 the keys are 44.86 wide and 44 tall,
-              which is 2.5.5's target size on the control this board is tapped on most. The 1px gaps
-              are the gridlines. 4 rows of 44 and 3 gaps of 1 is 179, the instrument's whole budget. */}
-          {/* THE NAME FOLLOWS THE KEY. One key is swapped in place when the board is over, so a
+          {/* THE SHARED PAD. Full bleed, no horizontal padding, three QWERTY rows in the same 179px
+              the four alphabetical ones spent -- keypad/layout.ts holds that arithmetic and the
+              reason the letters are in this order. Nothing about the instrument is decided here.
+
+              THE NAME FOLLOWS THE KEY, in both senses. It names `Delete` FIRST because Delete is
+              the left-hand key -- a group that lists its controls out of order describes a pad the
+              player is not looking at. And one key is swapped in place when the board is over, so a
               group still promising a `Guess` button would send a screen-reader user navigating by
               group to look for a control that is not in it -- the group holds `Play again` by then.
               The two names use the keys' own accessible names, not their visible labels, so the
               group and the button it names cannot come apart. */}
-          <div
-            aria-label={over ? 'Letters, Play again and Delete' : 'Letters, Guess and Delete'}
-            className="grid shrink-0 grid-cols-7 gap-px bg-[var(--lull-floor-rule)]"
-            role="group"
-          >
-            {ALPHABET.map((plain) => {
+          <Keypad
+            label={over ? 'Letters, Delete and Play again' : 'Letters, Delete and Guess'}
+            letter={(plain) => {
               const status = statuses[plain] ?? 'untried'
 
-              return (
-                <button
-                  // LETTER, THEN VERDICT, THEN CARET, and the order is the order a player needs
-                  // them in: which key this is, whether it is worth pressing, and what pressing it
-                  // would fill. An untried key contributes no verdict at all rather than a third
-                  // phrase saying so -- `A, fills word 2 letter 1` is a key nobody has spent a
-                  // guess on, and naming that absence would put a sentence on 26 keys at mount.
-                  //
-                  // Both middle terms drop out on an undrawable pack, where the note is '' and no
-                  // guess has been marked, leaving the bare letter.
-                  aria-label={[plain, KEY_PHRASE[status as keyof typeof KEY_PHRASE], note].filter(Boolean).join(', ')}
-                  className={`${KEY} ${TONE[status]}`}
-                  key={plain}
-                  onClick={() => press(plain)}
-                  type="button"
-                >
-                  {/* `relative` is here rather than on the button so the strike is measured against
-                      the LETTER and not against a 44px key -- a line spanning the whole key reads as
-                      a divider between rows of the pad. */}
-                  <span aria-hidden="true" className={`relative ${KEY_LETTER}`}>
-                    {plain}
-                    {status === 'absent' && <Strike />}
-                  </span>
-                </button>
-              )
-            })}
-            {/* ONE KEY SWAPPED IN PLACE, never a pad replaced. 28 keys vanishing under a keyboard
-                player's focus drops focus to <body> and restarts the next Tab at the top of the
-                page, and a pad left inert reads as 28 broken keys. Swapping in place keeps the same
-                DOM element, so focus is never lost, the rectangle stays 7x4, and nothing reflows.
-                `Play again` does not fit a 44.86px key: the visible label is `Again` and the
-                accessible name is `Play again`, which satisfies 2.5.3 because the visible label is
-                contained in the name -- the same trick HintBar uses for `Hint 1 of 3`. */}
-            <button
-              aria-label={over ? 'Play again' : undefined}
-              className={`${KEY} ${KEY_UTILITY} ${TONE_UTILITY}`}
-              onClick={over ? again : commit}
-              type="button"
-            >
-              {over ? 'Again' : 'Guess'}
-            </button>
-            {/* Delete, and it IS Backspace -- the same `erase`, reached by a key on the pad instead
-                of a key on a hardware keyboard. There is no Undo on this bench: a committed guess is
-                permanent, that is the game, and an Undo here would be a rule this app authored. */}
-            <button className={`${KEY} ${KEY_UTILITY} ${TONE_UTILITY}`} onClick={erase} type="button">
-              Delete
-            </button>
-          </div>
+              return {
+                // THE RULED-OUT MARK, drawn only where the verdict is in. Nothing at all on the
+                // other two states, rather than a hidden element -- see Strike.
+                mark: status === 'absent' ? <Strike /> : undefined,
+                // LETTER, THEN VERDICT, THEN CARET, and the order is the order a player needs them
+                // in: which key this is, whether it is worth pressing, and what pressing it would
+                // fill. An untried key contributes no verdict at all rather than a third phrase
+                // saying so -- `A, fills word 2 letter 1` is a key nobody has spent a guess on, and
+                // naming that absence would put a sentence on 26 keys at mount.
+                //
+                // Both middle terms drop out on an undrawable pack, where the note is '' and no
+                // guess has been marked, leaving the bare letter.
+                name: [plain, KEY_PHRASE[status as keyof typeof KEY_PHRASE], note].filter(Boolean).join(', '),
+                tone: TONE[status],
+              }
+            }}
+            onPress={press}
+            utility={[
+              // Delete, and it IS Backspace -- the same `erase`, reached by a key on the pad instead
+              // of a key on a hardware keyboard. There is no Undo on this bench: a committed guess is
+              // permanent, that is the game, and an Undo here would be a rule this app authored.
+              //
+              // LEFT, and it is the eraser that is pinned there rather than this bench's other tool
+              // -- see keypad's `utility` prop for the rule and for what it costs.
+              { label: 'Delete', onClick: erase, tone: TONE_UTILITY },
+              // ONE KEY SWAPPED IN PLACE, never a pad replaced. 28 keys vanishing under a keyboard
+              // player's focus drops focus to <body> and restarts the next Tab at the top of the
+              // page, and a pad left inert reads as 28 broken keys. Keypad draws both utility keys
+              // outside a map for exactly this reason: the DOM element survives the swap, so focus
+              // is never lost and nothing reflows. `Play again` does not fit the key; the visible
+              // label is `Again` and the accessible name is `Play again`, which satisfies 2.5.3
+              // because the visible label is contained in the name -- the same trick HintBar uses
+              // for `Hint 1 of 3`.
+              //
+              // RIGHT, because it is the one key on this pad that finishes something. Every form on
+              // the device this ships to puts the confirming control on that side, and this is the
+              // control a player reaches for once per row.
+              {
+                label: over ? 'Again' : 'Guess',
+                name: over ? 'Play again' : undefined,
+                onClick: over ? again : commit,
+                tone: TONE_UTILITY,
+              },
+            ]}
+          />
         </FloorBar>
       </div>
     </>

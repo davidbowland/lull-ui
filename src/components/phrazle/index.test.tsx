@@ -274,16 +274,37 @@ describe('PhrazleBoard', () => {
       expect(screen.getByText(label).querySelectorAll('[data-seg]')).toHaveLength(segments)
     })
 
-    // 26 + Guess + Delete, which is 28, which is a complete 7 x 4 rectangle -- the cipher bench's
-    // arithmetic verbatim, so the pad never reflows and never orphans a row.
+    // 26 + Guess + Delete, which is 28 -- the cipher bench's arithmetic verbatim, on the cipher
+    // bench's pad, so the two instruments cannot drift. The tools stand at the ends of the bottom
+    // row; keypad/index.test.tsx holds that placement and the tab order.
     it('docks twenty-eight keys', () => {
       renderBoard()
 
-      const pad = screen.getByRole('group', { name: 'Letters, Guess and Delete' })
+      const pad = screen.getByRole('group', { name: 'Letters, Delete and Guess' })
 
       expect(within(pad).getAllByRole('button')).toHaveLength(28)
       expect(within(pad).getByRole('button', { name: 'Guess' })).toBeInTheDocument()
       expect(within(pad).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    })
+
+    // DELETE GOES LEFT, ON BOTH PADS, and this is one of the two halves of that promise -- the
+    // cipher bench's suite holds the other. Delete is the only tool both benches have, so it is the
+    // one that has to sit in a fixed corner: a player who learns the eraser on one bench has to find
+    // it in the same place on the other.
+    //
+    // ASSERTED AS DOM POSITION, never off the group's name. `Letters, Delete and Guess` is a string
+    // that would go on reading correctly with the two keys drawn the other way round, which is the
+    // exact failure this is here to catch. Keypad draws the tools at index 19 and 27 -- ten keys,
+    // then nine, then the left tool -- and its own suite pins that arithmetic.
+    //
+    // REDDENS ON: swapping the two entries in the `utility` tuple back.
+    it('puts Delete at the left end of the bottom row and Guess at the right', () => {
+      renderBoard()
+
+      const keys = within(screen.getByRole('group', { name: 'Letters, Delete and Guess' })).getAllByRole('button')
+
+      expect(keys[19]).toHaveAccessibleName('Delete')
+      expect(keys[27]).toHaveAccessibleName('Guess')
     })
 
     // Mounted and EMPTY at the same time, which is the whole trick: NVDA and JAWS announce changes
@@ -639,7 +660,7 @@ describe('PhrazleBoard', () => {
       await afterHotHand()
 
       expect(
-        within(screen.getByRole('group', { name: 'Letters, Guess and Delete' })).getAllByRole('button'),
+        within(screen.getByRole('group', { name: 'Letters, Delete and Guess' })).getAllByRole('button'),
       ).toHaveLength(28)
     })
 
@@ -1072,21 +1093,27 @@ describe('PhrazleBoard', () => {
     // {Enter} on a focused button is the button's OWN activation (rule 3 declines it), which is
     // exactly the path a keyboard player takes.
     //
-    // REDDENS ON: dropping the `over` guard from `press`, which types an A into a row that does not
+    // REDDENS ON: dropping the `over` guard from `press`, which types a Q into a row that does not
     // exist -- the composing-row query stops being null and the ribbon says nothing at all.
     // TWO TABS, NOT ONE. The board band is `tabIndex={0}` so a keyboard player can scroll a grid
-    // that now grows without bound, so it is the first stop and the pad's A key is the second.
+    // that now grows without bound, so it is the first stop and the pad's first key is the second.
     it('refuses a letter typed into it and says which key does something', async () => {
       const { user } = renderBoard(phrazlePuzzle, WON_ON_SIX)
 
       await user.tab()
       await user.tab()
 
-      // A is gray in all six restored guesses and appears in none of the phrase, so the key that
-      // takes focus is a ruled-out one -- which is what makes this the tab stop worth pinning: a
-      // ruled-out key is still a control, still focusable, and still refuses for the board's reason
-      // rather than for its own.
-      expect(screen.getByRole('button', { name: 'A, not in the phrase, this board is finished' })).toHaveFocus()
+      // Q, because the pad is a KEYBOARD and Q is where a keyboard starts. This assertion is
+      // therefore also the tab order's only pin: DOM order is what a Tab walk follows, so a pad
+      // whose rows were built in some order other than the one on screen would land somewhere else
+      // here and nothing about the letters would look wrong.
+      //
+      // IT USED TO BE A, and A was chosen because it is ruled out on this fixture -- a ruled-out key
+      // is still a control, still focusable, and still refuses for the board's reason rather than
+      // for its own. Q is untried, so that half moved rather than vanished: `keeps every key in the
+      // tab order once the verdicts are in` counts the pad after six guesses, and the pair of
+      // assertions above it hold A enabled and free of `aria-disabled`.
+      expect(screen.getByRole('button', { name: 'Q, this board is finished' })).toHaveFocus()
 
       await user.keyboard('{Enter}')
 
@@ -1139,19 +1166,19 @@ describe('PhrazleBoard', () => {
     // a control it does not -- and `docks twenty-eight keys` above runs only on a fresh board, where
     // the promise is true.
     //
-    // REDDENS ON: pinning the group's aria-label back to `Letters, Guess and Delete`.
+    // REDDENS ON: pinning the group's aria-label back to `Letters, Delete and Guess`.
     it('names the pad for the keys it holds once the board is over', () => {
       renderBoard(phrazlePuzzle, WON_ON_SIX)
 
-      const pad = screen.getByRole('group', { name: 'Letters, Play again and Delete' })
+      const pad = screen.getByRole('group', { name: 'Letters, Delete and Play again' })
 
       expect(within(pad).getByRole('button', { name: 'Play again' })).toBeInTheDocument()
-      expect(screen.queryByRole('group', { name: 'Letters, Guess and Delete' })).toBeNull()
+      expect(screen.queryByRole('group', { name: 'Letters, Delete and Guess' })).toBeNull()
     })
 
     // WCAG 2.5.3 asserted as a PAIR ON ONE ELEMENT, the way HintBar's control-label tests do it, so
     // the name and the visible text can never be read off two different buttons. `Play again` does
-    // not fit a 44.86px key; the visible label is `Again` and the accessible name contains it.
+    // not fit a 46.6px key; the visible label is `Again` and the accessible name contains it.
     //
     // NOT asserted as a String.includes: `Again` is not a literal substring of `Play again`, because
     // the A is capital on the key and lowercase in the name. 2.5.3's requirement is on the text and
@@ -1335,7 +1362,7 @@ describe('PhrazleBoard', () => {
 
       expect(screen.getByRole('group', { name: 'Guesses' })).toBeInTheDocument()
       expect(screen.getByRole('group', { name: /^Your guess/ })).toBeInTheDocument()
-      expect(screen.getByRole('group', { name: 'Letters, Guess and Delete' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Letters, Delete and Guess' })).toBeInTheDocument()
       expect(screen.queryByRole('group', { name: /not yet made/ })).toBeNull()
     })
 

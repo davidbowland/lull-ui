@@ -102,8 +102,15 @@ describe('PuzzleFrame', () => {
     })
   }
 
+  // The clock is INJECTED for every render in this file, and it reads noon on the day the mock
+  // pack names. The trail is what reads it -- the crumb spells a year for a day outside the
+  // reader's current year, and the day crumb's href is `/` for today and `/?d=<date>` for any
+  // other day -- so a bare `Date.now` here would make two assertions in this file answer to the
+  // wall clock and start failing on a date certain with no commit in between.
+  const noonOnPackDate = (): number => Date.UTC(2026, 7, 18, 12)
+
   const renderFrame = (id: string | undefined = puzzleId): ReturnType<typeof render> =>
-    render(<PuzzleFrame locale="en-US" puzzleId={id} />)
+    render(<PuzzleFrame locale="en-US" now={noonOnPackDate} puzzleId={id} />)
 
   const breadcrumb = async (): Promise<HTMLElement> => screen.findByRole('navigation', { name: 'Breadcrumb' })
 
@@ -266,6 +273,34 @@ describe('PuzzleFrame', () => {
       expect(within(trail).getByText('Go Figure!')).toHaveAttribute('aria-current', 'page')
     })
 
+    // THE DAY CRUMB NAMES A DAY; `/` NAMES TODAY. They were the same address for as long as today
+    // was the only day a player could reach, and the crumb was written to say so. The moment `/?d=`
+    // shipped they parted company, and the way back out of an August 18th puzzle silently became a
+    // way back to today -- on every bench, every time, with the crumb still reading "Tue, Aug 18".
+    it('points the day crumb at the day it names rather than at today', async () => {
+      setup()
+      writePack(packDate, pack)
+
+      render(<PuzzleFrame locale="en-US" now={() => Date.UTC(2026, 7, 25, 12)} puzzleId={puzzleId} />)
+      const trail = await breadcrumb()
+
+      expect(within(trail).getByRole('link', { name: 'Tue, Aug 18' })).toHaveAttribute('href', '/?d=2026-08-18')
+    })
+
+    // The other half, and the reason the href is not `/?d=${date}` unconditionally: the shelf's own
+    // selectDay pushes `/` for today and `/?d=` for anything else, so a crumb that spelled the
+    // parameter for today would hand back an address the shelf immediately rewrites -- one entry in
+    // the history stack that Back has to be pressed through twice.
+    it('points the day crumb at today’s shelf when the day is today', async () => {
+      setup()
+      writePack(packDate, pack)
+
+      renderFrame()
+      const trail = await breadcrumb()
+
+      expect(within(trail).getByRole('link', { name: 'Tue, Aug 18' })).toHaveAttribute('href', '/')
+    })
+
     it('puts the trail on the cipher bench too', async () => {
       setupPack(cryptogramPack)
 
@@ -297,7 +332,7 @@ describe('PuzzleFrame', () => {
       render(<PuzzleFrame locale="en-US" now={() => Date.UTC(2027, 0, 4, 12)} puzzleId={puzzleId} />)
       const trail = await breadcrumb()
 
-      expect(within(trail).getByRole('link', { name: 'Tue, Aug 18, 2026' })).toHaveAttribute('href', '/')
+      expect(within(trail).getByRole('link', { name: 'Tue, Aug 18, 2026' })).toHaveAttribute('href', '/?d=2026-08-18')
     })
 
     // The day is formatted for the reader, and which reader that is can only be known on the
@@ -307,7 +342,7 @@ describe('PuzzleFrame', () => {
       setup()
       writePack(packDate, pack)
 
-      render(<PuzzleFrame puzzleId={puzzleId} />)
+      render(<PuzzleFrame now={noonOnPackDate} puzzleId={puzzleId} />)
       const trail = await breadcrumb()
 
       expect(within(trail).getByRole('link', { name: 'Tue, Aug 18' })).toBeInTheDocument()

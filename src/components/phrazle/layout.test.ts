@@ -18,9 +18,11 @@ describe('the sizes themselves', () => {
     expect(MIN_TILE).toEqual(18)
   })
 
-  // Below the 44px keypad key on purpose: a tile the size of a key reads as a key, and the one
-  // thing this bench must not teach is that a tile can be pressed.
-  it('caps a tile below the keypad key', () => {
+  // A LEGIBILITY CEILING, and it used to be a key-size one: 40 was picked to sit under the pad's
+  // 44px key, because a tile the size of a key reads as a key. The pad is a QWERTY keyboard now and
+  // its keys are 31.1 by 59, so a tile is neither the size nor the shape of one at any width, and
+  // what holds 40 up is that past it a short phrase in a wide window draws playing cards.
+  it('caps a tile at the readable size', () => {
     expect(MAX_TILE).toEqual(40)
   })
 

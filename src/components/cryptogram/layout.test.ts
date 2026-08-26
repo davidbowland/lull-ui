@@ -17,7 +17,7 @@ describe('the sizes themselves', () => {
     expect(MIN_SQUARE).toEqual(24)
   })
 
-  it('caps a square at the size the keypad keys use', () => {
+  it('caps a square at the readable size', () => {
     expect(MAX_SQUARE).toEqual(44)
   })
 

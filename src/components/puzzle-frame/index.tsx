@@ -10,7 +10,7 @@ import { Pack, PackDate, Puzzle, PuzzleProgress } from '@types'
 import { crumbLabel } from '@utils/date-labels'
 import { answerOf, hintsOf } from '@utils/hints'
 import { difficultyLabel, lengthLabel } from '@utils/labels'
-import { packDateOf } from '@utils/pack-dates'
+import { packDateOf, toPackDate } from '@utils/pack-dates'
 
 export interface PuzzleFrameProps {
   locale?: string
@@ -18,8 +18,8 @@ export interface PuzzleFrameProps {
   // differs from the current one, so a bare call reads the wall clock -- which this repo's
   // non-determinism rule forbids and which no test can pin. The default is the real mount site's
   // answer -- pages/p/[puzzleId] passes nothing -- and unlike the shelf's it needs no freezing:
-  // there is exactly ONE clock reading on this surface, in the crumb, so there is no second reading
-  // for it to disagree with across a midnight, and no effect depends on it.
+  // both readings on this surface are in the crumb, one for its label and one for its href (see
+  // dayHref), and a midnight between them changes neither answer. No effect depends on it.
   now?: () => number
   puzzleId?: string
 }
@@ -59,9 +59,22 @@ const defaultLocale = (): string => globalThis.navigator?.language ?? 'en-US'
 // names the day but never the puzzle, because not knowing what the puzzle was is the whole
 // reason it is a dead end.
 //
-// Lull and the day point at the same address on purpose. The day directory IS Lull's home --
-// there is exactly one day, and it is today -- so giving the day crumb an href of its own would
-// be advertising a page that does not exist.
+// LULL AND THE DAY POINT AT THE SAME ADDRESS ONLY WHEN THE DAY IS TODAY. `/` is today's shelf and
+// nothing else. They were one address for as long as today was the only day a player could reach,
+// and this crumb was written to say so -- so the moment `/?d=` shipped, the way back out of an
+// August 18th puzzle became a way back to today, on every bench, with the crumb still reading
+// "Tue, Aug 18". The day crumb has to name the day it spells.
+//
+// NOT `/?d=${date}` unconditionally, because the shelf's own selectDay pushes `/` for today and
+// `/?d=` for anything else. A crumb spelling the parameter for today would hand back an address
+// the shelf replaces on arrival, which is one history entry Back has to be pressed through twice.
+//
+// The clock is read once here and once inside crumbLabel, and the two cannot disagree in any way a
+// reader could see: crossing midnight between them would spell a year onto a day whose href had
+// just been decided a moment earlier under the same date, which is the same answer either way.
+const dayHref = (date: PackDate, now: () => number): string =>
+  date === toPackDate(new Date(now())) ? '/' : `/?d=${date}`
+
 const trailFor = (date: PackDate | null, locale: string, now: () => number, here?: string): Crumb[] => {
   // An id with no date prefix names no day, so there is nothing true to put after Lull -- but
   // Lull itself still gets its href, and that is the only way off this surface.
@@ -77,7 +90,7 @@ const trailFor = (date: PackDate | null, locale: string, now: () => number, here
   const day = crumbLabel(date, locale, now)
   if (here === undefined) return [{ href: '/', label: 'Lull' }, { label: day }]
 
-  return [{ href: '/', label: 'Lull' }, { href: '/', label: day }, { label: here }]
+  return [{ href: '/', label: 'Lull' }, { href: dayHref(date, now), label: day }, { label: here }]
 }
 
 // Said in one place because it is read in two. Solved ids are never pruned, and neither is

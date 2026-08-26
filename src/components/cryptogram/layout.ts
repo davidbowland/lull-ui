@@ -4,10 +4,13 @@
 export const GAP = 2
 
 // 24x24 is WCAG 2.5.8 Target Size (Minimum) -- the AA criterion this app is held to. It is NOT the
-// 44x44 of 2.5.5, which is AAA and is what the keypad keys use: those are the repeatedly-tapped
-// control and have the room. Nothing in this repo enforces 44 and nothing could -- style assertions
-// are forbidden here -- and goFigure's tiles are already 56.
+// 44x44 of 2.5.5, which is AAA. Nothing in this repo enforces 44 and nothing could -- style
+// assertions are forbidden here -- and goFigure's tiles are already 56.
 export const MIN_SQUARE = 24
+// The ceiling, and it is a LEGIBILITY number. It used to be described as the size of a keypad key,
+// which was true of the four-row alphabet pad and is not true of the QWERTY one: a key is 31.1 wide
+// and 59 tall at a 320 viewport, so there is no single key size for a square to match any more. 44
+// stays because past it a short phrase in a wide window draws playing cards.
 export const MAX_SQUARE = 44
 
 // What the phrase box is worth at a 390 viewport, after the plate's own 16px a side. The bench
