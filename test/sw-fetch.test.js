@@ -85,7 +85,7 @@ describe('sw.js fetch handler', () => {
     it('does not treat a rewritten data payload as immutable', async () => {
       const fetchImpl = jest.fn().mockResolvedValue(ok('fresh data'))
       const worker = loadWorker({ fetchImpl })
-      const requested = '/_next/data/build123/p/2026-08-18:gofigure:aa.json'
+      const requested = '/_next/data/build123/p/2026-08-18/gofigure/aa.json'
 
       await worker.dispatch('fetch', { request: makeRequest(requested, { mode: 'no-cors' }) })
 
@@ -111,9 +111,9 @@ describe('sw.js fetch handler', () => {
       const fetchImpl = jest.fn().mockResolvedValue(ok('puzzle shell'))
       const worker = loadWorker({ fetchImpl })
 
-      await worker.dispatch('fetch', { request: makeRequest('/p/2026-08-18:gofigure:aa') })
+      await worker.dispatch('fetch', { request: makeRequest('/p/2026-08-18/gofigure/aa') })
 
-      expect((await worker.caches.match('/p/%5BpuzzleId%5D/index.html')).body).toEqual('puzzle shell')
+      expect((await worker.caches.match('/p/%5B...puzzleId%5D/index.html')).body).toEqual('puzzle shell')
     })
   })
 
@@ -121,9 +121,9 @@ describe('sw.js fetch handler', () => {
     it('answers a puzzle page from the shell', async () => {
       const worker = loadWorker()
       const cache = await worker.caches.open('lull-dev')
-      await cache.put('/p/%5BpuzzleId%5D/index.html', ok('offline shell'))
+      await cache.put('/p/%5B...puzzleId%5D/index.html', ok('offline shell'))
 
-      const response = await worker.dispatch('fetch', { request: makeRequest('/p/2026-08-18:gofigure:aa') })
+      const response = await worker.dispatch('fetch', { request: makeRequest('/p/2026-08-18/gofigure/aa') })
 
       expect(response.body).toEqual('offline shell')
     })

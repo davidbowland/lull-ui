@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import React, { useEffect, useState } from 'react'
 
 import { PuzzleFrame } from '@components/puzzle-frame'
+import { puzzleIdFromPath } from '@utils/puzzle-path'
 
 const PuzzlePage = (): React.ReactNode => {
   const router = useRouter()
@@ -14,11 +15,12 @@ const PuzzlePage = (): React.ReactNode => {
   // placeholder param out of __NEXT_DATA__ precisely so the router cannot answer with
   // it -- so the URL is the only place the id exists.
   useEffect(() => {
-    const match = window.location.pathname.match(/\/p\/([^/]+)/)
-    if (match) {
-      // An id carries colons and is written into the URL encoded. Decoded whole and
-      // passed along whole: past the date prefix it is opaque.
-      setPuzzleId(decodeURIComponent(match[1]))
+    // An id carries colons and is written into the URL one segment per colon. Rejoined
+    // whole and passed along whole: past the date prefix it is opaque. The single encoded
+    // segment older shared links carry rejoins to the same string -- see puzzle-path.ts.
+    const id = puzzleIdFromPath(window.location.pathname)
+    if (id !== null) {
+      setPuzzleId(id)
     }
   }, [router.asPath])
 
@@ -70,11 +72,18 @@ const PuzzlePage = (): React.ReactNode => {
 // it produces, scripts/generate-sw-manifest.js which fails the build if that rename did
 // not happen, UiUrlRewriteFunction in template.yaml, and shellFor() in public/sw.js.
 // Change one and you must change all five.
+//
+// A CATCH-ALL route, because an id is spelled one segment per colon and [puzzleId] matches
+// exactly one segment. Nothing in the export needs the extra segments -- the edge rewrites
+// every /p/ path onto this one document and the page reads the address bar -- but `next
+// dev` routes for real, so a single-segment route would 404 the whole new URL shape in
+// development. The placeholder is an ARRAY for the same reason: that is the shape a
+// catch-all param takes, and getStaticPaths rejects a bare string.
 export const getStaticPaths: GetStaticPaths = () => {
   if (process.env.NODE_ENV === 'development') {
     return { fallback: 'blocking', paths: [] }
   }
-  return { fallback: false, paths: [{ params: { puzzleId: '__placeholder__' } }] }
+  return { fallback: false, paths: [{ params: { puzzleId: ['__placeholder__'] } }] }
 }
 
 export const getStaticProps: GetStaticProps = () => ({ props: {} })

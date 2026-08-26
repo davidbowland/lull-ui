@@ -61,11 +61,12 @@ const keptShells = new Set(bestByContent.values())
 const shells = allShells.filter((url) => keptShells.has(url))
 
 // The bracketed path is written by scripts/generate-dynamic-pages.js and is what
-// public/sw.js rewrites /p/<id> onto. If it is absent the worker precaches a set that
-// cannot open a single puzzle offline, so fail the build instead of shipping it. This is
-// the third of the five pieces the dynamic route depends on, and the one that makes a
-// broken combination loud rather than silent.
-const required = ['/p/%5BpuzzleId%5D/index.html']
+// public/sw.js rewrites /p/<id> onto. The dots in it are Next's catch-all spelling, which
+// the route needs because an id is spelled one path segment per colon. If the file is
+// absent the worker precaches a set that cannot open a single puzzle offline, so fail the
+// build instead of shipping it. This is the third of the five pieces the dynamic route
+// depends on, and the one that makes a broken combination loud rather than silent.
+const required = ['/p/%5B...puzzleId%5D/index.html']
 const missing = required.filter((url) => !shells.includes(url))
 if (missing.length > 0) {
   console.error(`✗ sw.js precache is missing the puzzle shell: ${missing.join(', ')}`)

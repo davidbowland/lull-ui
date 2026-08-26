@@ -20,6 +20,7 @@ import { crumbLabel, dayLabel } from '@utils/date-labels'
 import { DaySummary, summarizeDay } from '@utils/day-summary'
 import { difficultyLabel, lengthLabel } from '@utils/labels'
 import { isSelectablePackDate, toPackDate } from '@utils/pack-dates'
+import { puzzlePath } from '@utils/puzzle-path'
 import { nextUnsolved } from '@utils/up-next'
 
 export interface ShelfProps {
@@ -413,9 +414,10 @@ const ShelfRow = ({ puzzle, state }: ShelfRowProps): React.ReactNode => {
 
   return (
     <li>
-      {/* Encoded, because a puzzle id carries colons. The id is opaque past its date
-          prefix, so it is passed along whole and never taken apart. */}
-      <Link className={ROW_LINK} href={`/p/${encodeURIComponent(puzzle.id)}`}>
+      {/* One path segment per colon, which is what puzzlePath writes. The id is opaque past
+          its date prefix and stays opaque here: nothing reads a segment, and the page rejoins
+          them. See utils/puzzle-path.ts, the only place in the app that builds a /p/ URL. */}
+      <Link className={ROW_LINK} href={puzzlePath(puzzle.id)}>
         {/* The sign in the directory. Each row draws the shape of the BENCH it opens, not a
             badge for the game, so choosing here is visibly choosing between four different
             rooms -- said one screen before you walk into one. Decoration beside the words
@@ -1081,7 +1083,7 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
           locale={locale}
           now={clock}
           onPickAnother={() => openPanel(pick === null ? 'month' : 'day')}
-          onPlay={(puzzleId) => void router.push(`/p/${encodeURIComponent(puzzleId)}`)}
+          onPlay={(puzzleId) => void router.push(puzzlePath(puzzleId))}
           openCount={openCount}
           // A LITERAL, and deliberately not a second useId(): uniqueness inside Up Next comes from
           // its own useId(), and this prop is only the readable half of the ids it builds.

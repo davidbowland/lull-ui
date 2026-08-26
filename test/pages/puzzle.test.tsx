@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import React from 'react'
 
-import PuzzlePage, { getStaticPaths, getStaticProps } from '@pages/p/[puzzleId]'
+import PuzzlePage, { getStaticPaths, getStaticProps } from '@pages/p/[...puzzleId]'
 import { writePack } from '@services/storage'
 import {
   cryptogramPack,
@@ -12,6 +12,7 @@ import {
   phrasePack,
   puzzleId,
 } from '@test/__mocks__'
+import { puzzlePath } from '@utils/puzzle-path'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios
 // request against a 35-second timeout.
@@ -29,7 +30,7 @@ describe('PuzzlePage', () => {
     // scripts/generate-dynamic-pages.js strips the placeholder out of __NEXT_DATA__ so
     // the router cannot answer with it. The URL is the only place the id exists.
     it('plays the puzzle the URL names', async () => {
-      setup(`/p/${encodeURIComponent(puzzleId)}/`)
+      setup(`${puzzlePath(puzzleId)}/`)
       writePack('2026-08-18', pack)
 
       render(<PuzzlePage />)
@@ -37,7 +38,19 @@ describe('PuzzlePage', () => {
       expect(await screen.findByRole('heading', { name: 'Make 154' })).toBeInTheDocument()
     })
 
-    it('decodes an id written into the URL encoded', async () => {
+    it('reads an id spelled across path segments', async () => {
+      setup('/p/2026-08-18/gofigure/1a2b3c4d/')
+      writePack('2026-08-18', pack)
+
+      render(<PuzzlePage />)
+
+      expect(await screen.findByRole('heading', { name: 'Make 10' })).toBeInTheDocument()
+    })
+
+    // Every link shared before this repo wrote path segments carries the id in one encoded
+    // segment, and those links are in messages, bookmarks and home-screen shortcuts that
+    // nobody is going to rewrite. They keep opening the puzzle they always opened.
+    it('still reads the single encoded segment older links carry', async () => {
       setup('/p/2026-08-18%3Agofigure%3A1a2b3c4d/')
       writePack('2026-08-18', pack)
 
@@ -47,7 +60,7 @@ describe('PuzzlePage', () => {
     })
 
     it('shows the hint bar on a phrase puzzle', async () => {
-      setup(`/p/${encodeURIComponent(missingVowelsPuzzleId)}/`)
+      setup(`${puzzlePath(missingVowelsPuzzleId)}/`)
       writePack(packDate, phrasePack)
 
       render(<PuzzlePage />)
@@ -59,7 +72,7 @@ describe('PuzzlePage', () => {
     // <main> is what it is measured against -- so it has to be exercised through the real page
     // and not only through the frame.
     it('plays a cipher puzzle inside the page chrome', async () => {
-      setup(`/p/${encodeURIComponent(cryptogramPuzzleId)}/`)
+      setup(`${puzzlePath(cryptogramPuzzleId)}/`)
       writePack(packDate, cryptogramPack)
 
       render(<PuzzlePage />)
@@ -81,7 +94,7 @@ describe('PuzzlePage', () => {
   // UiUrlRewriteFunction in template.yaml, and shellFor() in public/sw.js.
   describe('the exported placeholder', () => {
     it('exports exactly one path, under the literal placeholder name', () => {
-      expect(getStaticPaths({})).toEqual({ fallback: false, paths: [{ params: { puzzleId: '__placeholder__' } }] })
+      expect(getStaticPaths({})).toEqual({ fallback: false, paths: [{ params: { puzzleId: ['__placeholder__'] } }] })
     })
 
     it('lets the dev server answer any id', () => {

@@ -22,6 +22,7 @@ import {
   quickPuzzleId,
 } from '@test/__mocks__'
 import { Difficulty, Pack, Puzzle } from '@types'
+import { puzzlePath } from '@utils/puzzle-path'
 
 // jsdom reports navigator.onLine as true, so an unmocked fetchPack fires a real request against a
 // 35-second axios timeout the moment a day is asked for.
@@ -414,16 +415,19 @@ describe('Shelf', () => {
 
       renderShelf()
 
-      expect(rows()[1]).toHaveAttribute('href', `/p/${encodeURIComponent(puzzleId)}`)
+      expect(rows()[1]).toHaveAttribute('href', puzzlePath(puzzleId))
     })
 
-    it('encodes the colons an id carries', () => {
+    // The colons an id carries become path separators rather than %3A. A link a player copies
+    // out of the address bar reads as /p/2026-08-18/gofigure/9f3a1c02.
+    it('writes each part of an id as its own path segment', () => {
       setup()
       writePack('2026-08-18', pack)
 
       renderShelf()
 
-      expect(rows()[0]).toHaveAttribute('href', `/p/${encodeURIComponent(quickPuzzleId)}`)
+      expect(rows()[0]).toHaveAttribute('href', '/p/2026-08-18/gofigure/1a2b3c4d')
+      expect(rows()[0].getAttribute('href')).not.toContain('%3A')
     })
   })
 
@@ -841,10 +845,7 @@ describe('Shelf', () => {
     it('becomes a link once the dictionary is ready', () => {
       setupShelf({ status: 'ready', words: phrazleDictionary })
 
-      expect(screen.getByRole('link', { name: /Phrazle/ })).toHaveAttribute(
-        'href',
-        `/p/${encodeURIComponent(phrazlePuzzleId)}`,
-      )
+      expect(screen.getByRole('link', { name: /Phrazle/ })).toHaveAttribute('href', puzzlePath(phrazlePuzzleId))
     })
 
     // THE ORDERING. An unknown type has NO entry to ask about needsDictionary, so the unknown-type
@@ -1408,7 +1409,7 @@ describe('Shelf, choosing a day', () => {
 
       await user.click(screen.getByRole('button', { name: 'Play Go Figure!' }))
 
-      expect(mockPush).toHaveBeenCalledWith(`/p/${encodeURIComponent('2026-08-17:gofigure:1a2b3c4d')}`)
+      expect(mockPush).toHaveBeenCalledWith('/p/2026-08-17/gofigure/1a2b3c4d')
     })
 
     // The pick is drawn with the day on screen EXCLUDED, so a null pick means "everything outside

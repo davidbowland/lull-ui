@@ -23,32 +23,39 @@ describe('sw.js', () => {
   describe('shellFor', () => {
     // Offline there is no CloudFront, so /p/<id> would miss the precache entirely
     // without this. The brackets are percent-encoded because that is how the worker
-    // asks the Cache API for the literal out/p/[puzzleId]/ path that
+    // asks the Cache API for the literal out/p/[...puzzleId]/ path that
     // scripts/generate-dynamic-pages.js writes -- template.yaml's edge function uses
     // the UNENCODED form for the same file. The asymmetry is deliberate.
     it('rewrites a puzzle URL onto the exported shell', () => {
-      expect(shellFor('/p/2026-08-18:gofigure:9f3a1c02')).toEqual('/p/%5BpuzzleId%5D/index.html')
+      expect(shellFor('/p/2026-08-18/gofigure/9f3a1c02')).toEqual('/p/%5B...puzzleId%5D/index.html')
     })
 
     it('rewrites the trailing-slash form onto the same shell', () => {
-      expect(shellFor('/p/2026-08-18:gofigure:9f3a1c02/')).toEqual('/p/%5BpuzzleId%5D/index.html')
+      expect(shellFor('/p/2026-08-18/gofigure/9f3a1c02/')).toEqual('/p/%5B...puzzleId%5D/index.html')
     })
 
-    // An id carries colons and reaches the address bar encoded. The worker never
-    // decodes it: the whole segment is opaque and only has to match [^/]+.
-    it('rewrites a percent-encoded id onto the same shell', () => {
-      expect(shellFor('/p/2026-08-18%3Agofigure%3A9f3a1c02/')).toEqual('/p/%5BpuzzleId%5D/index.html')
+    // Every link shared before this repo wrote path segments carries the id in one encoded
+    // segment. The worker never decodes anything: a segment is opaque and only has to match
+    // [^/]+, so the older shape rewrites onto the same shell for free.
+    it('rewrites a single percent-encoded segment onto the same shell', () => {
+      expect(shellFor('/p/2026-08-18%3Agofigure%3A9f3a1c02/')).toEqual('/p/%5B...puzzleId%5D/index.html')
     })
 
     // The shell is one file under a bracketed name. Decoding the worker's key has to
     // land on exactly what generate-dynamic-pages.js wrote, or the precache holds a
     // document the worker can never ask for.
     it('names the file the build actually wrote', () => {
-      expect(decodeURIComponent(shellFor('/p/anything'))).toEqual('/p/[puzzleId]/index.html')
+      expect(decodeURIComponent(shellFor('/p/anything'))).toEqual('/p/[...puzzleId]/index.html')
     })
 
     it('rewrites the route data payload onto the placeholder', () => {
-      expect(shellFor('/_next/data/abc123/p/2026-08-18:gofigure:9f3a1c02.json')).toEqual(
+      expect(shellFor('/_next/data/abc123/p/2026-08-18/gofigure/9f3a1c02.json')).toEqual(
+        '/_next/data/abc123/p/__placeholder__.json',
+      )
+    })
+
+    it('rewrites the route data payload for a single-segment id too', () => {
+      expect(shellFor('/_next/data/abc123/p/2026-08-18%3Agofigure%3A9f3a1c02.json')).toEqual(
         '/_next/data/abc123/p/__placeholder__.json',
       )
     })
@@ -61,8 +68,10 @@ describe('sw.js', () => {
       expect(shellFor('/_next/static/chunks/main-abc123.js')).toBeNull()
     })
 
-    it('leaves a nested path under /p/ alone', () => {
-      expect(shellFor('/p/one/two')).toBeNull()
+    // A nested path under /p/ IS a puzzle now -- that is the whole point of the new shape --
+    // so the only thing left under /p/ that names no puzzle is /p/ itself.
+    it('leaves /p/ with nothing after it alone', () => {
+      expect(shellFor('/p/')).toBeNull()
     })
   })
 
@@ -92,7 +101,7 @@ describe('sw.js', () => {
     const template = fs.readFileSync(path.join(__dirname, '..', 'template.yaml'), 'utf8')
 
     it('rewrites onto the same shell, unencoded', () => {
-      expect(template).toContain("request.uri = '/p/[puzzleId]/index.html'")
+      expect(template).toContain("request.uri = '/p/[...puzzleId]/index.html'")
     })
 
     it('rewrites the route data payload onto the same placeholder', () => {

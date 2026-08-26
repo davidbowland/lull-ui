@@ -147,15 +147,19 @@ Resources:
           var uri = request.uri;
 
           // Client-side route data for the dynamic puzzle route, e.g.
-          // /_next/data/<buildId>/p/2026-08-18:gofigure:9f3a1c02.json -> the exported placeholder payload
-          var dataMatch = uri.match(/^(\/_next\/data\/[^\/]+)\/p\/[^\/]+\.json$/);
+          // /_next/data/<buildId>/p/2026-08-18/gofigure/9f3a1c02.json -> the exported placeholder payload
+          var dataMatch = uri.match(/^(\/_next\/data\/[^\/]+)\/p\/[^\/]+(?:\/[^\/]+)*\.json$/);
           if (dataMatch) {
             request.uri = dataMatch[1] + '/p/__placeholder__.json';
             return request;
           }
 
-          if (/^\/p\/[^\/]+(\/)?$/.test(uri)) {
-            request.uri = '/p/[puzzleId]/index.html';
+          // A puzzle id is spelled one path segment per colon, so this takes MANY segments
+          // after /p/ and not one. It reads none of them: every /p/ path that names anything
+          // resolves to the same exported document, which is also why the single encoded
+          // segment older shared links carry still lands on it.
+          if (/^\/p\/[^\/]+(?:\/[^\/]+)*\/?$/.test(uri)) {
+            request.uri = '/p/[...puzzleId]/index.html';
             return request;
           }
 

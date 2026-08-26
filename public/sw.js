@@ -39,17 +39,22 @@ var DICT_PREFIX = 'lull-dict-'
 
 // IMPORTANT: this mirrors UiUrlRewriteFunction in template.yaml. CloudFront runs that
 // rewrite at the edge, and offline there is no edge -- so /p/<id> would miss the cache
-// entirely without it. The exported shell is written to the literal out/p/[puzzleId]/
+// entirely without it. The exported shell is written to the literal out/p/[...puzzleId]/
 // path by scripts/generate-dynamic-pages.js, which is why the URL here carries
 // percent-encoded brackets while the edge function uses them unencoded. Change one and
 // you must change the other.
+//
+// A puzzle id is spelled one path segment per colon, so both patterns take MANY segments
+// after /p/ and not one. Nothing here decodes or counts them -- every /p/ path that names
+// anything at all resolves to the same document -- which is also why the single encoded
+// segment older shared links carry still lands on it.
 function shellFor(pathname) {
-  var dataMatch = pathname.match(/^(\/_next\/data\/[^/]+)\/p\/[^/]+\.json$/)
+  var dataMatch = pathname.match(/^(\/_next\/data\/[^/]+)\/p\/[^/]+(?:\/[^/]+)*\.json$/)
   if (dataMatch) {
     return dataMatch[1] + '/p/__placeholder__.json'
   }
-  if (/^\/p\/[^/]+\/?$/.test(pathname)) {
-    return '/p/%5BpuzzleId%5D/index.html'
+  if (/^\/p\/[^/]+(?:\/[^/]+)*\/?$/.test(pathname)) {
+    return '/p/%5B...puzzleId%5D/index.html'
   }
   return null
 }
