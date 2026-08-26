@@ -1,9 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 
 import { ThemedAnagramsBoard } from './index'
-import { blankAnswerThemedAnagrams, themedAnagramsPuzzle, unusableAnswerThemedAnagrams } from '@test/__mocks__'
+import {
+  blankAnswerThemedAnagrams,
+  legacyScrambleThemedAnagrams,
+  themedAnagramsPuzzle,
+  unusableAnswerThemedAnagrams,
+} from '@test/__mocks__'
 import { Puzzle, ThemedAnagramsData } from '@types'
 
 describe('ThemedAnagramsBoard', () => {
@@ -38,6 +43,15 @@ describe('ThemedAnagramsBoard', () => {
   const ribbon = (): HTMLElement => screen.getByRole('status')
 
   const boxNamed = (ordinal: number): HTMLElement => screen.getByRole('textbox', { name: `Answer ${ordinal} of 4` })
+
+  // The four visible runs, in row order. The scramble a row shows is no longer a fixed read off the
+  // pack -- the shuffle control can redraw it -- so the four of them are read together often enough
+  // to be worth a name.
+  const runs = (): (string | null)[] => screen.getAllByRole('img').map((run) => run.textContent)
+
+  // The pack's own four, which is what a board draws until somebody presses shuffle and what it
+  // draws again on the next visit.
+  const PACK_RUNS = ['ELKTET', 'UNASAPCE', 'LKSETIL', 'TPSLAAU']
 
   const onProgress = jest.fn()
   const onReset = jest.fn()
@@ -673,29 +687,37 @@ describe('ThemedAnagramsBoard', () => {
   })
 
   describe('the floor', () => {
-    // ONE control for the whole board. Four Checks would each answer a question the row already
-    // answers by locking, and they would add four names to a tab order that already carries four
-    // boxes. The count is asserted rather than the presence, because "there is a Check" is also
-    // true of a board that drew four of them.
-    it('puts one control in the instrument band', () => {
+    // ONE VERDICT CONTROL for the whole board, beside one shuffle. Four Checks would each answer a
+    // question the row already answers by locking, and they would add four names to a tab order that
+    // already carries four boxes. The count is asserted rather than the presence, because "there is
+    // a Check" is also true of a board that drew four of them.
+    it('puts the controls in the instrument band', () => {
       const { container } = setup()
 
       expect(container.querySelector('.lull-instrument')).toContainElement(
         screen.getByRole('button', { name: 'Check' }),
       )
-      expect(screen.getAllByRole('button')).toHaveLength(1)
+      expect(container.querySelector('.lull-instrument')).toContainElement(
+        screen.getByRole('button', { name: 'Shuffle letters' }),
+      )
+      expect(screen.getAllByRole('button')).toHaveLength(2)
     })
 
     // TABBED INTO, never out of, which is the only walk that can fail for the reason this name
     // gives: a control dropped from the tab order is simply skipped, so a walk that merely passes
-    // over it lands somewhere plausible either way. Arriving at Check is what a missing tab stop
-    // cannot do.
-    it('runs the tab order from the last box to the control', async () => {
+    // over it lands somewhere plausible either way. Arriving at each control is what a missing tab
+    // stop cannot do.
+    //
+    // The order is the reading order of the band -- the shuffle sits to the left of the verdict --
+    // and both stops are walked, so a second control spliced in ahead of Check cannot hide by simply
+    // being skipped over.
+    it('runs the tab order from the last box through both controls', async () => {
       const { user } = setup()
       boxNamed(4).focus()
 
       await user.tab()
-
+      expect(screen.getByRole('button', { name: 'Shuffle letters' })).toHaveFocus()
+      await user.tab()
       expect(screen.getByRole('button', { name: 'Check' })).toHaveFocus()
     })
 
@@ -710,6 +732,225 @@ describe('ThemedAnagramsBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Check' }))
 
       expect(boxNamed(1)).toHaveFocus()
+    })
+  })
+
+  // THE ONE PRESS ON THIS BENCH THAT TOUCHES NEITHER THE DRAFTS NOR STORAGE. It steps each row one
+  // along the list of arrangements the pack shipped, and says so.
+  describe('the shuffle', () => {
+    // The pack's arrangements by position, which is what a press walks. Written out rather than read
+    // off the fixture, so a fixture edited in the wrong direction reddens here instead of quietly
+    // agreeing with itself.
+    const SECOND_RUNS = ['ELETKT', 'NSAPUACE', 'TILKELS', 'AAUPLTS']
+    const THIRD_RUNS = ['TLTEEK', 'PACNSAEU', 'KTESLLI', 'PALSTUA']
+    const FOURTH_RUNS = ['LTETEK', 'NSCEAUPA', 'LLKSETI', 'TUPSLAA']
+    const SHUFFLED = 'Letters shuffled.'
+
+    // A pack whose four rows shipped DIFFERENT list lengths, which the contract says is normal: two
+    // entries in the same puzzle can hold four and one. Row 1 has somewhere to go and rows 2 to 4 do
+    // not.
+    const mixedLengths: Puzzle<ThemedAnagramsData> = {
+      ...themedAnagramsPuzzle,
+      data: {
+        ...themedAnagramsPuzzle.data,
+        entries: [
+          { answer: 'KETTLE', scrambles: ['ELKTET', 'ELETKT'] },
+          { answer: 'SAUCEPAN', scrambles: ['UNASAPCE'] },
+          { answer: 'SKILLET', scrambles: ['LKSETIL'] },
+          { answer: 'SPATULA', scrambles: ['TPSLAAU'] },
+        ],
+      },
+    }
+
+    const press = async (user: ReturnType<typeof userEvent.setup>): Promise<void> =>
+      user.click(screen.getByRole('button', { name: 'Shuffle letters' }))
+
+    // AN ICON WITH A NAME. Nothing on screen says "Shuffle letters" -- the glyph is a path -- so the
+    // accessible name is the only thing carrying what this control does, and a role query is what
+    // defends it, because it reads the accessibility tree rather than the markup.
+    it('is named for what it does', () => {
+      setup()
+
+      expect(screen.getByRole('button', { name: 'Shuffle letters' })).toBeInTheDocument()
+    })
+
+    // `scrambles[0]` IS THE BOARD AS IT FIRST APPEARS, which is the half of the contract that holds
+    // before anybody presses anything.
+    it('opens on the arrangement the pack put first', () => {
+      setup()
+
+      expect(runs()).toEqual(PACK_RUNS)
+    })
+
+    // ONE STEP ALONG THE PACK'S OWN LIST, and the whole list is walked rather than just the first
+    // step: a control that stepped once and stuck, or that jumped two, passes a single-press test.
+    // WRAPPING TO THE FIRST after the last is the other half -- the contract says cycle back rather
+    // than invent a fifth, and a board that ran off the end would read `undefined` into spellOut.
+    it('walks the list in wire order and wraps to the first', async () => {
+      const { user } = setup()
+
+      await press(user)
+      expect(runs()).toEqual(SECOND_RUNS)
+      await press(user)
+      expect(runs()).toEqual(THIRD_RUNS)
+      await press(user)
+      expect(runs()).toEqual(FOURTH_RUNS)
+      await press(user)
+      expect(runs()).toEqual(PACK_RUNS)
+    })
+
+    // THE LETTERS ARE THE PUZZLE, and this is the promise that survives a re-drawn fixture: whatever
+    // arrangement comes up holds exactly the letters the answer does. A row whose letters changed is
+    // a row whose answer no longer comes out of it, unsolvable with nothing on screen to say why.
+    it.each(ROW_INDEXES)('keeps every letter row %i started with', async (index) => {
+      const { user } = setup()
+
+      await press(user)
+
+      expect([...(runs()[index] ?? '')].sort()).toEqual([...PACK_RUNS[index]].sort())
+    })
+
+    // BOTH HALVES OF THE ROW MOVE TOGETHER. The visible run is aria-hidden noise and the spelled-out
+    // name is what a screen reader gets, so a press that redrew only the plate would leave a blind
+    // player reading letters that are no longer on the board -- and every role query in this file
+    // would go on passing.
+    it('spells the new arrangement out for a reader', async () => {
+      const { user } = setup()
+
+      await press(user)
+
+      expect(screen.getAllByRole('img')[0]).toHaveAccessibleName('The letters are E L E T K T')
+      expect(screen.getAllByRole('textbox')[0]).toHaveAccessibleDescription('The letters are E L E T K T')
+    })
+
+    // SAID, because nothing else this press changes is announced. The four runs live inside
+    // role="img" elements whose names are recomputed silently, so without the ribbon this is a button
+    // that does nothing whatsoever for the one reader who cannot check the plate.
+    it('says the press landed', async () => {
+      const { user } = setup()
+
+      await press(user)
+
+      expect(ribbon()).toHaveTextContent(SHUFFLED)
+    })
+
+    // THE WHOLE OF "the new order is not saved". There is nothing to write -- the drafts are
+    // untouched -- and a call here would hand the shell a value identical to the one it holds and
+    // mark the puzzle started on a board nobody has typed in.
+    it('writes no progress', async () => {
+      const { user } = setup()
+
+      await press(user)
+
+      expect(onProgress).not.toHaveBeenCalled()
+    })
+
+    // AND THE DRAFTS SURVIVE IT. Which arrangement a row is showing is a view; what the player typed
+    // is their work, and a press that reset a box would throw away an answer they were halfway
+    // through.
+    it('leaves the drafts the player has typed', async () => {
+      const { user } = setup()
+      await user.type(boxNamed(2), 'SAUCE')
+
+      await press(user)
+
+      expect(boxNamed(2)).toHaveValue('SAUCE')
+    })
+
+    // NOT PERSISTED, asserted through a second mount rather than through the absence of a call. The
+    // board is unmounted and opened again the way a player leaving the page and coming back opens
+    // it, and `scrambles[0]` is what it draws -- the board as the pack presents it.
+    it('draws the pack’s first arrangement again on the next visit', async () => {
+      const { user } = setup()
+      await press(user)
+      expect(runs()).toEqual(SECOND_RUNS)
+
+      cleanup()
+      setup()
+
+      expect(runs()).toEqual(PACK_RUNS)
+    })
+
+    // A ROW THE PLAYER HAS ALREADY WON KEEPS ITS LETTERS. Its box is readOnly and the chip beside it
+    // says so; moving the plate under a finished row reads for a moment as though it came undone.
+    // Row 1 is the one held still and the other three are asserted to have stepped, so this cannot
+    // pass on a control that stopped moving anything at all.
+    it('leaves a row that is already right alone', async () => {
+      const { user } = setup()
+      await user.type(boxNamed(1), 'KETTLE')
+
+      await press(user)
+
+      expect(runs()[0]).toBe('ELKTET')
+      expect(runs().slice(1)).toEqual(SECOND_RUNS.slice(1))
+    })
+
+    // keepsFocusOnPress, and this is the assertion that defends it. This is the press most likely to
+    // happen mid-word: a player stuck on a row reaches for it while typing, and a press that took
+    // focus would collapse the software keyboard and move the four rows they are reading.
+    it('leaves focus in the box the player was typing in', async () => {
+      const { user } = setup()
+      await user.type(boxNamed(1), 'KET')
+
+      await press(user)
+
+      expect(boxNamed(1)).toHaveFocus()
+    })
+
+    // GONE ONCE THE BOARD IS SOLVED. Every row is right and a right row keeps its letters, so the
+    // press would be a no-op wearing a sentence. The Play again assertion is what stops this passing
+    // on a board that failed to render its floor at all.
+    it('is gone from a solved board', () => {
+      setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      expect(screen.getByRole('button', { name: 'Play again' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Shuffle letters' })).toBeNull()
+    })
+
+    // AND IT COMES BACK when the win is undone, which is the other arm of the same expression. Play
+    // again empties the four boxes, so there are rows in play again and somewhere for them to go.
+    it('comes back when the player starts over', async () => {
+      const { user } = setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(screen.getByRole('button', { name: 'Shuffle letters' })).toBeInTheDocument()
+    })
+
+    // ONE IS A NORMAL LENGTH, not a degenerate pack -- KETTLE at band 4 has exactly one arrangement
+    // hard enough to show, out of 180. The contract says the control hides itself there, because a
+    // button that visibly does nothing reads as a bug in the app. This is also the shape the deployed
+    // API answers with today, so the rows assertion is what says the board still draws.
+    it('is gone when no row has anywhere to go', () => {
+      setup(legacyScrambleThemedAnagrams)
+
+      expect(screen.getAllByRole('img').map((run) => run.textContent)).toEqual(PACK_RUNS)
+      expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Shuffle letters' })).toBeNull()
+    })
+
+    // THE LENGTH VARIES PER ENTRY, so the question is asked per row rather than of the pack. One row
+    // with somewhere to go is enough to offer the control, and the press moves that row and leaves
+    // the three with nowhere to go exactly where they are -- rather than wrapping them back to
+    // themselves noisily or running off the end of their lists.
+    it('is offered while any one row still has somewhere to go', async () => {
+      const { user } = setup(mixedLengths)
+
+      await press(user)
+
+      expect(runs()).toEqual(['ELETKT', 'UNASAPCE', 'LKSETIL', 'TPSLAAU'])
+    })
+
+    // AND IT GOES when that one row is won, which is the case a board-wide `solved` check misses:
+    // three rows are still unsolved and the control is still right to disappear, because the only row
+    // that could move is finished.
+    it('is gone once the only row with somewhere to go is right', async () => {
+      const { user } = setup(mixedLengths)
+
+      await user.type(boxNamed(1), 'KETTLE')
+
+      expect(screen.getAllByRole('textbox')).toHaveLength(4)
+      expect(screen.queryByRole('button', { name: 'Shuffle letters' })).toBeNull()
     })
   })
 
@@ -1186,6 +1427,21 @@ describe('ThemedAnagramsBoard', () => {
         'an entry scramble is not a string',
         [{ answer: 'KETTLE', scramble: 42 }, { answer: 'SAUCEPAN', scramble: 'UNASAPCE' }, { answer: 'SKILLET', scramble: 'LKSETIL' }, { answer: 'SPATULA', scramble: 'TPSLAAU' }], // prettier-ignore
       ],
+      // AN EMPTY LIST IS A MALFORMED ENTRY AND NOT A LEGACY ONE. The contract says there is never a
+      // zero -- an entry that drew nothing costs the whole puzzle rather than shipping empty -- so
+      // this must not fall through to a `scramble` that is not there either.
+      [
+        'an entry ships an empty list of scrambles',
+        [{ answer: 'KETTLE', scrambles: [] }, { answer: 'SAUCEPAN', scrambles: ['UNASAPCE'] }, { answer: 'SKILLET', scrambles: ['LKSETIL'] }, { answer: 'SPATULA', scrambles: ['TPSLAAU'] }], // prettier-ignore
+      ],
+      // EVERY MEMBER IS CHECKED, not just the first, and this is the row that says so. Checked only
+      // at [0] this pack draws four perfectly good rows and throws inside spellOut on the FIRST
+      // PRESS of the shuffle -- minutes after the mount that should have refused it, and as a render
+      // throw that ErrorBoundary turns into "Lull got stuck" for the whole app.
+      [
+        'a later member of a scrambles list is not a string',
+        [{ answer: 'KETTLE', scrambles: ['ELKTET', 42] }, { answer: 'SAUCEPAN', scrambles: ['UNASAPCE'] }, { answer: 'SKILLET', scrambles: ['LKSETIL'] }, { answer: 'SPATULA', scrambles: ['TPSLAAU'] }], // prettier-ignore
+      ],
     ])('draws the sign row and no rows when %s', (_description, entries) => {
       setup(withEntries(entries))
 
@@ -1194,6 +1450,10 @@ describe('ThemedAnagramsBoard', () => {
       expect(screen.getByText('0 of 4 right')).toHaveProperty('textContent', '0 of 4 right')
       expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull()
+      // AND NO SHUFFLE, which is the `rows.length > 0` half of its guard. `!solved` alone leaves a
+      // live control on a board with no rows to shuffle -- a press that says `Letters shuffled.`
+      // over a plate with no letters on it.
+      expect(screen.queryByRole('button', { name: 'Shuffle letters' })).toBeNull()
       expect(screen.queryAllByRole('textbox')).toHaveLength(0)
       expect(screen.queryAllByRole('img')).toHaveLength(0)
     })

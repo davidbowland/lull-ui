@@ -129,12 +129,30 @@ export interface GoFigureData {
 
 // Themed Anagrams
 
-// answer and scramble in ONE object, never two parallel arrays. Parallel arrays permit different
+// answer and scrambles in ONE object, never two parallel arrays. Parallel arrays permit different
 // lengths and permit an index skew, and a type that permits an invalid state will eventually hold
 // one -- here that state is a board showing word 3's scramble above word 2's answer.
+//
+// `scrambles` IS A LIST WHOSE LENGTH HAS TO BE READ, and the tuple type is what says so: at least
+// one, at most SCRAMBLES_PER_ENTRY (4 in lull-api today), and the length VARIES PER ENTRY -- two
+// entries in the same puzzle can hold four and one. ONE IS A NORMAL LENGTH rather than a degenerate
+// pack: KETTLE at band 4 has exactly one arrangement hard enough to show, out of 180.
+//
+// [0] is the board as it first appears and the rest are what the reshuffle control cycles through,
+// IN THE ORDER GIVEN, wrapping back to [0] after the last. Do not sort, dedupe, re-shuffle or extend
+// it: each member is separated from every other by a rule applied in lull-api -- at most a third of
+// the tiles may sit where they sat in any other -- and each is checked against the charged-string
+// blocklist as a composed string. An arrangement this app invented would have passed neither gate.
+// The order carries no difficulty gradient; every member clears the same bar.
+//
+// THE WIRE STILL CARRIES THE OLD SINGULAR `scramble` AND THIS TYPE DOES NOT, deliberately. It is a
+// promise about the generator rather than about the wire, exactly as the board's own guards say --
+// and the shape that is actually on the network today, and in every `lull:pack:` a device has
+// cached, is read structurally in themedanagrams/index.tsx, which is where every other untrusted
+// read on that bench already lives.
 export interface AnagramEntry {
   answer: string // uppercase A-Z, 5-9 letters, the word the player types
-  scramble: string // the same letter multiset, the same length, proved at construction
+  scrambles: [string, ...string[]] // each the same letter multiset and length as `answer`
 }
 
 // No `answer` and no `category`. `answer` is defined above as THE ONE STRING THE PLAYER TYPES, and

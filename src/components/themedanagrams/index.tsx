@@ -29,10 +29,52 @@ import { AnagramEntry, PuzzleComponentProps, ThemedAnagramsData } from '@types'
 const isRight = (guess: string, answer: string): boolean =>
   typeof answer === 'string' && normalizeAnswer(guess) !== '' && normalizeAnswer(guess) === normalizeAnswer(answer)
 
+// THE ARRANGEMENTS A ROW CAN BE DRAWN IN, in wire order, or none at all if this board cannot draw
+// the row. Every read of the letters on this bench goes through here.
+//
+// TWO SHAPES, AND BOTH ARE LIVE. lull-api now ships `scrambles`, a list of 1 to 4 that the reshuffle
+// control cycles through; before that it shipped one `scramble`. The old shape is not history: it is
+// what the deployed API answers with until the list change ships, and it is what every `lull:pack:`
+// a device has already cached holds for as long as that pack is kept -- so it outlives the deploy
+// rather than ending at it. A reader that took `scrambles` alone would refuse all four rows and draw
+// a sign row over nothing, on a pack that is perfectly good.
+//
+// A SINGULAR ENTRY YIELDS A ONE-MEMBER LIST rather than a special case downstream, so exactly one
+// thing in this file knows there were ever two shapes. It also lands in the state the new contract
+// already has a rule for: length 1 means nothing to cycle to, and the control hides itself.
+//
+// THE LIST IS TAKEN AS GIVEN. It is never sorted, deduped, re-shuffled or extended here -- every
+// member is separated from every other by a rule lull-api applied, and each was checked against the
+// charged-string blocklist as a composed string. An arrangement this app invented would have passed
+// neither gate, which is why this bench no longer permutes anything itself.
+//
+// EVERY MEMBER IS CHECKED, not just the first. `data` is opaque JSON, so `["ELKTET", 42]` is a list
+// whose second press hands a number to spellOut and throws during render -- and the press that
+// reaches it can be minutes after the mount that would have caught it.
+const arrangementsOf = (entry: unknown): string[] => {
+  // `typeof null` IS 'object', which is why the null clause is written out rather than assumed. A
+  // pack can hold a null member -- JSON says so -- and without it the very next read is
+  // `null.scrambles`.
+  if (typeof entry !== 'object' || entry === null) {
+    return []
+  }
+
+  const { scramble, scrambles } = entry as { scramble?: unknown; scrambles?: unknown }
+
+  if (Array.isArray(scrambles)) {
+    // An empty list is refused rather than falling through to `scramble`. The contract says there is
+    // never a zero -- an entry that drew nothing costs the whole puzzle rather than shipping empty --
+    // so a list that is present and empty is a malformed entry and not a legacy one.
+    return scrambles.length > 0 && scrambles.every((run) => typeof run === 'string') ? scrambles : []
+  }
+
+  return typeof scramble === 'string' ? [scramble] : []
+}
+
 // A row this board can actually draw.
 //
 // STRUCTURAL, in isValidPuzzle's and hintsOf's spirit: it checks what this component DEREFERENCES
-// and nothing else. `scramble` goes to spellOut, which calls .split on it, so a non-string throws
+// and nothing else. The letters go to spellOut, which calls .split on them, so a non-string throws
 // during render -- and a throw during render is not a blank row. ErrorBoundary catches it and swaps
 // the whole app for "Lull got stuck", which its own comment calls the last resort for what storage
 // and the registry were supposed to have validated.
@@ -49,16 +91,44 @@ const isRight = (guess: string, answer: string): boolean =>
 // check -- it only breaks under a non-blank test like `answerOf`'s `answer.trim() !== ''`. An
 // earlier version of this comment said two against the named clause, which was one too many.
 //
-// `typeof null` IS 'object', which is why the null clause is written out rather than assumed. A pack
-// can hold a null member -- JSON says so -- and without that clause the very next read is
-// `null.scramble`.
-const isEntry = (entry: unknown): entry is AnagramEntry =>
-  typeof entry === 'object' && entry !== null && typeof (entry as AnagramEntry).scramble === 'string'
+// ASKED AS "does this row have letters to draw", which is one question rather than two. The null
+// clause, the object clause and the string clause all live in `arrangementsOf` now, so there is no
+// second place that can learn a different answer about the same entry -- and a row this refuses is
+// exactly a row whose letters could not be read.
+const isEntry = (entry: unknown): entry is AnagramEntry => arrangementsOf(entry).length > 0
 
 // The win, and it is the COMPLETE news: it replaces the fourth row's own sentence rather than
 // following it, because `SPATULA is right — 0 to go.` becomes false the instant this is true. It
 // does not restate the four answers, which are standing in the four boxes the player is looking at.
 const SOLVED = 'Solved. You got all four.'
+
+// What a shuffle says, and it is said because a press that changes only the letters on the plate
+// changes NOTHING a screen reader is watching: the four runs are inside role="img" elements whose
+// names are re-computed silently, so without this sentence the control is a button that does
+// nothing at all for the one reader who cannot check the plate.
+//
+// It reports the whole of what happened and claims nothing about the rows it left alone. A solved
+// row keeps its letters -- see `reshuffle` -- and `Letters shuffled.` is still true of a board where
+// three of the four moved, where `All the letters moved.` would not be.
+const SHUFFLED = 'Letters shuffled.'
+
+// The `d` of one path, stroked with no fill, like every other glyph in this product. A ring with a
+// gap in the top right and an arrow turning clockwise out of it -- the refresh mark every player
+// already knows, which is the whole reason this control can be an icon rather than a word.
+//
+// A 0 0 24 24 VIEWBOX DRAWN AT 18px, where the shelf's chips are a 12 box drawn at 12. The size is
+// what the arrowhead needs: at a 16 box the head has about two units of run against a 1.5-unit
+// stroke and renders as a blob with a ring behind it, which is what the first draft of this did.
+// Rasterized and looked at, not reasoned about. 2/24 of 18px is 1.5px on screen -- the same hairline
+// every other glyph here draws.
+//
+// TWO SUBPATHS IN ONE `d`, the way the shelf's state glyphs are written: the ring with its tangent
+// tail, then the right-angle bracket that caps the tail. A BRACKET AND NOT A CHEVRON, because the
+// chevron's two arms meet at a point that fills in at this weight while the bracket's meet at a
+// corner that does not. The arc is a 300-degree sweep, which is why the large-arc flag is 1 -- at 0
+// the same two endpoints describe the 60-degree stub the gap is cut out of, and the mark becomes a
+// comma.
+const REFRESH_GLYPH = 'M18.52 15.04A8 8 0 1 1 16.66 6.64L19.49 9.47M19.49 4.47v5h-5'
 
 // THE STANDING LINE, and it is the one rule of this game nobody can guess on arrival -- the exact
 // analogue of the tile bench's left-to-right rule and the cipher bench's one-substitution rule. The
@@ -204,6 +274,31 @@ export const ThemedAnagramsBoard = ({
   // is a different component rather than a prop change. `decode` refuses a malformed string whole,
   // so this is four drafts or four empties and never a half-restored board.
   const [guesses, setGuesses] = useState<Guesses>(() => decode(progress))
+
+  // The arrangements each row can be drawn in, in wire order. Derived rather than stored, because
+  // it is a read of the pack and the pack does not change under this component.
+  const arrangements: string[][] = rows.map(arrangementsOf)
+
+  // WHICH ARRANGEMENT EACH ROW IS SHOWING, which is a view of the pack and never a fact about the
+  // puzzle. All at 0 on arrival, because `scrambles[0]` is the board as it first appears; a press
+  // steps each row one along its own list and wraps.
+  //
+  // AN INDEX RATHER THAN THE STRING, and the difference is worth stating: an index cannot hold
+  // letters the pack never shipped. The first version of this control permuted the run itself with
+  // Fisher-Yates, which put an arrangement on screen that had passed none of lull-api's gates --
+  // neither the difficulty dial nor the charged-string check, which is run over every member of the
+  // composed list precisely because this button reaches all of them.
+  //
+  // DELIBERATELY NOT PERSISTED, and that is the design rather than a corner cut. Progress is the
+  // player's WORK -- what they typed -- and which arrangement they pressed their way to is not work.
+  // Storing it would put a display position in a key `decode` would then have to parse, and the
+  // grammar there is four drafts and nothing else. So a walk away and back redraws `scrambles[0]`,
+  // the board as the pack presents it.
+  const [cursors, setCursors] = useState<number[]>(() => rows.map(() => 0))
+
+  // The letters a row is showing. The cursor is only ever written modulo its own row's length, so
+  // this is always in range and needs no fallback.
+  const runOf = (index: number): string => arrangements[index][cursors[index]]
 
   // A TRANSIENT, so it is empty at mount, which is what keeps the region unoccupied on a first
   // render: NVDA and JAWS announce changes inside a region they are ALREADY watching. Anything this
@@ -372,6 +467,40 @@ export const ThemedAnagramsBoard = ({
     onReset?.()
   }
 
+  // The only press on this bench that touches neither the drafts nor storage.
+  //
+  // ONE STEP ALONG THE PACK'S OWN LIST, wrapping to the start after the last -- never a fifth
+  // arrangement of this app's invention. Each row wraps on ITS OWN length, because the length varies
+  // per entry: a board holding four and one is normal, and one press moves the first row to its
+  // second arrangement while the second row stays where it is.
+  //
+  // IT NEVER CALLS onProgress, and that is the whole of "the new order is not saved". There is
+  // nothing to write: the drafts are untouched, so the string the shell already holds is still
+  // exactly right, and a call here would hand it an identical value and mark the puzzle started on a
+  // board nobody has typed in.
+  //
+  // A ROW THAT IS ALREADY RIGHT KEEPS ITS LETTERS. The player finished it, the box is readOnly and
+  // the chip beside it says so; moving the plate under a won row churns the one part of the board
+  // they are done with, and for a moment it reads as though the row came undone. `rights` is this
+  // render's, computed from the same `guesses` the updater is not touching, so the two cannot
+  // disagree.
+  const reshuffle = (): void => {
+    setCursors((current) =>
+      current.map((cursor, index) => (rights[index] ? cursor : (cursor + 1) % arrangements[index].length)),
+    )
+    say(SHUFFLED)
+  }
+
+  // WHETHER THERE IS ANYWHERE TO GO, which is the whole of when this control is offered. The
+  // contract is explicit that a reshuffle hides itself at length 1 -- there is nothing to cycle to,
+  // and a button that visibly does nothing reads as a bug in the app.
+  //
+  // Asked per row and only of the rows STILL IN PLAY, which subsumes the two guards this used to
+  // carry separately. A board with no rows has nothing to ask about, and a solved board has no row
+  // in play -- so neither `rows.length > 0` nor `!solved` has to be written out beside it, and there
+  // is one condition rather than three that can disagree.
+  const canReshuffle = rows.some((_entry, index) => !rights[index] && arrangements[index].length > 1)
+
   // Handed to FloorBar SEPARATELY from `announced`, and that separation is the whole reason the prop
   // exists: the resting line is rendered as a sibling of the live region, so a restored solved board
   // shows its own sentence without a word of it entering a region nobody was watching at mount. It
@@ -412,7 +541,11 @@ export const ThemedAnagramsBoard = ({
             Safari with VoiceOver, which is exactly the styling a marker-less list gets. jsdom keeps
             the role either way, so the assertion below cannot tell you this -- the reason is here. */}
         <ol className={ROWS} role="list">
-          {rows.map((entry, index) => (
+          {/* The entry goes unread here because the letters come from `runOf(index)`, which resolves
+              the row's cursor against its own list of arrangements. Still mapped over `rows` rather
+              than over `arrangements`: `rows` is the guarded four-tuple, and a board that took its
+              row count from anywhere else would draw whatever length that thing happened to hold. */}
+          {rows.map((_entry, index) => (
             // Keyed by index because the array is a fixed four-tuple in wire order that this board
             // never sorts, filters or reorders -- the one case where an index key is stable.
             <li className={ROW} key={index}>
@@ -420,8 +553,8 @@ export const ThemedAnagramsBoard = ({
                   role="img" is right here and wrong on the cryptic bench one file over: a scramble is
                   word-shaped noise with a second encoding to translate, and a cryptic clue is a
                   grammatical sentence whose surface reading is the whole joke. */}
-              <p aria-label={spellOut(entry.scramble)} className={SCRAMBLE} role="img">
-                <span aria-hidden="true">{entry.scramble}</span>
+              <p aria-label={spellOut(runOf(index))} className={SCRAMBLE} role="img">
+                <span aria-hidden="true">{runOf(index)}</span>
               </p>
               <div className="flex items-center gap-[var(--lull-s3)]">
                 {/* The label is a SIBLING, never a wrapper: sr-only hides its subtree, so a wrapping
@@ -444,7 +577,7 @@ export const ThemedAnagramsBoard = ({
                     when the box takes focus. Twelve utterances of four sentences. Hidden, the span
                     does the one job it exists for and nothing else. */}
                 <span aria-hidden="true" className="sr-only" id={lettersId(index)}>
-                  {spellOut(entry.scramble)}
+                  {spellOut(runOf(index))}
                 </span>
                 <input
                   aria-describedby={lettersId(index)}
@@ -509,10 +642,54 @@ export const ThemedAnagramsBoard = ({
           the only live region on this bench. */}
       <div className="lull-instrument">
         <FloorBar message={announced} resting={resting} variant="compact">
-          {/* The gutters are the band's, matching the rows above, so the control's right edge lines
-              up with the boxes' right edge. `justify-end` because the control is alone in this row:
-              the box it is about is on the board, which is the whole trade this bench makes. */}
-          <div className="flex shrink-0 items-center justify-end pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
+          {/* The gutters are the band's, matching the rows above, so the verdict control's right
+              edge lines up with the boxes' right edge. `justify-end` because the row is packed to
+              that edge: the boxes these controls are about are on the board, which is the whole
+              trade this bench makes. */}
+          <div className="flex shrink-0 items-center justify-end gap-[var(--lull-s3)] pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
+            {/* THE SHUFFLE, and it is a `{cond && ...}` slot rather than a third arm of the ternary
+                below on purpose. JSX children are positional, so `false` occupies this slot when the
+                board is solved and the verdict control keeps the index it has always had -- which is
+                what the paragraph below is protecting, and what a control spliced into the list
+                instead of blanked in place would quietly break.
+
+                OFFERED ONLY WHEN THERE IS SOMEWHERE TO GO -- see `canReshuffle`, which asks the one
+                question the other three conditions were approximations of. A solved board, a board
+                with no rows, and a pack whose every entry shipped a single arrangement all answer it
+                the same way, and the last of those is the shape on the network today.
+
+                variant="default", never quiet. The floor is dark in BOTH themes and `quiet` is drawn
+                in --lull-muted, which contrast.test.ts asserts is unreadable on the light floor -- it
+                is the same trap the `floorPrimary` paragraph below describes from the other side.
+
+                AN ICON WITH A NAME, never a bare glyph. WCAG 2.5.3 wants the name to be the words a
+                speaking player would use, and "Shuffle letters" is what they would say; the path is
+                aria-hidden decoration, exactly like the Right chip's tick on the board. Icon-only is
+                what keeps the second control from reading as a second offer of equal weight beside
+                Check -- the argument the button primitive's `quiet` variant makes, made with size
+                here because the color it makes it with is not available on this band.
+
+                keepsFocusOnPress for the reason Check has it: the player presses this while typing,
+                and a press that collapsed the software keyboard would take the four rows they are
+                reading with it. */}
+            {canReshuffle && (
+              <Button aria-label="Shuffle letters" className="shrink-0" keepsFocusOnPress onClick={reshuffle}>
+                <svg
+                  aria-hidden="true"
+                  className="shrink-0"
+                  fill="none"
+                  height="18"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                  width="18"
+                >
+                  <path d={REFRESH_GLYPH} />
+                </svg>
+              </Button>
+            )}
             {/* variant="default", never floorPrimary. The accent is a scarce mark -- the spine pip,
                 the selected cipher square, one primary action -- and this screen already spends it
                 on the hint bar's spent rungs, which paint --lull-accent directly above this floor.

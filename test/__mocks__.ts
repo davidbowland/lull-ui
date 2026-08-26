@@ -289,11 +289,16 @@ export const themedAnagramsHints: ThemedAnagramsHintLadder = [
 
 export const themedAnagramsPuzzle: Puzzle<ThemedAnagramsData> = {
   data: {
+    // FOUR ARRANGEMENTS EACH, which is the ceiling rather than the quota -- the length varies per
+    // entry and one is a normal length. `[0]` is the board as it first appears and the rest are what
+    // the reshuffle control cycles through in this order; the four leading runs are unchanged from
+    // when this fixture held one apiece, so every assertion about a board nobody has pressed anything
+    // on still reads the same string.
     entries: [
-      { answer: 'KETTLE', scramble: 'ELKTET' },
-      { answer: 'SAUCEPAN', scramble: 'UNASAPCE' },
-      { answer: 'SKILLET', scramble: 'LKSETIL' },
-      { answer: 'SPATULA', scramble: 'TPSLAAU' },
+      { answer: 'KETTLE', scrambles: ['ELKTET', 'ELETKT', 'TLTEEK', 'LTETEK'] },
+      { answer: 'SAUCEPAN', scrambles: ['UNASAPCE', 'NSAPUACE', 'PACNSAEU', 'NSCEAUPA'] },
+      { answer: 'SKILLET', scrambles: ['LKSETIL', 'TILKELS', 'KTESLLI', 'LLKSETI'] },
+      { answer: 'SPATULA', scrambles: ['TPSLAAU', 'AAUPLTS', 'PALSTUA', 'TUPSLAA'] },
     ],
     hints: themedAnagramsHints,
     theme: 'Kitchen tools',
@@ -314,10 +319,10 @@ export const blankAnswerThemedAnagrams: Puzzle<ThemedAnagramsData> = {
   data: {
     ...themedAnagramsPuzzle.data,
     entries: [
-      { answer: '', scramble: 'ELKTET' },
-      { answer: 'SAUCEPAN', scramble: 'UNASAPCE' },
-      { answer: 'SKILLET', scramble: 'LKSETIL' },
-      { answer: 'SPATULA', scramble: 'TPSLAAU' },
+      { answer: '', scrambles: ['ELKTET'] },
+      { answer: 'SAUCEPAN', scrambles: ['UNASAPCE'] },
+      { answer: 'SKILLET', scrambles: ['LKSETIL'] },
+      { answer: 'SPATULA', scrambles: ['TPSLAAU'] },
     ],
   },
 }
@@ -332,11 +337,32 @@ export const unusableAnswerThemedAnagrams: Puzzle<ThemedAnagramsData> = {
   data: {
     ...themedAnagramsPuzzle.data,
     entries: [
-      { answer: undefined as unknown as string, scramble: 'ELKTET' },
+      { answer: undefined as unknown as string, scrambles: ['ELKTET'] },
+      { answer: 'SAUCEPAN', scrambles: ['UNASAPCE'] },
+      { answer: 'SKILLET', scrambles: ['LKSETIL'] },
+      { answer: 'SPATULA', scrambles: ['TPSLAAU'] },
+    ],
+  },
+}
+
+// THE SHAPE THAT IS ON THE NETWORK TODAY, and the reason the board reads `scrambles` structurally
+// rather than off the type. lull-api ships one `scramble` per entry until the list change deploys,
+// and every `lull:pack:` already cached on a device holds this shape for as long as that pack is
+// kept -- so it outlives the deploy rather than ending at it. A board that read only `scrambles`
+// would refuse all four rows and draw a sign row over nothing on a pack that is perfectly good.
+//
+// It is also the one-arrangement case: a legacy entry yields exactly one run, so this fixture is
+// what a row with nothing to cycle to looks like.
+export const legacyScrambleThemedAnagrams: Puzzle<ThemedAnagramsData> = {
+  ...themedAnagramsPuzzle,
+  data: {
+    ...themedAnagramsPuzzle.data,
+    entries: [
+      { answer: 'KETTLE', scramble: 'ELKTET' },
       { answer: 'SAUCEPAN', scramble: 'UNASAPCE' },
       { answer: 'SKILLET', scramble: 'LKSETIL' },
       { answer: 'SPATULA', scramble: 'TPSLAAU' },
-    ],
+    ] as unknown as ThemedAnagramsData['entries'],
   },
 }
 
