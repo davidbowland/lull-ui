@@ -4,7 +4,7 @@ import { GoFigureBoard } from '@components/gofigure'
 import { MissingVowelsBoard } from '@components/missingvowels'
 import { PhrazleBoard } from '@components/phrazle'
 import { ThemedAnagramsBoard } from '@components/themedanagrams'
-import { PuzzleComponent, PuzzleType } from '@types'
+import { HintLadder, Puzzle, PuzzleComponent, PuzzleProgress, PuzzleType } from '@types'
 
 // The surface a type is played on, named for the input it is shaped around rather than for
 // the type that happens to use it today. A bench is a room: 'cipher' is a grid you select
@@ -34,6 +34,51 @@ export type Bench = 'cipher' | 'guess' | 'tile' | 'writing'
 // then an accident rather than a decision.
 export const BENCH_ORDER: readonly Bench[] = ['cipher', 'guess', 'writing', 'tile']
 
+/**
+ * How a type computes its own hints, for the types whose rungs depend on what the player has
+ * established. The shell owns WHEN a rung is shown; this owns WHICH.
+ *
+ * It exists because a rung that cannot see the board cannot know what is still worth saying. A pack
+ * ladder is decided before the puzzle ships, which is right for a hint about what a phrase MEANS and
+ * useless for a hint about its letters: "every Q is an E" is worth nothing to a player who already
+ * has Q, and the generator cannot know whether they do.
+ *
+ * IT IS THE SHELL'S QUESTION, NOT THE BOARD'S -- the same standing `needsDictionary` has. A board
+ * still receives its six props and still never learns that hints exist. The half of that sentence
+ * worth reading twice: a rung an adapter sells is written into the board's OWN progress string, so
+ * the board does find, say, some letters locked. It reads that off its own progress and has no idea
+ * why they are there. "The board never learns hints exist" was always the promise; "the board is
+ * never affected by a hint" never was, and it is not one this seam keeps.
+ *
+ * `ladder` returns the rungs already bought, rendered from their frozen records, followed by
+ * speculative placeholders for the unspent tail. HintBar draws only `slice(0, opened)`, so the tail
+ * is computed, never shown, and committed from live state at the moment it is bought -- which is
+ * what stops a ladder recomputed on every render from letting a player open rung 1, learn something,
+ * and watch rung 1 silently upgrade itself into a better hint.
+ *
+ * IT IS ONE TO THREE RUNGS, NEVER ALWAYS THREE. `chooseNext` answers null once the player has
+ * established everything a rung could say, and the speculative tail stops there rather than padding.
+ * That is crypticclue's "a rung you do not have beats a bad one", reached from the other direction.
+ * `null` is the further case -- nothing worth saying at all -- and the frame reads it exactly as it
+ * reads a malformed pack ladder: no bar.
+ *
+ * `open` returns the NEXT PROGRESS STRING, or null when there is nothing left to sell. Null is a
+ * decline and the count stays where it is, which is the behavior HintBar already documents for a
+ * controlled owner that says no. One step past the last rung is the ANSWER -- see `controlLabel` in
+ * hint-bar, where `opened > hints.length` is the reveal -- so an adapter that stops at its own last
+ * rung takes the reveal away from its bench.
+ *
+ * `opened` is DERIVED FROM PROGRESS rather than stored beside it. The count and whatever the rung
+ * did to the board are then two readings of one record and cannot disagree -- the mistake goFigure's
+ * BoardState comment warns about, avoided here by not having a second field at all. It is also why
+ * a board's Play again clears the ladder for free: it writes `''` through the same callback.
+ */
+export interface HintAdapter {
+  ladder(puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null
+  open(puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null
+  opened(progress: PuzzleProgress): number
+}
+
 export interface RegistryEntry {
   bench: Bench
   Component: PuzzleComponent
@@ -42,6 +87,16 @@ export interface RegistryEntry {
   // shape of the bench it opens and choosing is visibly choosing between four different rooms.
   // Stroked, not filled, like `icon`: every glyph here has to read as an outline.
   glyph: string
+  // OPTIONAL, unlike `needsDictionary` above, and the asymmetry is a decision rather than an
+  // oversight. A type that needs a word list and forgets to say so links to a board the shell will
+  // refuse to mount, so that question is required and every entry answers it. This one has a correct
+  // default: three of the six types compute nothing and read their ladder off the pack, and they
+  // always will -- a hint about what a phrase MEANS is decided before the puzzle ships and does not
+  // improve for being recomputed. So absent means "the pack's ladder", which is what the shell did
+  // for every type before this field existed.
+  //
+  // NO ENTRY SETS IT YET. The three that will are wired with their adapters, one type at a time.
+  hints?: HintAdapter
   // The `d` of one path in a 0 0 24 24 viewBox, not JSX, so this file stays .ts and the
   // registry stays data. The shelf draws it inside an aria-hidden <svg> beside the label
   // -- decoration next to words, never a glyph standing alone.

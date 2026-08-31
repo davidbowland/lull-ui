@@ -4,7 +4,7 @@ import React from 'react'
 
 import { PuzzleFrame } from './index'
 import { DictionaryContext, DictionaryState } from '@components/dictionary-provider'
-import { entryFor, REGISTRY, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
+import { entryFor, HintAdapter, REGISTRY, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readProgress, writePack, writeProgress } from '@services/storage'
 import {
@@ -26,7 +26,7 @@ import {
   themedAnagramsPack,
   themedAnagramsPuzzleId,
 } from '@test/__mocks__'
-import { Pack, PuzzleComponent, PuzzleComponentProps } from '@types'
+import { HintLadder, Pack, PuzzleComponent, PuzzleComponentProps } from '@types'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios request
 // against a 35-second timeout for every deep link in this file.
@@ -70,10 +70,26 @@ describe('PuzzleFrame', () => {
 
   const lastProps = (): PuzzleComponentProps => Board.mock.calls[Board.mock.calls.length - 1][0]
 
+  // The adapter the mocked registry hands back, and it is a mutable binding rather than a
+  // `mockImplementationOnce` because `entryFor` is called on EVERY render of the frame -- a "once"
+  // would be spent on the first paint and the rest of the mount would see the shipped entry.
+  //
+  // `setup()` puts it back to undefined, which is the shipped state of all six entries today. Every
+  // test in this file calls `setup()` or `setupPack()`, so no test can inherit a previous test's
+  // adapter, and a test that means to use one says so on its own line.
+  let stubbedAdapter: HintAdapter | undefined
+
   beforeAll(() => {
     mockEntryFor.mockImplementation((type: string) =>
       Object.hasOwn(REGISTRY, type)
-        ? { ...(REGISTRY as Record<string, RegistryEntry>)[type], Component: Board as unknown as PuzzleComponent }
+        ? {
+            ...(REGISTRY as Record<string, RegistryEntry>)[type],
+            Component: Board as unknown as PuzzleComponent,
+            // Written unconditionally, `undefined` and all: `hints?: HintAdapter` reads the same
+            // absent either way, and a spread that appears only sometimes is a second statement of
+            // which mode the entry is in.
+            hints: stubbedAdapter,
+          }
         : undefined,
     )
     // Cache-first, exactly as the real one: the shell re-reads storage afterwards rather than
@@ -85,9 +101,10 @@ describe('PuzzleFrame', () => {
   })
 
   // Every test that touches localStorage clears it first, or one test's pack and progress
-  // answer the next test's reads.
+  // answer the next test's reads. The adapter goes with them for the same reason.
   const setup = (): void => {
     window.localStorage.clear()
+    stubbedAdapter = undefined
   }
 
   // The shared fetch mock writes the goFigure pack over whatever date it is asked for, and the
@@ -681,6 +698,232 @@ describe('PuzzleFrame', () => {
       await user.click(screen.getByRole('button', { name: 'Record progress' }))
 
       expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
+    })
+  })
+
+  // THE SEAM, AND ONLY THE SEAM. Three types are about to compute their rungs at play time from the
+  // board the player has built, because a rung that cannot see the board cannot know what is still
+  // worth saying -- "every Q is an E" is worth nothing to a player who already has Q. None of those
+  // adapters exists yet, so every test below drives a STUB registered against a real type.
+  //
+  // A stub is the right instrument here rather than a shortcut around a missing one. What this
+  // describe is for is the claim that the frame reads NO grammar: it asks the registry for an
+  // adapter, hands it the puzzle and the progress string, and renders whatever comes back. A test
+  // that used cryptogram's real codec would prove that cryptogram's codec works and say nothing
+  // about the seam.
+  describe('a bench whose type carries a hint adapter', () => {
+    // The cheapest grammar that can carry a count: progress is a run of '#', one per rung bought.
+    // No board writes anything like this, which is the point.
+    //
+    // `open` sells one step PAST the last rung, because that step is the answer -- see HintBar's
+    // `controlLabel`, where `opened > hints.length` is the reveal. goFigure's controlled owner does
+    // the same thing, and an adapter that stopped at its own last rung would take the reveal away
+    // from the three benches that are about to use this seam.
+    const stubAdapter = (rungs: string[]): HintAdapter => ({
+      ladder: () => rungs.map((text) => ({ text })) as HintLadder,
+      open: (_puzzle, progress) => (progress.length > rungs.length ? null : `${progress}#`),
+      opened: (progress) => progress.length,
+    })
+
+    const THREE_RUNGS = ['From the adapter, first.', 'From the adapter, second.', 'From the adapter, third.']
+
+    // THE FIXTURE STILL SHIPS A PACK LADDER, and that is what makes the first test an assertion
+    // rather than a tautology. Both ladders are live; only the branch decides which one is drawn.
+    const PACK_RUNG = 'A saying about a meal'
+
+    it('draws the rungs the adapter reports rather than the ones the pack shipped', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(screen.getByText('From the adapter, first.')).toBeInTheDocument()
+      expect(screen.queryByText(PACK_RUNG)).not.toBeInTheDocument()
+    })
+
+    // The purchase, and it goes through the callback the board is handed rather than through a
+    // second writer of its own. `onProgress` is the shell's one path to the progress key, so an
+    // adapter that sold a rung any other way would be a second store to keep in step.
+    it('writes the progress string the adapter returns when a rung is bought', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('#')
+    })
+
+    // WHERE THE RUNG IS NOT. `lull:hints:<puzzleId>` is the uncontrolled bar's own store, and an
+    // adapter type must not touch it: the count and whatever the rung did to the board would then be
+    // two records with different lifetimes, able to disagree in a state no test would think to
+    // write. This is goFigure's argument, and the reason a board's Play again already clears an
+    // adapter's ladder for free -- it writes `''` through the same callback.
+    //
+    // The key is written out rather than built from storage.ts's private prefix, exactly as the
+    // reset test above writes it out: a test that built the key from the same constant the code
+    // builds it from would pass whatever that constant became.
+    it('keeps the count out of the hint store, because the rung lives in the board’s own progress', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(window.localStorage.getItem(`lull:hints:${cryptogramPuzzleId}`)).toBeNull()
+    })
+
+    // A RETURNING PLAYER, and the case that proves the count is the ADAPTER's reading of progress
+    // rather than anything the frame counts for itself. Two rungs are already in the progress
+    // string, so the control opens on "Show 2 hints" and the press is free -- it re-shows what was
+    // paid for instead of charging for it again.
+    it('counts the rungs the adapter says are already bought', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, '##')
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Show 2 hints' }))
+
+      expect(screen.getByText('From the adapter, second.')).toBeInTheDocument()
+      expect(screen.queryByText('From the adapter, third.')).not.toBeInTheDocument()
+      expect(readProgress(cryptogramPuzzleId)).toEqual('##')
+    })
+
+    // ONE TO THREE, AND A SHORT LADDER IS NOT AN ERROR. An adapter returns null from `chooseNext`
+    // when the player has already established everything a rung could say, so a one-rung ladder is
+    // the correct output of a working rule. The bar reads `hints.length` everywhere, so this needs
+    // no arithmetic in the frame -- but nothing said so until this row.
+    it('draws a one-rung adapter ladder rather than refusing it', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(['The only rung worth selling.'])
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 1' }))
+
+      expect(screen.getByText('The only rung worth selling.')).toBeInTheDocument()
+    })
+
+    it('draws a two-rung adapter ladder rather than refusing it', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(['Adapter rung one.', 'Adapter rung two.'])
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 2' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 2' }))
+
+      expect(screen.getByText('Adapter rung one.')).toBeInTheDocument()
+      expect(screen.getByText('Adapter rung two.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Open hint/ })).not.toBeInTheDocument()
+    })
+
+    // The end of a SHORT ladder is still the end of the ladder, and the answer still closes it. The
+    // sentence is `answerOf`'s -- the frame composes nothing and the bar renders what it is handed
+    // -- so what this pins is that the reveal survives a ladder that is not three rungs long.
+    it('closes a short adapter ladder with the answer the pack shipped', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, '##')
+      stubbedAdapter = stubAdapter(['Adapter rung one.', 'Adapter rung two.'])
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Show 2 hints' }))
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answer is Ate ate tea.')).toBeInTheDocument()
+      expect(readProgress(cryptogramPuzzleId)).toEqual('###')
+    })
+
+    // A DECLINE, which is the adapter answering null while the ladder still looks unspent. Nothing
+    // is bought: no progress is written and the count does not move, which is exactly what HintBar
+    // documents for a controlled owner that says no.
+    //
+    // The sheet opens anyway -- the bar has no way to ask for a shut one -- so the assertion that
+    // matters for a player is the last one: the sheet it opened carries its own way out. Without it
+    // a decline is a panel over the board with Escape as its only exit, and a touch device has none.
+    it('buys nothing when the adapter declines the press', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = { ...stubAdapter(THREE_RUNGS), open: () => null }
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toBeNull()
+      expect(screen.queryByText('From the adapter, first.')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument()
+    })
+
+    // `ladder` MAY ANSWER NULL, and the frame reads that the way it reads a malformed pack ladder:
+    // no bar at all. It is the same `hints !== null` gate the pack path has always used, which is
+    // why the adapter branch needed no second guard -- and why this row exists to say the gate
+    // really does cover both.
+    it('draws no bar when the adapter has no ladder to give', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = { ...stubAdapter(THREE_RUNGS), ladder: () => null }
+
+      renderFrame(cryptogramPuzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(screen.queryByRole('button', { name: /hint/i })).not.toBeInTheDocument()
+    })
+
+    // The board's side of the seam, and the whole reason the adapter hangs off the REGISTRY rather
+    // than off the board. The shell asks the registry its own question -- the same standing
+    // `needsDictionary` has -- so the board is handed its six props and learns nothing.
+    it('still tells the board nothing about hints', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(Object.keys(lastProps()).toSorted()).toEqual([
+        'dictionary',
+        'onProgress',
+        'onReset',
+        'onSolved',
+        'progress',
+        'puzzle',
+      ])
+    })
+
+    // The relationship a role query cannot defend on its own. `aria-controls` contributes nothing to
+    // an accessible name, so it can rot in total silence while every other assertion here keeps
+    // passing -- and the adapter path is a new caller of the same bar, so both ends are resolved
+    // here as well as in the bar's own suite.
+    it('points the adapter bar’s control at the sheet it opens', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      const control = await screen.findByRole('button', { name: 'Open hint 1 of 3' })
+
+      expect(control).toHaveAttribute('aria-expanded', 'false')
+      expect(document.getElementById(control.getAttribute('aria-controls') ?? '')).toBeInTheDocument()
+    })
+
+    // THE OTHER SIDE OF THE BRANCH, and it is asserted on the same fixture as the first test so the
+    // only difference between the two is the adapter. Three of the six types compute nothing and
+    // read their ladder off the pack, which is why `hints` is optional -- and their bar keeps its
+    // count in `lull:hints:` and writes no progress, which is the mirror image of the rows above.
+    it('leaves a type with no adapter reading the ladder off the pack', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(screen.getByText(PACK_RUNG)).toBeInTheDocument()
+      expect(window.localStorage.getItem(`lull:hints:${cryptogramPuzzleId}`)).toEqual('1')
+      expect(readProgress(cryptogramPuzzleId)).toBeNull()
     })
   })
 
