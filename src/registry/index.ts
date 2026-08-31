@@ -6,6 +6,7 @@ import { MissingVowelsBoard } from '@components/missingvowels'
 import { PhrazleBoard } from '@components/phrazle'
 import { phrazleHints } from '@components/phrazle/hints'
 import { ThemedAnagramsBoard } from '@components/themedanagrams'
+import { themedAnagramsHints } from '@components/themedanagrams/hints'
 import { HintLadder, Puzzle, PuzzleComponent, PuzzleProgress, PuzzleType } from '@types'
 
 // The surface a type is played on, named for the input it is shaped around rather than for
@@ -281,6 +282,16 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // the rule is a closed box, because on this bench the boundary is a control's, not a
     // baseline's. Stroked with no fill, like the other five.
     glyph: 'M3 2.2v3.4M7.8 3.8v3.4M12.6 1.8v3.4M17.6 3.2v3.4M1 9.4h20v5.2H1z',
+    // THE RUNGS ARE POSITION ON WORDS STILL UNSOLVED, which is the fact a pack ladder cannot know.
+    // This type used to pick its three target entries by answer LENGTH, ranked once at generate
+    // time, so a player who had already solved the longest entry still got the whole-answer reveal
+    // spent on it. Ranking the UNSOLVED set instead is the entire difference, and it needs the board.
+    //
+    // It changes the BOARD, so the board reads hint state off its own live progress: a revealed
+    // letter is pinned at its true index in the scramble and the rest fill the gaps in the current
+    // arrangement's order. The input box is untouched -- no prefill, no locking -- because what a
+    // rung here buys is knowing WHICH letter is true, not typing it for you.
+    hints: themedAnagramsHints,
     // Two arrows, one over the other, pointing opposite ways -- the same things exchanging places,
     // which is what an anagram is and the one fact that separates this type from Missing Vowels.
     // The glyphs and the icons divide the work deliberately: the glyph says what the surface looks

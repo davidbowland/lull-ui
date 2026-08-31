@@ -1,33 +1,12 @@
+import { pinnedDisplay, pinnedIndices } from '@rules/hint-themed-anagrams'
 import { normalizeAnswer } from '@rules/normalize-answer'
 import React, { useEffect, useId, useRef, useState } from 'react'
 
-import { decode, encode, Guesses, MAX_GUESS } from './progress'
+import { isRight } from './answers'
+import { decode, decodeHints, encode, Guesses, MAX_GUESS } from './progress'
 import { Button } from '@components/button'
 import { FloorBar } from '@components/floor-bar'
 import { AnagramEntry, PuzzleComponentProps, ThemedAnagramsData } from '@types'
-
-// The one rule this component applies, and it is vendored rather than authored: the backend decides
-// what counts as the answer, and normalizeAnswer exists only because the comparison runs over free
-// text the player invents at play time, which no generator can enumerate in advance.
-//
-// COPIED WHOLE from missingvowels/index.tsx, all three clauses, so the two benches cannot drift on
-// what an empty or an absent answer means.
-//
-// `typeof answer` IS CHECKED FIRST, and it is the one guard whose absence LATCHES. isValidPuzzle
-// leaves `data` opaque, so an entry whose `answer` is missing or is a number renders four rows that
-// look perfectly fine, because the empty-guess operand short-circuits while every box is empty. The
-// first keystroke then persists progress and only afterwards calls normalizeAnswer(answer), which
-// throws -- so the write lands and the render does not. On every later load the stored character is
-// restored at mount and the throw happens before the player can touch anything, the root error
-// boundary swaps in "Lull got stuck", and nothing self-heals it: the pack is valid, so readPack
-// keeps it, and no code validates a progress string.
-//
-// THE EMPTY-GUESS CLAUSE IS THE KIND A TIDY-UP DELETES, and it is load-bearing. normalizeAnswer
-// maps a string with no alphanumerics to '', so on a pack whose answer is '' the equality alone
-// reports every empty box as right at mount: four chips, `4 of 4 right`, and onSolved on a board
-// nobody has touched. Silent, and it claims the win on the player's behalf.
-const isRight = (guess: string, answer: string): boolean =>
-  typeof answer === 'string' && normalizeAnswer(guess) !== '' && normalizeAnswer(guess) === normalizeAnswer(answer)
 
 // THE ARRANGEMENTS A ROW CAN BE DRAWN IN, in wire order, or none at all if this board cannot draw
 // the row. Every read of the letters on this bench goes through here.
@@ -175,6 +154,26 @@ const spellOut = (displayed: string): string =>
     .map((chunk) => chunk.split('').join(' '))
     .join(', then ')}`
 
+// The box's description: the letters, and which of them a rung has already put in place.
+//
+// THE SECOND SENTENCE IS NOT A REPEAT OF THE ROW ABOVE, and that is why it is here rather than left
+// to the per-letter images. A reader who browses the row meets each letter and hears "revealed" on
+// the pinned ones; a reader who tabs straight into the box meets only this string, and without the
+// clause they would be told the letters and not which of them are true -- which is the entire thing
+// the rung bought.
+//
+// It is silent when nothing is pinned, so an unhinted board's description is byte for byte what it
+// always was.
+const describeRow = (displayed: string, pinned: ReadonlySet<number>): string => {
+  const revealed = [...displayed].filter((_letter, at) => pinned.has(at))
+  if (revealed.length === 0) return spellOut(displayed)
+
+  // `is`/`are` rather than a bracketed plural. This string is spoken, and "1 letter(s)" is a
+  // sentence no reader should have to parse aloud.
+  const verb = revealed.length === 1 ? 'is' : 'are'
+  return `${spellOut(displayed)}. ${revealed.join(', ')} ${verb} revealed and in place.`
+}
+
 // The sign over the working surface. `.lull-signrow` (index.css) is the whole band -- height,
 // ground, hairlines and gutter -- because three of the four benches draw the same one, and a band
 // that three benches share is the grammar rather than a string copied four times.
@@ -209,6 +208,22 @@ const ROW = 'flex flex-col gap-[4px]'
 // a run whose trailing letter-space pushed it off center.
 const SCRAMBLE =
   'lull-sign text-[clamp(1.25rem,6vw,1.625rem)] leading-[1.2] tracking-[0.28em] break-words text-[var(--lull-ink)]'
+
+// A letter a rung pinned into its true position. WEIGHT AND AN UNDERLINE, never hue alone -- the
+// same call the cipher bench makes for its revealed squares, and for the same WCAG 1.4.1 reason: the
+// letters around it are already --lull-ink on --lull-plate, and a pinned tile told apart by which of
+// two inks it draws is a tile nobody with a color vision deficiency can find.
+//
+// A RULE UNDER THE LETTER rather than a box around it. These runs are tracked at 0.28em and wrap on
+// word boundaries; a border would give each pinned letter its own edge inside a line of loose
+// letters and read as a second grid. An underline sits in the space the tracking already leaves and
+// says "this one is fixed" without changing the line's rhythm.
+//
+// None of that is what carries the fact. The tile's accessible NAME says "S, revealed", so a reader
+// who sees no rule at all is told plainly; the treatment here is for the player looking at the row.
+// jsdom lays nothing out and style assertions are banned in this repo, so this string is carried by
+// the device check and by this comment.
+const PINNED = 'font-semibold underline decoration-2 underline-offset-4'
 
 // --lull-rule, never --lull-hair: this border is the whole of what tells a player where the box
 // they type into begins, and hair is decoration that must never identify a control. `min-w-0
@@ -273,7 +288,7 @@ export const ThemedAnagramsBoard = ({
   // Restored once, at mount. The shell keys this component on the puzzle id, so a different puzzle
   // is a different component rather than a prop change. `decode` refuses a malformed string whole,
   // so this is four drafts or four empties and never a half-restored board.
-  const [guesses, setGuesses] = useState<Guesses>(() => decode(progress))
+  const [guesses, setGuesses] = useState<Guesses>(() => decode(progress).guesses)
 
   // The arrangements each row can be drawn in, in wire order. Derived rather than stored, because
   // it is a read of the pack and the pack does not change under this component.
@@ -299,6 +314,62 @@ export const ThemedAnagramsBoard = ({
   // The letters a row is showing. The cursor is only ever written modulo its own row's length, so
   // this is always in range and needs no fallback.
   const runOf = (index: number): string => arrangements[index][cursors[index]]
+
+  // WHAT THE LADDER HAS PINNED, READ OFF THE LIVE `progress` PROP ON EVERY RENDER -- never off the
+  // mount-time state above, and that is the whole of why a bought rung appears at once.
+  //
+  // The shell writes a purchase into this board's own progress string and then re-renders it with a
+  // new `progress`. The four drafts were read in a lazy initializer at mount and have not moved, so
+  // a board that took its pins from state would sell a rung, charge for it, and show nothing until
+  // the player reloaded the page. Re-reading here is two `lastIndexOf` calls and a split of at most
+  // a dozen characters, against a remount that would throw away everything typed but unsaved and
+  // reset all four rows to `scrambles[0]`.
+  //
+  // THE BOARD READS THIS AND NEVER WRITES IT. `encode` still writes the four drafts and nothing
+  // else, and PuzzleFrame re-attaches the tail through the adapter's `merge` -- so the board cannot
+  // clobber a rung on its next keystroke, which is the failure the one-writer rule exists to make
+  // unrepresentable. It knows nothing about hints beyond this list: no ladder, no count, no
+  // sentence, no control.
+  const spent = decodeHints(progress).hints
+
+  // WHETHER THIS ROW CAN BE PINNED AT ALL, asked once so the two functions below cannot disagree.
+  //
+  // `answer` IS CHECKED HERE BECAUSE `isEntry` DELIBERATELY DOES NOT -- see its comment: a row with
+  // an unusable answer still has to RENDER, or the guards that stop a blank answer winning the game
+  // would have nothing left to be tested against. `pinnedDisplay` spreads the answer and returns a
+  // run of the ANSWER'S length, so an absent one throws during render and a blank one would replace
+  // the row's letters with nothing at all.
+  //
+  // THE LENGTH COMPARISON IS THE SECOND HALF and it is not belt and braces. lull-api proves every
+  // scramble is a permutation of its answer at construction, but `data` is opaque JSON off the
+  // network, so a pack CAN arrive with the two out of step -- and pinning would then quietly redraw
+  // the row at the answer's length, adding or dropping tiles the player was counting.
+  const canPin = (index: number): boolean => {
+    const { answer } = rows[index]
+    return typeof answer === 'string' && answer.length === runOf(index).length && answer.length > 0
+  }
+
+  // Which positions of a row's answer the ladder has handed over.
+  const pinnedIn = (index: number): ReadonlySet<number> =>
+    canPin(index) ? pinnedIndices(spent, index, rows[index].answer.length) : new Set<number>()
+
+  // THE RUN AS IT IS DRAWN: revealed letters standing in their true positions, the rest filling the
+  // gaps in the current scramble's own order, skipping one occurrence per pinned letter.
+  //
+  // TWO ALTERNATIVES WERE REJECTED AND ARE RECORDED HERE so the call site does not relitigate them,
+  // with the reasons from `pinnedDisplay`'s own doc comment. RE-SHUFFLING THE UNPINNED REMAINDER
+  // churns letters the player is actively reading, so the board would change more than the hint
+  // justifies -- a rung that bought one fact must not move the other six tiles. CHOOSING A PRE-GATED
+  // SCRAMBLE THAT ALREADY HAS THE LETTER IN PLACE cannot work at all: lull-api's severity dial
+  // MINIMIZES positional agreement -- `maxSharedPositions` is `floor(length / 3)` -- so usually no
+  // member of `scrambles` has the revealed letter where the answer wants it, and a row would
+  // silently fail to pin with nothing to say why.
+  //
+  // A row with nothing pinned takes the same path rather than a branch around it: with an empty
+  // pinned set the pool is the scramble in its own order and every position takes the next letter,
+  // so `pinnedDisplay` is the identity there and one code path is one thing to reason about.
+  const displayOf = (index: number): string =>
+    canPin(index) ? pinnedDisplay(rows[index].answer, runOf(index), pinnedIn(index)) : runOf(index)
 
   // A TRANSIENT, so it is empty at mount, which is what keeps the region unoccupied on a first
   // render: NVDA and JAWS announce changes inside a region they are ALREADY watching. Anything this
@@ -447,14 +518,24 @@ export const ThemedAnagramsBoard = ({
   // leave every test in this file green -- measured, after an earlier version of this comment
   // claimed a reset would make two identical messages silent again. It would not.
   //
-  // The last line is the half the board cannot do itself. A fresh puzzle is a fresh hint ladder, and
-  // the ladder lives at `lull:hints:<puzzleId>` -- storage, which a board gets none of. So this names
-  // an EVENT and the shell decides what it means; naming the key, the route or the component that
-  // answers for it would be the board reaching past the one thing it may say.
+  // The last line is the half the board cannot do itself, and it means less than it used to without
+  // meaning nothing. The ladder now lives in the progress string above, so the '' this press writes
+  // is what actually clears it -- `merge` answers a board write of '' with '', which is the adapter's
+  // side of the same decision -- and `removeHints` on the shell's side is a no-op on a key nothing
+  // wrote. What the signal still does is the half deletion never covered: it tells the MOUNTED hint
+  // bar to shut its sheet and stop announcing yesterday's rungs.
+  //
+  // It still names an EVENT and lets the shell decide what it means. Naming the key, the route or
+  // the component that answers for it would be the board reaching past the one thing it may say --
+  // which is exactly why this line survives a change that moved the storage out from under it.
   //
   // It cannot be folded into the empty progress string above, tempting as that is. `encode` writes ''
   // whenever every box is empty, which is also what a player who deletes their four drafts produces,
-  // and charging them their spent rungs for a backspace is the trap CLAUDE.md documents.
+  // so the two are one string and the ladder goes with either. That IS the trap CLAUDE.md documents,
+  // and it is accepted here rather than solved: the alternative is a stored `|2|I2,B3` beside four
+  // empty boxes, which `wasSolvedBefore` and the shelf both read as a started board -- a bench
+  // reporting itself started because a hint was bought, which is a lie about the only thing those
+  // two flags mean.
   //
   // Optional-called: `onReset` is optional on the props, and a board that assumed the shell always
   // supplies it would crash on exactly the press this exists for.
@@ -484,6 +565,13 @@ export const ThemedAnagramsBoard = ({
   // they are done with, and for a moment it reads as though the row came undone. `rights` is this
   // render's, computed from the same `guesses` the updater is not touching, so the two cannot
   // disagree.
+  //
+  // A PINNED LETTER STAYS PUT ACROSS A SHUFFLE, and this function needs no line for it. The cursor
+  // moves, `displayOf` recomputes from the new scramble, and `pinnedDisplay` puts the revealed
+  // letters back at their true indices while the remainder fills the gaps in the new arrangement's
+  // order. So the press cycles exactly what the player has left to work out and leaves what they
+  // bought alone -- which is the property that would have been lost had the pinning been folded into
+  // `cursors` instead of computed at draw time.
   const reshuffle = (): void => {
     setCursors((current) =>
       current.map((cursor, index) => (rights[index] ? cursor : (cursor + 1) % arrangements[index].length)),
@@ -549,12 +637,33 @@ export const ThemedAnagramsBoard = ({
             // Keyed by index because the array is a fixed four-tuple in wire order that this board
             // never sorts, filters or reorders -- the one case where an index key is stable.
             <li className={ROW} key={index}>
-              {/* The visible run is aria-hidden and this element's NAME spells the letters out.
-                  role="img" is right here and wrong on the cryptic bench one file over: a scramble is
-                  word-shaped noise with a second encoding to translate, and a cryptic clue is a
-                  grammatical sentence whose surface reading is the whole joke. */}
-              <p aria-label={spellOut(runOf(index))} className={SCRAMBLE} role="img">
-                <span aria-hidden="true">{runOf(index)}</span>
+              {/* ONE role="img" PER LETTER, where this row used to be one role="img" over the whole
+                  run, and the split is what the pinning bought. A scramble is word-shaped noise with
+                  a second encoding to translate -- that is why the letters are images at all, here
+                  and not on the cryptic bench one file over, whose clue is a grammatical sentence
+                  with a surface reading that is the whole joke -- but a pinned tile is a fact about
+                  ONE letter, and the children of a role="img" are not exposed at all. A single image
+                  could only say it in prose, which would leave "which letter is true" resolvable
+                  only by counting along a sentence.
+
+                  So each letter names itself, and a pinned one names itself as revealed. The row
+                  reads "S revealed, O, W, H" letter by letter, which is what `spellOut` was
+                  achieving in one breath, and `getByRole('img', { name: 'S, revealed' })` is then an
+                  assertion about the accessibility tree rather than about a class.
+
+                  Keyed by position because these are letters at fixed indices of a run this board
+                  never sorts or filters -- the same case the row keys above are. */}
+              <p className={SCRAMBLE}>
+                {[...displayOf(index)].map((letter, at) => (
+                  <span
+                    aria-label={pinnedIn(index).has(at) ? `${letter}, revealed` : letter}
+                    className={pinnedIn(index).has(at) ? PINNED : undefined}
+                    key={at}
+                    role="img"
+                  >
+                    {letter}
+                  </span>
+                ))}
               </p>
               <div className="flex items-center gap-[var(--lull-s3)]">
                 {/* The label is a SIBLING, never a wrapper: sr-only hides its subtree, so a wrapping
@@ -577,7 +686,7 @@ export const ThemedAnagramsBoard = ({
                     when the box takes focus. Twelve utterances of four sentences. Hidden, the span
                     does the one job it exists for and nothing else. */}
                 <span aria-hidden="true" className="sr-only" id={lettersId(index)}>
-                  {spellOut(runOf(index))}
+                  {describeRow(displayOf(index), pinnedIn(index))}
                 </span>
                 <input
                   aria-describedby={lettersId(index)}
