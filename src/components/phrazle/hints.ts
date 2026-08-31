@@ -1,6 +1,6 @@
 import { choosePhrazleRung, phrazleHintFor, PhrazleSpentRung, seededRandom } from '@rules/hint-phrazle'
 
-import { attachHints, decode, decodeHints, PhrazleHintTail } from './progress'
+import { attachHints, decode, decodeHints, encode, PhrazleHintTail } from './progress'
 import type { HintAdapter } from '@registry'
 import { HintLadder, PhrazleData, Puzzle, PuzzleProgress } from '@types'
 
@@ -82,10 +82,16 @@ const fold = (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PhrazleSpentRu
  * appended from the fold above.
  *
  * `merge` is the one-writer rule for this type: the board wrote `{"guesses":[...]}` and knows nothing
- * of the two hint fields, so the tail is re-attached from what is stored. A board write of '' is
- * Play again, and it answers '' -- re-attaching a ladder there would hand a player back rungs they
- * threw away on a board that no longer has them, and '' is also what the shell reads as "no
- * progress".
+ * of the two hint fields, so the tail is re-attached from what is stored. IT EXTENDS EVERY BOARD
+ * WRITE, INCLUDING ''.
+ *
+ * A BOARD WRITE OF '' IS PLAY AGAIN ON THIS BENCH AND ONLY PLAY AGAIN -- `encode([])` is
+ * `{"guesses":[]}`, so an emptied board is not '' here the way it is one bench over -- and it is
+ * extended anyway rather than answered with ''. Reading '' as "start over" is the guess that cost
+ * Themed Anagrams a purchase on a backspace, and three adapters saying the same sentence in the same
+ * words has to mean the same thing in all three. The reset is the shell's, off `onReset`, which
+ * `playAgain` raises immediately after this write and PuzzleFrame answers by storing '' over the
+ * whole record.
  *
  * `opened` reads the stored count rather than the length of the spent list, because the last step a
  * bar can sell is the ANSWER and there is no rung for it. See `PhrazleHintTail` in progress.ts.
@@ -96,7 +102,17 @@ const fold = (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PhrazleSpentRu
 export const phrazleHints: HintAdapter = {
   ladder: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null => {
     const answer = answerOf(puzzle)
-    const probe = fold(puzzle, progress)
+    const { hints, opened } = decodeHints(progress)
+
+    // THE REVEAL CLOSES THE LADDER, and this is what makes "the tail is never shown" true rather than
+    // nearly true. `opened` exceeds the bought rung count in exactly one state -- the answer has been
+    // taken -- and HintBar draws `slice(0, opened)`. The tail is folded from LIVE state, so a slice
+    // one past the bought rungs reaches into it: a hint nobody bought, on screen, free. It also
+    // pushes `hints.length` back above `opened`, which takes "Show answer" off the control and
+    // replaces it with an offer of a rung the player has already paid past. This bench's tail is the
+    // steadiest of the three -- guesses only accumulate -- and the rule is stated the same way on all
+    // three, because a sentence three adapters make in identical words has to be true in all three.
+    const probe = opened > hints.length ? hints : fold(puzzle, progress)
 
     // An empty ladder is not a short ladder. The frame reads null the way it reads a malformed pack
     // ladder -- no bar at all -- which is the right answer for a pack whose answer never arrived,
@@ -106,9 +122,11 @@ export const phrazleHints: HintAdapter = {
   },
 
   merge: (boardWrite: PuzzleProgress, current: PuzzleProgress): PuzzleProgress =>
-    boardWrite === '' ? '' : attachHints(boardWrite, decodeHints(current)),
+    attachHints(boardWrite, decodeHints(current)),
 
   open: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null => {
+    const answer = answerOf(puzzle)
+    const { guesses } = decode(progress, answer)
     const probe = fold(puzzle, progress)
     const { hints, opened } = decodeHints(progress)
 
@@ -136,7 +154,14 @@ export const phrazleHints: HintAdapter = {
     const tail: PhrazleHintTail =
       opened < probe.length ? { hints: probe.slice(0, opened + 1), opened: opened + 1 } : { hints, opened: opened + 1 }
 
-    return attachHints(progress, tail)
+    // `encode(guesses)` rather than the stored string, so the board portion this writes is one the
+    // decoder above just accepted -- the same thing themedanagrams' `open` does one bench over, and
+    // this one used to be the odd one out with no comment saying why. `attachHints` copies whatever
+    // `guesses` array it finds in the string it is handed, so passing `progress` carried forward rows
+    // `decode` would truncate on shape and walked straight past `encode`'s MAX_STORED window: a
+    // hand-edited key holding fifty guesses grew by a rung on every purchase and was re-refused on
+    // every load, with a ladder standing beside a history nothing can restore.
+    return attachHints(encode(guesses), tail)
   },
 
   opened: (progress: PuzzleProgress): number => decodeHints(progress).opened,

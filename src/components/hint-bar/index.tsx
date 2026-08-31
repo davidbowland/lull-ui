@@ -307,6 +307,15 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
  * order. On a solved puzzle it renders exactly as it always does: the answer is already on screen,
  * so there is nothing left to protect.
  *
+ * THAT SENTENCE IS THE CALLER'S TO KEEP AND IT WAS BRIEFLY UNTRUE. A pack ladder is fixed, so a
+ * solved puzzle draws the same bar it always did; a COMPUTED one is folded against live state, and
+ * two of the three adapters had nothing left to choose once every square or every row was right --
+ * so they answered null, PuzzleFrame drew no bar, and this 60px `shrink-0` band unmounted on the
+ * winning keystroke, re-laying out the board underneath it. Worse on cryptogram, where an unlocked
+ * square can still be cleared: the band flickered as a player toggled the last letter. Both adapters
+ * now fall back to the ladder a fresh board would have shown, so this file's promise holds on all six
+ * benches and null means only "this pack has no ladder at all".
+ *
  * Opened rungs are drawn in a sheet that OVERLAYS the board rather than in a panel that shares the
  * column with it. The instrument sits `--lull-seam` up from the bottom edge on every bench, in
  * every state, and a hint that could push it down would break the one promise all four benches
@@ -388,9 +397,11 @@ export const HintBar = ({
   //
   // WHICH ERASURE depends on where the number lives, and both benches get the property for free. On
   // an uncontrolled bar the shell deletes `lull:hints:<puzzleId>` and the board writes ''. On a
-  // controlled one the count is in the board's own progress string, so the board's `onProgress('')`
-  // takes the rungs and the reveal together -- the adapter's `merge` answers a board write of '' with
-  // '' -- and `removeHints` is a no-op on a key nothing wrote.
+  // controlled one the count is in the board's own progress string, and the board's `onReset()` is
+  // what takes the rungs and the reveal together: PuzzleFrame answers that signal by writing '' over
+  // the whole record, and `removeHints` is a no-op on a key nothing wrote. NOT the board's
+  // `onProgress('')` beside it -- an adapter's `merge` extends every board write including that one,
+  // because '' is also what an emptied last box produces and a backspace must not cost a purchase.
   const hasSolution = solution !== undefined
   const isRevealed = hasSolution && opened > hints.length
 
@@ -625,6 +636,15 @@ export const HintBar = ({
                 pack, and the type's own registry adapter over a vendored rule for the three that
                 compute theirs on the device. This bar decides when a rung is shown, never what it
                 says, and it cannot tell the two authors apart.
+
+                THE SLICE SHOWS ONLY WHAT WAS BOUGHT, AND THAT IS THE CALLER'S GUARANTEE RATHER THAN
+                THIS FILE'S. `opened` is the count of steps paid for, and on an adapter bench it is
+                legitimately one PAST the ladder -- that last step is the answer reveal, which has no
+                rung. So a caller whose ladder grew after the reveal was bought would have this slice
+                reach one rung into the speculative tail: a hint nobody paid for, drawn free. Each
+                adapter closes its ladder at the bought rungs once the reveal is out, which is what
+                makes "the tail is never shown" true here. This bar cannot check it -- it is handed an
+                array and a number and can tell neither where they came from.
 
                 KEYED BY INDEX, which is correct here for the reason index keys are usually wrong
                 elsewhere. A key has to be stable for the thing it identifies, and the failure mode

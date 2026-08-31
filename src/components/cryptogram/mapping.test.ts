@@ -340,6 +340,10 @@ describe('the ladder field', () => {
       ['a count with a sign on it', 'VAZT|+1|LE'],
       ['a count below the rungs it stands beside', 'VAZT|0|LE'],
       ['a count more than one past the last rung', 'VAZT|3|LE'],
+      // A REVEAL ON A LADDER OF ZERO, which `open` cannot produce from any board: the first press
+      // either appends a rung or declines. Admitted, it put a free speculative rung on screen --
+      // HintBar draws `slice(0, opened)` over a ladder whose tail the adapter folds from live state.
+      ['a step paid on no rungs at all', 'VAZT|1|'],
       ['a rung of an unknown kind', 'VAZT|1|XE'],
       ['a letter rung naming no letter', 'VAZT|1|L'],
       ['a word rung naming no index', 'VAZT|1|W'],

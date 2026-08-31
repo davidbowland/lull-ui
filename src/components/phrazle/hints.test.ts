@@ -77,6 +77,23 @@ describe('the phrazle hint adapter', () => {
       expect(texts('')).toEqual(texts(''))
     })
 
+    // THE TAIL IS NEVER SHOWN, and this is the row that makes that sentence true rather than nearly
+    // true. `opened` is one PAST the bought rungs once the reveal is taken and HintBar draws
+    // `slice(0, opened)`, so a ladder that kept folding forward would put a rung nobody bought on
+    // screen. This board bought a SHORT ladder -- two rungs and the reveal -- and then lost its
+    // guesses, which `decode` really does truncate when a refetched pack's answer no longer fits the
+    // shape they were made against; the pools refill and the fold finds a third rung.
+    it('stops growing its tail once the reveal is bought', () => {
+      const short = [0, 1, 2].reduce(
+        (progress: string) => phrazleHints.open(PUZZLE, progress) as string,
+        GUESSED_EVERYTHING,
+      )
+      const regrown = JSON.stringify({ ...JSON.parse(short), guesses: [] })
+
+      expect(phrazleHints.opened(regrown)).toEqual(3)
+      expect(texts(regrown)).toHaveLength(2)
+    })
+
     // A pack a player can genuinely be handed: `isValidPuzzle` leaves `data` opaque, so a puzzle
     // whose answer never arrived is a VALID pack with nothing to build a rung out of. Null is what
     // the frame reads as "no bar", which is the same answer a malformed pack ladder gets.
@@ -167,6 +184,19 @@ describe('the phrazle hint adapter', () => {
       expect(phrazleHints.open(PUZZLE, spent)).toBeNull()
     })
 
+    // IT RE-ENCODES THE BOARD PORTION rather than carrying the stored string forward, which is what
+    // the sibling bench's `open` does and what this one used to skip with no comment saying why.
+    // `attachHints` copies whatever `guesses` array it is handed, so a purchase used to write back
+    // rows `decode` had just truncated on shape and rows outside `encode`'s MAX_STORED window --
+    // growing the string on every press with a history nothing will ever restore. The board portion
+    // this writes is one the decoder just accepted.
+    it('writes back only the guesses the decoder accepted', () => {
+      // The second guess is the wrong shape for TOE HOLD, so `decode` truncates the history there.
+      const mixed = JSON.stringify({ guesses: ['HOT HAND', 'SEVEN WORDS'] })
+
+      expect(JSON.parse(phrazleHints.open(PUZZLE, mixed) as string).guesses).toEqual(['HOT HAND'])
+    })
+
     // Null is a DECLINE and the count stays where it is, which is what HintBar documents for a
     // controlled owner that says no. A pack with no answer has no rung to sell and no bar drawn over
     // it either, so this guards a caller rather than a player.
@@ -202,11 +232,21 @@ describe('the phrazle hint adapter', () => {
       expect(phrazleHints.merge('{"guesses":["HOT HAND"]}', '')).toEqual('{"guesses":["HOT HAND"]}')
     })
 
-    // PLAY AGAIN, and it is the one board write an adapter must not extend. Every board spells "there
-    // is nothing on this board" as '', the shell reads that as no progress, and re-attaching a ladder
-    // to it would hand a player back rungs they threw away on a board that no longer has them.
-    it('answers a board that started over with nothing at all', () => {
-      expect(phrazleHints.merge('', buy(3))).toEqual('')
+    // '' IS EXTENDED LIKE ANY OTHER BOARD WRITE, and the reset is the shell's. This bench reaches ''
+    // only through Play again -- `encode([])` is `{"guesses":[]}`, so an emptied board is not '' here
+    // the way it is on Themed Anagrams -- and it is extended anyway, because reading '' as "start
+    // over" is the guess that cost that bench a purchase on a backspace. `playAgain` raises `onReset`
+    // in the same handler and PuzzleFrame stores '' over the whole record; that is asserted at the
+    // frame, where the signal is.
+    it('extends a board write of nothing at all, and leaves the reset to the shell', () => {
+      expect(decode(phrazleHints.merge('', buy(2)), phrazlePuzzle.data.answer)).toStrictEqual({
+        guesses: [],
+        hints: [
+          { kind: 'absent', letters: 'AGS' },
+          { kind: 'present', letters: 'DHL' },
+        ],
+        opened: 2,
+      })
     })
   })
 

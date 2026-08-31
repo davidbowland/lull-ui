@@ -245,6 +245,10 @@ describe('phrazle progress', () => {
       ['there are more rungs than the ladder can hold', stored([], 4, [ABSENT, PRESENT, WORD, ABSENT])],
       ['the count is below the rungs it is beside', stored([], 1, LADDER)],
       ['the count is more than one past them', stored([], 5, LADDER)],
+      // A REVEAL ON A LADDER OF ZERO, which `open` cannot produce from any board: the first press
+      // either appends a rung or declines. Admitted, it put a free speculative rung on screen --
+      // HintBar draws `slice(0, opened)` over a ladder whose tail the adapter folds from live state.
+      ['a step is paid on no rungs at all', stored([], 1, [])],
       ['the count is not a whole number', stored([], 1.5, [ABSENT])],
       ['the count is a string the encoder cannot write', stored([], '1', [ABSENT])],
       ['there are rungs and no count', JSON.stringify({ guesses: ['HOT HAND'], hints: LADDER })],

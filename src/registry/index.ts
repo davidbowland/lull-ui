@@ -101,8 +101,15 @@ export const BENCH_ORDER: readonly Bench[] = ['cipher', 'guess', 'writing', 'til
  * Co-locating the count with the rungs in the board's own progress string is still the point, and
  * still goFigure's: split across two stores with different prune rules, the count and the rungs can
  * disagree, and a board showing a spent ladder while offering "Open hint 1 of 3" is a state no test
- * would think to write. It is also why a board's Play again clears the ladder for free -- it writes
- * `''` through the same callback, and `merge` above answers '' with ''.
+ * would think to write.
+ *
+ * WHAT IT DOES NOT BUY IS A FREE RESET, and an earlier draft of this paragraph claimed it did -- that
+ * a board's Play again clears the ladder by writing `''` through the same callback. It does not,
+ * because `merge` extends '' like any other board write, and it has to: four boards write '' when
+ * their last box, square or draft is emptied, and Themed Anagrams does it on an ordinary keystroke.
+ * An adapter reading that as a reset takes two purchased rungs away for a backspace. So `merge`
+ * answers the STRING and `PuzzleFrame`'s `onReset` answers the SIGNAL, storing '' over the whole
+ * record; the board raises the signal it already had and learns nothing new.
  */
 export interface HintAdapter {
   ladder(puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null

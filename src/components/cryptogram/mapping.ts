@@ -175,7 +175,13 @@ const hintTail = (rest: string[]): CryptogramHintTail => {
   // `opened` is the rung count, or one past it once the answer has been revealed. Below the count is
   // a record claiming rungs nobody paid for; further above it is a reveal on a ladder that never
   // reached its end.
-  if (opened < tokens.length || opened > tokens.length + 1) return noHints()
+  //
+  // AND THE REVEAL NEEDS A LADDER TO BE PAST. A flat `tokens.length + 1` admitted `|1|` -- one step
+  // paid on a ladder of zero -- which `open` cannot produce from any board: the first press either
+  // appends a rung or declines. The bar then drew a free speculative rung, because HintBar shows
+  // `slice(0, opened)` over a ladder whose tail this adapter folds forward from live state. The
+  // ceiling is therefore the rung count, plus one only when there is a rung to be past.
+  if (opened < tokens.length || opened > tokens.length + (tokens.length > 0 ? 1 : 0)) return noHints()
 
   return { hints: tokens.map(rungOf), opened }
 }
@@ -232,10 +238,10 @@ export const decodeHints = (progress: string | null): CryptogramHintTail => {
  * writing the shortest payload it always did and what makes every board stored before this change a
  * legacy payload that needs no migration.
  *
- * It does NOT special-case an empty `boardWrite`. A board write of '' is a reset and must stay '',
- * but that is a decision about what a board MEANT, which belongs to the adapter that owns the type's
- * ladder rather than to a string joiner -- and `open` legitimately attaches a tail to '' when a
- * player buys a rung before touching a square.
+ * IT DOES NOT SPECIAL-CASE AN EMPTY `boardWrite`, and nothing above it does either any more. '' is
+ * what `encode({})` writes when the last square comes off, which is a player clearing their board and
+ * not a reset -- this bench has no Play again at all. A board write is a board write. `open` also
+ * attaches a tail to '' legitimately, when a player buys a rung before touching a square.
  */
 export const attachHints = (boardWrite: string, tail: CryptogramHintTail): string => {
   if (tail.opened === 0) return boardWrite

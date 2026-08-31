@@ -2,6 +2,7 @@ import {
   AnagramHintEntry,
   chooseThemedAnagramsRung,
   themedAnagramsHintFor,
+  ThemedAnagramsPlayerState,
   ThemedAnagramsSpentRung,
 } from '@rules/hint-themed-anagrams'
 
@@ -76,8 +77,11 @@ const solvedIn = (entries: AnagramHintEntry[], guesses: Guesses): boolean[] =>
  * NOTHING HERE DRAWS. Every choice the rule makes is a total order over answer length and index, so
  * the tail is stable for a given board with no seed to carry.
  */
-const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagramsSpentRung[]) => {
-  const state = { solved: solvedIn(entries, guesses) }
+const grow = (
+  entries: AnagramHintEntry[],
+  state: ThemedAnagramsPlayerState,
+  spent: ThemedAnagramsSpentRung[],
+): ThemedAnagramsSpentRung[] => {
   const probe = [...spent]
 
   while (probe.length < MAX_RUNGS) {
@@ -93,6 +97,34 @@ const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagra
   return probe
 }
 
+// A board with every row still to win. Four members because `entriesOf` answers with exactly four or
+// with none, so there is no shorter honest way to say it and no length to derive.
+const NOTHING_SOLVED: ThemedAnagramsPlayerState = { solved: [false, false, false, false] }
+
+const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagramsSpentRung[]) => {
+  const probe = grow(entries, { solved: solvedIn(entries, guesses) }, spent)
+  if (probe.length > 0) return probe
+
+  // A WON BOARD HAS NOTHING LEFT TO CHOOSE, AND THE BAND STILL HAS TO STAND. All four rows right is
+  // the only state that empties this fold on a drawable pack -- every rung aims at an unsolved entry
+  // -- and it arrives on the winning KEYSTROKE, for the player who bought nothing, which is most of
+  // them. An empty ladder is null, null unmounts a 60px `shrink-0` band, and the board would re-lay
+  // itself out at the instant of the solve. Worse, an unlocked box can still be cleared, so the band
+  // flickered as a player toggled the last letter.
+  //
+  // So a won board shows the ladder a fresh one would have shown. That is honest rather than a
+  // placeholder: the rungs are speculative, HintBar draws only `slice(0, opened)`, and a player who
+  // has already won reads a hint about an answer standing in the box beside it. What it buys is the
+  // band -- and with it the answer reveal, which `controlLabel` reaches only through a ladder.
+  //
+  // It cannot fire on a pack this board refuses to draw: `entriesOf` answers with no entries, so the
+  // fresh fold is empty too and the frame draws no bar at all, which is the right answer there.
+  //
+  // NOTHING BOUGHT CAN BE REPLACED BY IT. A non-empty `spent` makes `grow` non-empty whatever the
+  // state, so this branch is reachable only with an empty ladder in hand.
+  return grow(entries, NOTHING_SOLVED, [])
+}
+
 /**
  * How Themed Anagrams computes its own ladder, and the entry the registry hangs off `themedanagrams`.
  *
@@ -101,16 +133,28 @@ const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagra
  * tail is appended from the fold above.
  *
  * `merge` is the one-writer rule for this type: the board wrote four newline-joined drafts and knows
- * nothing of the two hint fields, so the tail is re-attached from what is stored. A board write of ''
- * is Play again, and it answers '' -- re-attaching a ladder there would hand a player back rungs they
- * threw away on a board that no longer has them, and '' is also what the shell reads as "no progress".
+ * nothing of the two hint fields, so the tail is re-attached from what is stored. IT EXTENDS EVERY
+ * BOARD WRITE, INCLUDING ''.
  *
- * That is the one place `encode`'s own '' and Play again's '' are the same string and mean the same
- * thing, which is why this needs no `onReset` of its own: a player who deletes their four drafts one
- * key at a time genuinely does write '', and the board's own comment calls charging them their rungs
- * for a backspace a trap. It is not one here, because the board never writes '' through this except
- * from those two paths, and Play again is the one the player asked for. The cost of the other is a
- * ladder lost to an emptied board, which is the same trade cryptogram makes one bench over.
+ * IT USED TO ANSWER '' WITH '', and on this bench that destroyed purchases on an ordinary keystroke.
+ * `encode` writes '' whenever all four drafts are empty and `change` calls it on every keystroke, so
+ * type a draft, buy two rungs, backspace to empty and the ladder was gone: `opened` back to 0, the
+ * pinned letters unpinned, the bar re-offering "Hint 1 of 3". The other two benches never met it --
+ * cryptogram's `apply` refuses to clear a locked square, so `encode` cannot reach '' once a rung is
+ * bought, and phrazle's `encode([])` is `{"guesses":[]}`. This one had only the argument that '' has
+ * two producers and one of them is Play again.
+ *
+ * THE OTHER PRODUCER IS WHY THE SHELL DOES THE DROPPING NOW. `playAgain` calls `onProgress('')` AND
+ * `onReset()`; `change` calls only the first. So the two are already distinguishable from outside the
+ * board, by the signal the board already raises, and PuzzleFrame drops the ladder there -- see its
+ * `onReset`. The board learns nothing it did not already know, and a backspace stops costing a
+ * purchase.
+ *
+ * THE ARGUMENT THAT USED TO STAND HERE WAS THAT KEEPING THE TAIL LIES TO `wasSolvedBefore` AND THE
+ * SHELF, and it does not survive being read twice. Those two flags mean "this player has started this
+ * puzzle", and a player who has spent two hints on it has started it. `|2|I2,B3` beside four empty
+ * boxes reports a started board because the board IS started; what would be the lie is coming back to
+ * find the rungs gone.
  *
  * `opened` reads the stored count rather than the length of the spent list, because the last step a
  * bar can sell is the ANSWER and there is no rung for it. See `ThemedAnagramsHintTail` in progress.ts.
@@ -123,17 +167,25 @@ const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagra
 export const themedAnagramsHints: HintAdapter = {
   ladder: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null => {
     const entries = entriesOf(puzzle)
-    const { guesses, hints } = decode(progress)
-    const probe = fold(entries, guesses, hints)
+    const { guesses, hints, opened } = decode(progress)
+
+    // THE REVEAL CLOSES THE LADDER, and this is what makes "the tail is never shown" true rather than
+    // nearly true. `opened` exceeds the bought rung count in exactly one state -- the answer has been
+    // taken -- and HintBar draws `slice(0, opened)`. The tail is folded from LIVE state, so it
+    // regrows when a solved row is cleared, and the slice then reached one rung into it: a hint
+    // nobody bought, on screen, free. It also pushed `hints.length` back above `opened`, which takes
+    // "Show answer" off the control and replaces it with an offer of a rung the player has already
+    // paid past.
+    const probe = opened > hints.length ? hints : fold(entries, guesses, hints)
 
     // An empty ladder is not a short ladder. The frame reads null the way it reads a malformed pack
     // ladder -- no bar at all -- which is the right answer for a pack this board would refuse to
-    // draw, and for the endgame state where all four rows are already won.
+    // draw, and is now the ONLY thing that reaches it: see `fold` for why a won board keeps its band.
     return probe.length === 0 ? null : (probe.map((rung) => themedAnagramsHintFor(entries, rung)) as HintLadder)
   },
 
   merge: (boardWrite: PuzzleProgress, current: PuzzleProgress): PuzzleProgress =>
-    boardWrite === '' ? '' : attachHints(boardWrite, decodeHints(current)),
+    attachHints(boardWrite, decodeHints(current)),
 
   open: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null => {
     const entries = entriesOf(puzzle)

@@ -19,6 +19,10 @@ describe('the cryptogram hint adapter', () => {
   const HIGH_RUNG = 'Every Z is a T.'
   const WORD_RUNG = 'One of the words is ATE.'
 
+  // Every cipher letter mapped correctly, which is the state that used to empty the fold and take the
+  // hint bar with it.
+  const SOLVED_BOARD = encode({ E: 'E', V: 'A', Z: 'T' })
+
   // Buying driven through `open` rather than by writing a progress string by hand, so what these
   // rows exercise is the string the adapter actually stores.
   const buy = (steps: number, from = ''): string => {
@@ -60,12 +64,27 @@ describe('the cryptogram hint adapter', () => {
       expect(texts('')).toEqual(texts(''))
     })
 
-    // ONE TO THREE, NEVER ALWAYS THREE. A board with every cipher letter already mapped correctly has
-    // no letter candidate and no word with an unsolved letter in it, so there is nothing left worth
-    // saying and the frame draws no bar -- rather than a bar whose press opens a sheet with an empty
-    // rung in it.
-    it('has no ladder to give on a board that is already solved', () => {
-      expect(cryptogramHints.ladder(PUZZLE, encode({ E: 'E', V: 'A', Z: 'T' }))).toBeNull()
+    // A SOLVED BOARD KEEPS ITS BAND. Every cipher letter is mapped correctly, so the fold has no
+    // candidate and no word left to name -- and an empty ladder is null, which unmounts a 60px band
+    // on the winning keystroke and re-lays the grid out underneath it. Worse here than anywhere else:
+    // an unlocked square can still be cleared, so the band flickered as a player toggled the last
+    // letter. So the ladder a solved board shows is the one a fresh board would have shown, and
+    // nothing of it is displayed unless the player buys it.
+    it('keeps a ladder to draw on a board that is already solved', () => {
+      expect(texts(SOLVED_BOARD)).toEqual([LOW_RUNG, HIGH_RUNG, WORD_RUNG])
+    })
+
+    // THE TAIL IS NEVER SHOWN, and this is the row that makes that sentence true rather than nearly
+    // true. `opened` is one PAST the bought rungs once the reveal is taken, HintBar draws
+    // `slice(0, opened)`, and the tail regrows the moment a player un-maps a letter they had right --
+    // so the ladder had to stop growing at the rungs that were paid for. Built by solving the board
+    // with one rung bought, taking the reveal on that one-rung ladder, and then clearing a square.
+    it('stops growing its tail once the reveal is bought', () => {
+      const revealed = cryptogramHints.open(PUZZLE, cryptogramHints.merge(SOLVED_BOARD, buy(1))) as string
+      const cleared = cryptogramHints.merge(encode({ E: 'E' }), revealed)
+
+      expect(cryptogramHints.opened(cleared)).toEqual(2)
+      expect(texts(cleared)).toEqual([LOW_RUNG])
     })
 
     // A pack a player can genuinely be handed: `isValidPuzzle` leaves `data` opaque, so a puzzle
@@ -179,12 +198,16 @@ describe('the cryptogram hint adapter', () => {
       expect(cryptogramHints.merge('VAZT', '')).toEqual('VAZT')
     })
 
-    // '' is what the shell reads as "no progress", so a ladder hanging off it would be a board that
-    // reads as untouched while carrying a purchase. This bench has no Play again, so the only writer
-    // of '' is `encode({})` when the last letter comes off -- and a locked square cannot be cleared,
-    // so a board that reaches '' has no locked squares on it to lose.
-    it('answers an emptied board with nothing at all', () => {
-      expect(cryptogramHints.merge('', buy(3))).toEqual('')
+    // '' IS EXTENDED LIKE ANY OTHER BOARD WRITE. This bench has no Play again and raises `onReset`
+    // nowhere, so the only writer of '' is `encode({})` when the last square comes off -- which is a
+    // player clearing their board, not throwing away a purchase. It is all but unreachable with a
+    // rung bought, because a rung locks the squares it fills and a locked square cannot be cleared;
+    // the exception is a rung naming a cipher letter the answer never covered, which locks a square
+    // carrying nothing. Answering '' with '' would have thrown the ladder away there, and it would
+    // have made the sentence all three adapters share untrue on the one bench that reaches it daily.
+    it('extends a board write of nothing at all', () => {
+      expect(cryptogramHints.opened(cryptogramHints.merge('', buy(3)))).toEqual(3)
+      expect(decode(cryptogramHints.merge('', buy(3)), CIPHERTEXT).mapping).toEqual({})
     })
   })
 

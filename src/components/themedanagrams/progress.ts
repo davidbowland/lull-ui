@@ -64,13 +64,35 @@ const RUNG_SEPARATOR = ','
 // One rung, compactly: a kind letter and the entry it is aimed at. Two characters against the ~40 a
 // JSON record of the same fact costs, on a string that is re-written on every keystroke.
 //
+// FIVE KINDS, NOT THREE. `final` and `inner2` are the residual forms the rule reaches for when a rung
+// stacks onto an entry that already has one -- `bookends` minus a pinned first letter, `prefix3`
+// minus a pinned first letter -- and they exist so a stacked ladder names only what is new. See
+// STEP_KINDS in `@rules/hint-themed-anagrams`. The marks are the initials that were still free: F for
+// final, N for the inner pair, since I and P are taken.
+//
+// THE PATTERN AND THE TWO TABLES ARE ONE FACT WRITTEN THREE TIMES, and TypeScript holds two of them
+// together -- MARKS is a total Record over the rule's union, so a sixth kind is a compile error here.
+// The regex is the one that has to be remembered, and it is the one a stored string is refused by.
+//
 // The index is a single digit 0-3 because this board is exactly four rows and refuses to draw any
 // other length -- see `rows` in index.tsx. Refusing a wider index here is not pedantry: a rung naming
 // entry 8 renders as "The 8th answer starts with ?." on a board with four rows in it, which is a
 // sentence the shell would print verbatim.
-const RUNG = /^[BIP][0-3]$/
-const KINDS: Record<string, ThemedAnagramsSpentRung['kind']> = { B: 'bookends', I: 'initial', P: 'prefix3' }
-const MARKS: Record<ThemedAnagramsSpentRung['kind'], string> = { bookends: 'B', initial: 'I', prefix3: 'P' }
+const RUNG = /^[BFINP][0-3]$/
+const KINDS: Record<string, ThemedAnagramsSpentRung['kind']> = {
+  B: 'bookends',
+  F: 'final',
+  I: 'initial',
+  N: 'inner2',
+  P: 'prefix3',
+}
+const MARKS: Record<ThemedAnagramsSpentRung['kind'], string> = {
+  bookends: 'B',
+  final: 'F',
+  initial: 'I',
+  inner2: 'N',
+  prefix3: 'P',
+}
 
 // The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in
 // hint-themed-anagrams.ts, and a test that imported the bound it checks against would assert the cap
@@ -191,7 +213,13 @@ const hintTail = (rawOpened: string, rawSpent: string): ThemedAnagramsHintTail =
   // `opened` is the rung count, or one past it once the answer has been revealed. Below the count is
   // a record claiming rungs nobody paid for; further above it is a reveal on a ladder that never
   // reached its end.
-  if (opened < tokens.length || opened > tokens.length + 1) return noHints()
+  //
+  // AND THE REVEAL NEEDS A LADDER TO BE PAST. A flat `tokens.length + 1` admitted `|1|` -- one step
+  // paid on a ladder of zero -- which `open` cannot produce from any board: the first press either
+  // appends a rung or declines. The bar then drew a free speculative rung, because HintBar shows
+  // `slice(0, opened)` over a ladder whose tail this type's adapter folds forward from live state.
+  // The ceiling is therefore the rung count, plus one only when there is a rung to be past.
+  if (opened < tokens.length || opened > tokens.length + (tokens.length > 0 ? 1 : 0)) return noHints()
 
   return { hints: tokens.map((token) => ({ entryIndex: Number(token[1]), kind: KINDS[token[0]] })), opened }
 }
@@ -267,10 +295,11 @@ export const decodeHints = (progress: string | null): ThemedAnagramsHintTail =>
  * writing the shortest payload it always did and what makes every board stored before this change a
  * legacy payload that needs no migration.
  *
- * It does NOT special-case an empty `boardWrite`. A board write of '' is Play again and must stay '',
- * but that is a decision about what a board MEANT, which belongs to the adapter that owns this type's
- * ladder rather than to a string joiner -- and `open` legitimately attaches a tail to '' when a
- * player buys a rung before typing anything.
+ * IT DOES NOT SPECIAL-CASE AN EMPTY `boardWrite`, and nothing above it does either any more. `encode`
+ * returns '' whenever all four boxes are empty and the board calls `encode` on every keystroke, so
+ * reading '' as "the player started over" charged them their rungs for a backspace. A board write is
+ * a board write; the reset is `onReset`, which PuzzleFrame answers by storing '' over the whole
+ * record. `open` also attaches a tail to '' legitimately, when a player buys a rung before typing.
  */
 export const attachHints = (boardWrite: string, tail: ThemedAnagramsHintTail): string => {
   if (tail.opened === 0) return boardWrite

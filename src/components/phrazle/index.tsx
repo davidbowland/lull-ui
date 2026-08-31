@@ -552,19 +552,20 @@ export const PhrazleBoard = ({
     // takes no argument and names no destination, so deleting lull:hints:<puzzleId> and resetting
     // the hint bar stay entirely the shell's business.
     //
-    // WHAT IT IS NEEDED FOR HAS CHANGED, and the old sentence -- that an empty progress string cannot
-    // carry that meaning -- is now backwards on this bench. The ladder lives IN the string, so the ''
-    // below is exactly what clears it: the adapter's `merge` answers a board write of '' with '', and
-    // `removeHints` on the shell's side is a no-op on a key nothing wrote. What the signal still does
-    // is the half an erasure never covered -- it tells the MOUNTED hint bar to shut its sheet and
-    // stop announcing yesterday's rungs.
+    // THE '' BELOW DOES NOT CLEAR THE LADDER, and the line after it is what does. The rungs live in
+    // the progress string, and the adapter's `merge` re-attaches them to every board write including
+    // this one -- because '' is what an emptied board writes on the sibling writing bench, where an
+    // adapter reading it as "start over" charged the player their rungs for a backspace. So the
+    // signal is the reset: PuzzleFrame answers it by storing '' over the whole record, and
+    // `removeHints` beside it is a no-op on a key nothing wrote. The signal also does the half an
+    // erasure never covers -- it tells the MOUNTED hint bar to shut its sheet and stop announcing
+    // yesterday's rungs.
     //
-    // AND ON THIS BENCH THE '' IS UNAMBIGUOUS, which is the one place it reads better than at the
-    // sibling writing bench. `encode` here always writes a JSON object, so this line is the only
-    // thing in the component that can produce '' -- there is no emptied-board spelling of it to be
-    // confused with, and no player who loses a ladder to a backspace. Themed Anagrams accepts that
-    // trade deliberately because its `encode` does write '' on four empty boxes; see its own
-    // `playAgain`.
+    // ON THIS BENCH THE '' WOULD HAVE BEEN UNAMBIGUOUS, and it is worth saying that nothing relies on
+    // it. `encode` here always writes a JSON object, so this line is the only thing in the component
+    // that can produce '' -- but three adapters saying the same sentence in the same words has to
+    // mean the same thing in all three, and the bench that reaches an ambiguous '' on every keystroke
+    // is the one that sets the rule.
     onProgress('')
     onReset?.()
   }

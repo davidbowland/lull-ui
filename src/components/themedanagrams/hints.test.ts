@@ -18,6 +18,9 @@ describe('the themed anagrams hint adapter', () => {
   const BOOKENDS_RUNG = 'The 3rd answer starts with S and ends with T.'
   const PREFIX_RUNG = 'The 4th answer starts with SPA.'
 
+  // Every row right, which is the state that used to empty the fold and take the hint bar with it.
+  const SOLVED_BOARD = 'KETTLE\nSAUCEPAN\nSKILLET\nSPATULA'
+
   const draft = (...guesses: string[]): string =>
     encode([guesses[0] ?? '', guesses[1] ?? '', guesses[2] ?? '', guesses[3] ?? ''] as Guesses)
 
@@ -71,10 +74,26 @@ describe('the themed anagrams hint adapter', () => {
       expect(texts('')).toEqual(texts(''))
     })
 
-    // ONE TO THREE, NEVER ALWAYS THREE. Every row is won, so there is no entry left to aim at and the
-    // frame draws no bar -- rather than a bar whose press opens a sheet with an empty rung in it.
-    it('has no ladder to give once all four are solved', () => {
-      expect(themedAnagramsHints.ladder(PUZZLE, draft('KETTLE', 'SAUCEPAN', 'SKILLET', 'SPATULA'))).toBeNull()
+    // A WON BOARD KEEPS ITS BAND. Every row is right, so the fold has nothing left to choose -- and
+    // an empty ladder is null, which unmounts a 60px band on the winning keystroke and re-lays the
+    // board out underneath it. So the ladder a won board shows is the one a fresh board would have
+    // shown. Nothing is displayed unless the player buys it, and the answer they would be buying it
+    // about is already in the box beside it.
+    it('keeps a ladder to draw once all four are solved', () => {
+      expect(texts(SOLVED_BOARD)).toEqual([INITIAL_RUNG, BOOKENDS_RUNG, PREFIX_RUNG])
+    })
+
+    // THE TAIL IS NEVER SHOWN, and this is the row that makes that sentence true rather than nearly
+    // true. `opened` is one PAST the bought rungs once the reveal is taken, HintBar draws
+    // `slice(0, opened)`, and the tail regrows the moment a won row is cleared -- so the ladder had
+    // to stop growing at the rungs that were paid for. Built by winning every row with one rung
+    // bought, taking the reveal on that one-rung ladder, and then emptying the board again.
+    it('stops growing its tail once the reveal is bought', () => {
+      const revealed = themedAnagramsHints.open(PUZZLE, themedAnagramsHints.merge(SOLVED_BOARD, buy(1))) as string
+      const cleared = themedAnagramsHints.merge('', revealed)
+
+      expect(themedAnagramsHints.opened(cleared)).toEqual(2)
+      expect(texts(cleared)).toEqual([INITIAL_RUNG])
     })
 
     // A pack a player can genuinely be handed: `isValidPuzzle` leaves `data` opaque, so a puzzle
@@ -184,11 +203,34 @@ describe('the themed anagrams hint adapter', () => {
       expect(themedAnagramsHints.merge(draft('KETTLE'), '')).toEqual(draft('KETTLE'))
     })
 
-    // PLAY AGAIN, and it is the one board write an adapter must not extend. Every board spells "there
-    // is nothing on this board" as '', the shell reads that as no progress, and re-attaching a ladder
-    // to it would hand a player back rungs they threw away on a board that no longer has them.
-    it('answers a board that started over with nothing at all', () => {
-      expect(themedAnagramsHints.merge('', buy(3))).toEqual('')
+    // '' HAS TWO PRODUCERS ON THIS BENCH, and the row that used to stand here asserted the loss as
+    // though it had one. `playAgain` writes it, and so does `change` -- `encode` returns '' whenever
+    // all four drafts are empty and `change` calls `encode` on every keystroke. So this write cannot
+    // be read as "start over" without charging a player their rungs for a backspace, which is the
+    // trap CLAUDE.md documents. The tail survives, and PuzzleFrame's `onReset` is what tells the two
+    // apart -- asserted at the frame, where the signal is, rather than here, where it is not.
+    it('keeps a bought rung when the board writes its own empty portion', () => {
+      const merged = themedAnagramsHints.merge('', buy(2))
+
+      expect(decode(merged)).toStrictEqual({
+        guesses: ['', '', '', ''],
+        hints: [
+          { entryIndex: 1, kind: 'initial' },
+          { entryIndex: 2, kind: 'bookends' },
+        ],
+        opened: 2,
+      })
+    })
+
+    // THE PATH THAT REACHES IT, driven through the board's own codec rather than by handing `merge`
+    // a bare ''. Type a draft, buy two rungs, backspace to empty: the rungs, the count and the pinned
+    // letters are all still there.
+    it('survives a draft typed, hinted and then backspaced away', () => {
+      const typed = themedAnagramsHints.merge(draft('KET'), buy(2))
+      const emptied = themedAnagramsHints.merge(draft(''), typed)
+
+      expect(themedAnagramsHints.opened(emptied)).toEqual(2)
+      expect(texts(emptied)).toEqual([INITIAL_RUNG, BOOKENDS_RUNG, PREFIX_RUNG])
     })
   })
 

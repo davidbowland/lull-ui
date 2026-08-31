@@ -195,6 +195,11 @@ describe('themed anagrams progress', () => {
         ['a count with a sign on it', '|+1|I2'],
         ['a count below the rungs it stands beside', '|0|I2'],
         ['a count more than one past the last rung', '|3|I2'],
+        // A REVEAL ON A LADDER OF ZERO, which `open` cannot produce from any board: the first press
+        // either appends a rung or declines. Admitted, it put a free speculative rung on screen --
+        // HintBar draws `slice(0, opened)` over a ladder whose tail the adapter folds from live
+        // state.
+        ['a step paid on no rungs at all', '|1|'],
         ['a rung of an unknown kind', '|1|Z2'],
         ['a rung naming a row this board would refuse to draw', '|1|I4'],
         ['a rung naming no row at all', '|1|I'],

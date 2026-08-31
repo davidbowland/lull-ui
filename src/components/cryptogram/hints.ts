@@ -83,7 +83,7 @@ export const revealedLetters = (data: CryptogramHintData, spent: CryptogramSpent
  * NOTHING HERE DRAWS. Unlike Phrazle, every choice this rule makes is a total order over the
  * ciphertext's own letter counts, so the tail is stable for a given board with no seed to carry.
  */
-const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpentRung[]): CryptogramSpentRung[] => {
+const grow = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpentRung[]): CryptogramSpentRung[] => {
   const state = { mapping }
   const probe = [...spent]
 
@@ -100,6 +100,34 @@ const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpent
   return probe
 }
 
+// A board with nothing filled in, which is what a solved one looks like to this rule.
+const EMPTY_BOARD: Mapping = {}
+
+const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpentRung[]): CryptogramSpentRung[] => {
+  const probe = grow(data, mapping, spent)
+  if (probe.length > 0) return probe
+
+  // A SOLVED BOARD HAS NOTHING LEFT TO CHOOSE, AND THE BAND STILL HAS TO STAND. A fully correct
+  // mapping is the only state that empties this fold on a drawable pack -- every rung aims at a
+  // cipher letter the player has not got right -- and it arrives on the winning KEYSTROKE, for the
+  // player who bought nothing, which is most of them. An empty ladder is null, null unmounts a 60px
+  // `shrink-0` band, and the grid would re-lay itself out at the instant of the solve. Worse, an
+  // UNLOCKED square can still be cleared, so the band flickered as a player toggled the last letter.
+  //
+  // So a solved board shows the ladder a fresh one would have shown. That is honest rather than a
+  // placeholder: the rungs are speculative, HintBar draws only `slice(0, opened)`, and a player who
+  // has already won reads a hint about a square that is standing right in front of them. What it buys
+  // is the band -- and with it the answer reveal, which `controlLabel` reaches only through a ladder.
+  //
+  // It cannot fire on a pack this board refuses to draw: `hintDataOf` answers with '' for a field
+  // that never arrived, so the fresh fold is empty too and the frame draws no bar at all, which is
+  // the right answer there.
+  //
+  // NOTHING BOUGHT CAN BE REPLACED BY IT. A non-empty `spent` makes `grow` non-empty whatever the
+  // board, so this branch is reachable only with an empty ladder in hand.
+  return grow(data, EMPTY_BOARD, [])
+}
+
 /**
  * How Cryptogram computes its own ladder, and the entry the registry hangs off `cryptogram`.
  *
@@ -108,19 +136,22 @@ const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpent
  * is appended from the fold above.
  *
  * `merge` is the one-writer rule for this type: the board wrote `<pairs>` and knows nothing of the
- * two hint fields, so the tail is re-attached from what is stored. A board write of '' is the state
- * `encode({})` produces when the last letter is cleared -- NOT a reset, because this bench has no
- * Play again and no `onReset` at all -- and it is answered with '' regardless, because '' is what
- * the shell reads as "no progress" and a ladder hanging off it would be a board that reads as
- * untouched while carrying a purchase.
+ * two hint fields, so the tail is re-attached from what is stored. IT EXTENDS EVERY BOARD WRITE,
+ * INCLUDING ''. A board write of '' is the state `encode({})` produces when the last letter is
+ * cleared, which is not a reset -- this bench has no Play again and raises `onReset` nowhere at all
+ * -- so answering it with '' would throw away a purchase on a press of the eraser.
  *
- * Losing the rungs there is the cost, and it is one press of the eraser away on a board with a
- * single letter on it. It is accepted because the alternative is worse: `|2|LE,LZ` is a string
- * `wasSolvedBefore` and the shelf both read as started, and a bench that reported itself started
- * because a hint was bought would be lying about the only thing those two flags mean. The squares a
- * rung filled are also still on the board -- clearing the LAST letter is what writes '', and a
- * locked square cannot be cleared -- so this is reachable only from a board whose every remaining
- * letter is the player's own, which is a board that has no locked squares on it.
+ * IT IS ALL BUT UNREACHABLE HERE, and it is written this way anyway, for two reasons. The first is
+ * that "all but" is doing real work: a rung locks the squares it fills and a locked square cannot be
+ * cleared, so a bought ladder normally keeps at least one pair in the mapping -- but a rung naming a
+ * cipher letter the ANSWER never covered locks a square that carries nothing, and a board holding
+ * only those encodes to ''. The second is that all three adapters say this in the same words, and a
+ * sentence three files share has to be true in all three: Themed Anagrams reaches it on an ordinary
+ * keystroke, and the rule is the same rule.
+ *
+ * `|2|LE,LZ` beside an empty grid reads as a started puzzle to `wasSolvedBefore` and the shelf, which
+ * used to be the argument against keeping it. It is not a lie: those flags mean "this player has
+ * started this puzzle", and a player who has spent two hints on it has started it.
  *
  * `opened` reads the stored count rather than the length of the spent list, because the last step a
  * bar can sell is the ANSWER and there is no rung for it. See `CryptogramHintTail` in mapping.ts.
@@ -131,18 +162,26 @@ const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpent
 export const cryptogramHints: HintAdapter = {
   ladder: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null => {
     const data = hintDataOf(puzzle)
-    const { hints, mapping } = decode(progress, data.ciphertext)
-    const probe = fold(data, mapping, hints)
+    const { hints, mapping, opened } = decode(progress, data.ciphertext)
+
+    // THE REVEAL CLOSES THE LADDER, and this is what makes "the tail is never shown" true rather than
+    // nearly true. `opened` exceeds the bought rung count in exactly one state -- the answer has been
+    // taken -- and HintBar draws `slice(0, opened)`. The tail is folded from LIVE state, so it
+    // regrows when a player un-maps a letter they had right, and the slice then reached one rung into
+    // it: a hint nobody bought, on screen, free. It also pushed `hints.length` back above `opened`,
+    // which takes "Show answer" off the control and replaces it with an offer of a rung the player
+    // has already paid past.
+    const probe = opened > hints.length ? hints : fold(data, mapping, hints)
 
     // An empty ladder is not a short ladder. The frame reads null the way it reads a malformed pack
     // ladder -- no bar at all -- which is the right answer for a pack whose ciphertext never
-    // arrived, and very nearly the only input that can reach it: a board with an unmapped cipher
-    // letter always has a letter rung, and a ciphertext with a word in it always has a word rung.
+    // arrived, and is now the ONLY input that reaches it: see `fold` for why a solved board keeps
+    // its band.
     return probe.length === 0 ? null : (probe.map((rung) => cryptogramHintFor(data, rung)) as HintLadder)
   },
 
   merge: (boardWrite: PuzzleProgress, current: PuzzleProgress): PuzzleProgress =>
-    boardWrite === '' ? '' : attachHints(boardWrite, decodeHints(current)),
+    attachHints(boardWrite, decodeHints(current)),
 
   open: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null => {
     const data = hintDataOf(puzzle)

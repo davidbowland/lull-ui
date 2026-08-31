@@ -413,7 +413,7 @@ export const ThemedAnagramsBoard = ({
   // could not draw -- and `isValidPuzzle` leaves `data` opaque, so the wire can deliver one. That
   // used to be a wrong sentence: the floor stood `Solved. You got all four.` over a board with no
   // rows. Once the control became a ternary it turned into a `Play again` button, and one press
-  // writes `''` through `onProgress` -- which the adapter's `merge` answers with `''` -- taking the
+  // raises `onReset`, which the shell answers by writing `''` over the whole record -- taking the
   // rungs a player actually spent, on a board that never had a box to type in. THE STORE MOVED AND
   // THE HAZARD DID NOT: it used to be the shell's `removeHints` deleting `lull:hints:<puzzleId>`,
   // and it is now the ladder co-located in this board's own progress string. The shape that loses
@@ -446,6 +446,11 @@ export const ThemedAnagramsBoard = ({
   // the last box is emptied is not a signal that the player started over -- charging them their
   // spent rungs for a backspace is the trap CLAUDE.md documents, and `onReset` has exactly one
   // caller, which is `playAgain` below and is reached only by a press.
+  //
+  // THAT DISTINCTION IS NOW LOAD-BEARING RATHER THAN TIDY. The shell drops the ladder on `onReset`
+  // and nowhere else, so the signal this handler withholds is the only thing standing between a
+  // backspace and a lost purchase. Adding an `onReset()` here would empty the hint bar every time a
+  // player cleared their last draft.
   const change = (index: number, next: string): void => {
     const updated = guesses.map((guess, at) => (at === index ? next : guess)) as Guesses
 
@@ -521,24 +526,26 @@ export const ThemedAnagramsBoard = ({
   // leave every test in this file green -- measured, after an earlier version of this comment
   // claimed a reset would make two identical messages silent again. It would not.
   //
-  // The last line is the half the board cannot do itself, and it means less than it used to without
-  // meaning nothing. The ladder now lives in the progress string above, so the '' this press writes
-  // is what actually clears it -- `merge` answers a board write of '' with '', which is the adapter's
-  // side of the same decision -- and `removeHints` on the shell's side is a no-op on a key nothing
-  // wrote. What the signal still does is the half deletion never covered: it tells the MOUNTED hint
+  // The last line is the half the board cannot do itself, and it is the WHOLE of how the ladder gets
+  // thrown away. The rungs live in the progress string above, and the '' on the line before this one
+  // does not clear them: the adapter's `merge` re-attaches the stored tail to every board write,
+  // including this one, because it has to. What the shell does with this signal is write '' over the
+  // whole record -- see `onReset` in puzzle-frame -- and `removeHints` beside it is a no-op on a key
+  // nothing wrote. The signal also does the half a deletion never covers: it tells the MOUNTED hint
   // bar to shut its sheet and stop announcing yesterday's rungs.
   //
   // It still names an EVENT and lets the shell decide what it means. Naming the key, the route or
   // the component that answers for it would be the board reaching past the one thing it may say --
   // which is exactly why this line survives a change that moved the storage out from under it.
   //
-  // It cannot be folded into the empty progress string above, tempting as that is. `encode` writes ''
-  // whenever every box is empty, which is also what a player who deletes their four drafts produces,
-  // so the two are one string and the ladder goes with either. That IS the trap CLAUDE.md documents,
-  // and it is accepted here rather than solved: the alternative is a stored `|2|I2,B3` beside four
-  // empty boxes, which `wasSolvedBefore` and the shelf both read as a started board -- a bench
-  // reporting itself started because a hint was bought, which is a lie about the only thing those
-  // two flags mean.
+  // IT CANNOT BE FOLDED INTO THE EMPTY PROGRESS STRING ABOVE, and that is now a correctness claim
+  // rather than a preference. `encode` writes '' whenever every box is empty, which is also what a
+  // player who backspaces their last draft produces -- so an adapter that read '' as "start over"
+  // would charge them their spent rungs for a keystroke, which is the trap CLAUDE.md documents. It
+  // used to be accepted here rather than solved, on the argument that keeping the ladder beside four
+  // empty boxes would lie to `wasSolvedBefore` and the shelf. It would not: those flags mean "this
+  // player has started this puzzle", and a player who has spent two hints on it has started it. This
+  // line is what tells the two empties apart, and it is the reason the trap is closed.
   //
   // Optional-called: `onReset` is optional on the props, and a board that assumed the shell always
   // supplies it would crash on exactly the press this exists for.

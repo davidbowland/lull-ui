@@ -197,8 +197,15 @@ const hintTail = (parsed: Record<string, unknown> | null): PhrazleHintTail => {
   // `opened` is the rung count, or one past it once the answer has been revealed. Below the count is
   // a record claiming rungs nobody paid for; further above it is a reveal on a ladder that never
   // reached its end.
-  if (!Number.isInteger(opened) || (opened as number) < hints.length || (opened as number) > hints.length + 1)
-    return noHints()
+  //
+  // AND THE REVEAL NEEDS A LADDER TO BE PAST. A flat `hints.length + 1` admitted `{"hints":[],
+  // "opened":1}` -- one step paid on a ladder of zero -- which `open` cannot produce from any board:
+  // the first press either appends a rung or declines. The bar then drew a free speculative rung,
+  // because HintBar shows `slice(0, opened)` over a ladder whose tail this type's adapter folds
+  // forward from live state. The ceiling is therefore the rung count, plus one only when there is a
+  // rung to be past.
+  const ceiling = hints.length + (hints.length > 0 ? 1 : 0)
+  if (!Number.isInteger(opened) || (opened as number) < hints.length || (opened as number) > ceiling) return noHints()
 
   return { hints: hints as PhrazleSpentRung[], opened: opened as number }
 }
@@ -306,10 +313,11 @@ export const decodeHints = (progress: string | null): PhrazleHintTail => hintTai
  * writing the shortest payload it always did. It is also why a board stored before this change reads
  * back unchanged and gets re-written unchanged: no ladder, no fields, no migration.
  *
- * It does NOT special-case an empty `boardWrite`. A board write of '' is a reset and must stay '',
- * but that is a decision about what a board MEANT, which belongs to the adapter that owns the type's
- * ladder rather than to a string joiner -- and `open` legitimately attaches a tail to '' when a
- * player buys a rung before typing anything.
+ * IT DOES NOT SPECIAL-CASE AN EMPTY `boardWrite`, and nothing above it does either any more. This
+ * bench reaches '' only through Play again -- `encode([])` is `{"guesses":[]}` -- but reading '' as a
+ * reset is the guess that cost the sibling writing bench a purchase on a backspace, so all three
+ * adapters extend it and leave the reset to `onReset`. `open` also attaches a tail to '' legitimately,
+ * when a player buys a rung before typing.
  */
 export const attachHints = (boardWrite: string, tail: PhrazleHintTail): string => {
   if (tail.opened === 0) return boardWrite

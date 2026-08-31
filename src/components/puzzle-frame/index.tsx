@@ -103,6 +103,12 @@ const trailFor = (date: PackDate | null, locale: string, now: () => number, here
 // progress by age any more (see writeHints in services/storage.ts), which narrowed this to Play
 // again and to a board that stores nothing at all -- fewer readers see the line, and every one
 // who does is looking at a board that says nothing about the win on its own.
+//
+// A LADDER WITH NO BOARD UNDER IT IS PROGRESS, and it reads as such here rather than as an exception.
+// An adapter type stores its rungs in the board's own string, so a player who bought two hints and
+// then emptied every box has `|2|I2,B3` stored and is reported as having started -- which is true.
+// They have started: they spent two hints on it. The line below is for the player who threw the whole
+// thing away, and Play again is the press that writes '' over the ladder as well (see onReset).
 const wasSolvedBefore = (puzzleId: string): boolean =>
   readMeta().solved.includes(puzzleId) && (readProgress(puzzleId) ?? '') === ''
 
@@ -263,22 +269,52 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // hint 2 of 3", and the next press wrote 3 back over the zero.
   const [resetNonce, setResetNonce] = useState(0)
 
-  // The board asked for two things it cannot do itself, and neither of them tells it anything back.
+  // The board asked for three things it cannot do itself, and none of them tells it anything back.
   // Deleting the count is storage, which a board gets none of; raising the signal is this frame's
-  // own state. So the ladder is reset without the board ever learning that a ladder exists.
+  // own state; and dropping the ladder out of the board's own progress string is a fact about hints,
+  // which is the one subject a board has no name for. So the ladder is reset without the board ever
+  // learning that a ladder exists.
   //
-  // THE PAIR IS NOT ATOMIC, and it is worth knowing before rediscovering it. A board's Play again
+  // THE FIRST LINE IS WHAT MAKES A BACKSPACE STOP COSTING A PURCHASE, and it is the whole of this
+  // seam's half of that repair. Four boards write '' through `onProgress` for reasons that are not a
+  // reset -- an emptied last box, a cleared last cipher square -- so an adapter's `merge` cannot read
+  // '' as "start over" and must extend it like any other board write. That leaves the shell needing a
+  // way to tell the two apart, and it already has one: `playAgain` raises THIS signal and an ordinary
+  // keystroke does not. So the board keeps writing only its own portion, the adapter keeps
+  // re-attaching the tail, and the one press that means "throw it away" is the one that throws it
+  // away.
+  //
+  // '' RATHER THAN THE BOARD PORTION WITH THE TAIL CUT OFF, and the difference is nil in practice and
+  // worth a sentence anyway. Every raiser of this signal calls `onProgress('')` immediately before
+  // it, in the same handler, so the board portion is already empty by the time this runs -- and '' is
+  // what every codec here spells "no progress" with, which is what `wasSolvedBefore` and the shelf
+  // read. Writing the constant rather than deriving it also means this cannot be one write behind:
+  // React has not applied the first `setProgress` yet, so anything derived from `boardState` here
+  // would still be holding the drafts the player just cleared.
+  //
+  // GATED ON THERE BEING AN ADAPTER, because a type without one keeps its count in
+  // `lull:hints:<puzzleId>` and its progress is its own business. goFigure owns its ladder inside its
+  // progress string and is not reached through the registry at all; clearing it from out here would
+  // be the shell overwriting a board it does not read.
+  //
+  // THE SEQUENCE IS NOT ATOMIC, and it is worth knowing before rediscovering it. A board's Play again
   // calls `onProgress('')` and then `onReset()`, which React batches, so no render ever sees the
-  // half-applied state. Storage is not batched: `writeProgress` and `removeHints` each dispatch
-  // STORAGE_EVENT synchronously, so between the two dispatches a listener re-reading storage sees
-  // empty progress alongside the stale hint count. Nothing observes it today -- the only subscriber
-  // is the shelf, which is never mounted with a bench -- so this is a note rather than a defect. A
-  // future listener that derives one from the other has to tolerate the interleave or be told once,
-  // after both.
+  // half-applied state. Storage is not batched: the two `writeProgress` calls and `removeHints` each
+  // dispatch STORAGE_EVENT synchronously, so between them a listener re-reading storage sees a
+  // ladder still attached, or empty progress alongside a stale hint count. Nothing observes it today
+  // -- the only subscriber is the shelf, which is never mounted with a bench -- so this is a note
+  // rather than a defect. A future listener that derives one from the other has to tolerate the
+  // interleave or be told once, after all three.
+  //
+  // TWO WRITES OF THE SAME KEY IN ONE HANDLER is the cost of the '' above, and it is the cheap half
+  // of the trade: `onProgress('')` stores the board's write with the tail re-attached, and this
+  // stores '' over it a moment later. The alternative is the adapter guessing which kind of '' it was
+  // handed, which is the guess that made a backspace cost a purchase.
   const onReset = useCallback(() => {
+    if (adapter !== undefined) commit('')
     removeHints(puzzle.id)
     setResetNonce((nonce) => nonce + 1)
-  }, [puzzle.id])
+  }, [adapter, commit, puzzle.id])
 
   const hints = adapter ? adapter.ladder(puzzle, boardState) : hintsOf(puzzle)
 
@@ -431,12 +467,12 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           So the nonce is a signal the bar reacts to rather than an identity it is rebuilt under.
           Nothing else here is given it: the board keeps its own state through a reset, because the
           board is the thing that just chose to reset. */}
-      {/* `resetSignal` STAYS WIRED AS IT WAS, and for an adapter type it is now belt and braces
-          rather than the mechanism. Those types keep their count in the board's own progress string,
-          so a board's Play again writes `''` through onProgress and the ladder goes with the board
-          -- `removeHints` becomes a harmless no-op on a key nothing wrote. What the signal still
-          does for them is the half deletion never covered: it tells the MOUNTED bar to shut its
-          sheet and stop announcing yesterday's rungs. */}
+      {/* `resetSignal` STAYS WIRED AS IT WAS, and for an adapter type it now rides on the same press
+          that drops the ladder. Those types keep their count in the board's own progress string, so
+          `onReset` above writes `''` over it and `removeHints` is a harmless no-op on a key nothing
+          wrote. What the signal does beside that is the half a deletion never covers: it tells the
+          MOUNTED bar to shut its sheet and stop announcing yesterday's rungs, since the bar reads its
+          own count once, at mount, and subscribes to nothing. */}
       {hasHintBar && hints !== null && (
         <HintBar control={control} hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} solution={solution} />
       )}

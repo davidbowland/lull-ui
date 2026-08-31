@@ -751,11 +751,14 @@ describe('PuzzleFrame', () => {
     // the same thing, and an adapter that stopped at its own last rung would take the reveal away
     // from the three benches that use this seam.
     //
-    // `merge` ANSWERS '' WITH '', which is the reset every board spells that way. Re-attaching the
-    // tail there would hand a player back rungs they threw away on a board that no longer has them.
+    // `merge` EXTENDS EVERY BOARD WRITE, '' INCLUDED, which is what all three shipped adapters do.
+    // '' is not a reset: four boards write it when their last box, square or draft is emptied, and an
+    // adapter that read it as one would charge a player their rungs for a backspace. The reset is
+    // `onReset`, and answering it is the SHELL's job -- see the pair of rows below, which are the two
+    // presses this stub exists to keep apart.
     const stubAdapter = (rungs: string[]): HintAdapter => ({
       ladder: () => rungs.map((text) => ({ text })) as HintLadder,
-      merge: (boardWrite, current) => (boardWrite === '' ? '' : `${boardWrite}${'#'.repeat(openedOf(current))}`),
+      merge: (boardWrite, current) => `${boardWrite}${'#'.repeat(openedOf(current))}`,
       open: (_puzzle, progress) => (openedOf(progress) > rungs.length ? null : `${progress}#`),
       opened: openedOf,
     })
@@ -836,11 +839,12 @@ describe('PuzzleFrame', () => {
       expect(readProgress(cryptogramPuzzleId)).toEqual('kept#')
     })
 
-    // A BOARD'S PLAY AGAIN GOES THROUGH THE SAME MERGE, and the adapter is what decides that ''
-    // means the ladder goes with the board. The frame does not special-case it -- it cannot, since
-    // '' is a per-type spelling like every other progress string -- so this is the row that says the
-    // reset reaches the adapter at all.
-    it('lets a board start over through the merge, ladder and all', async () => {
+    // AN EMPTIED BOARD IS NOT A RESET, and this is the row the whole repair turns on. Every board
+    // spells "there is nothing on this board" as `onProgress('')`, and on Themed Anagrams that is
+    // what `encode` returns on the keystroke that clears the last draft -- so a frame that read this
+    // write as Play again would take two purchased rungs away for a backspace. The ladder survives
+    // it, and the control still counts what was paid for.
+    it('keeps a bought rung when the board empties itself', async () => {
       const user = userEvent.setup({ delay: null })
       setupPack(cryptogramPack)
       stubbedAdapter = stubAdapter(THREE_RUNGS)
@@ -849,8 +853,44 @@ describe('PuzzleFrame', () => {
       await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
       await user.click(screen.getByRole('button', { name: 'Clear progress' }))
 
+      expect(readProgress(cryptogramPuzzleId)).toEqual('#')
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
+    })
+
+    // AND `onReset` IS. The board raises a signal and names no key, no route and no field; the shell
+    // answers it by storing '' over the whole record, ladder included. That split is what lets an
+    // adapter extend an empty board write without a Play again becoming a press that gives the
+    // player their rungs back.
+    //
+    // Both presses in the order a real Play again makes them -- `onProgress('')` then `onReset()` --
+    // because the second has to win, and it is written second in every board that has one.
+    it('drops the ladder when the board says the player started over', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Clear progress' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
       expect(readProgress(cryptogramPuzzleId)).toEqual('')
       expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // A TYPE WITH NO ADAPTER KEEPS ITS OWN PROGRESS THROUGH A RESET, which is the other side of the
+    // gate above it. goFigure owns its ladder inside its progress string and is not reached through
+    // the registry at all, so a shell that cleared progress on every `onReset` would be overwriting a
+    // board it does not read. The count in `lull:hints:` is what goes.
+    it('leaves progress alone on a reset when the type has no adapter', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Record progress' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('kept')
     })
 
     // THE REVEAL IS REACHABLE, and it is the reason `opened` is stored rather than derived from the
@@ -1148,6 +1188,36 @@ describe('PuzzleFrame', () => {
         expect(shipped.flatMap((text) => screen.queryAllByText(text))).toEqual([])
       },
     )
+
+    // THE BAR DOES NOT VANISH ON THE WINNING KEYSTROKE, and this is asserted at the FRAME because
+    // nothing else can see it. Two adapters had nothing left to CHOOSE on a won board -- every rung
+    // aims at a square or a row the player has not got -- so `ladder` answered null, the frame's
+    // `hints !== null` gate dropped the bar, and a 60px `shrink-0` band unmounted at the instant of
+    // the solve with the board re-laying itself out underneath. On cryptogram it flickered, because
+    // an unlocked square can still be cleared. The adapters' own null-ladder rows passed the whole
+    // time: they asserted the null and nothing followed them up to here.
+    //
+    // The progress strings are the SOLVED shape in each type's own grammar, written straight to
+    // storage, because the point is the state a returning player arrives in as much as the keystroke
+    // that reaches it.
+    it.each<[string, Pack, string, HintAdapter | undefined, string]>([
+      ['cryptogram', cryptogramPack, cryptogramPuzzleId, REGISTRY.cryptogram.hints, 'EEVAZT'],
+      [
+        'themedanagrams',
+        themedAnagramsPack,
+        themedAnagramsPuzzleId,
+        REGISTRY.themedanagrams.hints,
+        'KETTLE\nSAUCEPAN\nSKILLET\nSPATULA',
+      ],
+    ])('keeps the %s hint bar standing on a board that is already won', async (_type, loaded, id, adapter, solved) => {
+      setupPack(loaded)
+      writeProgress(id, solved)
+      stubbedAdapter = adapter
+
+      renderReady(id)
+
+      expect(await screen.findByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
   })
 
   describe('a puzzle that is not here', () => {
