@@ -10,9 +10,21 @@ export interface HintBarProps {
   // count it does not hold. Two independent optionals make that a comment; one object makes it a
   // type error.
   //
-  // It exists for the goFigure bench, whose rungs do something to the board rather than only saying
-  // something about it, so the count has to live where the board's state lives. Handing the count
-  // down is what keeps that subtree free of storage -- see the derived `opened` below.
+  // IT WAS BUILT FOR THE goFigure BENCH and it now serves four callers, which is the test that the
+  // seam was in the right place rather than a widening of it: PuzzleFrame builds a `control` for
+  // every type carrying a registry hint adapter -- Cryptogram, Phrazle and Themed Anagrams -- and
+  // HintBar needed no contract change to be told.
+  //
+  // What every controlled caller has in common is where the COUNT lives: in the board's own progress
+  // string, beside whatever the rungs did, rather than in `lull:hints:<puzzleId>`. goFigure owns that
+  // string itself, so handing the count down is also what keeps that subtree free of storage -- see
+  // the derived `opened` below. The other three keep it there through PuzzleFrame and their adapter,
+  // and the board is never told.
+  //
+  // "ITS RUNGS DO SOMETHING TO THE BOARD" IS NOT THE CONDITION, and Phrazle is the case that says so:
+  // its rungs are sentences that touch no tile, no color and no row, and it is controlled anyway,
+  // because its ladder is stored where its guesses are. Controlled means the count is somebody
+  // else's. It says nothing about what a rung touches.
   control?: { onOpen: (nextOpened: number) => void; opened: number }
   hints: HintLadder
   puzzleId: string
@@ -26,9 +38,13 @@ export interface HintBarProps {
   // second, so the second reset would hand this component a prop it already holds, the effect below
   // would not run, and the ladder would sit where the player had just left it.
   //
-  // Optional and 0 by default, so a bar with no shell behind it -- the controlled `bare` bar on the
-  // goFigure bench, whose owner resets the ladder by moving `control.opened` -- never enters the
-  // effect at all.
+  // Optional and 0 by default, so a bar whose caller has no reset to report never enters the effect
+  // at all. THAT IS NOT THE SAME AS "NO SHELL BEHIND IT", and the controlled bar is the case that
+  // proves it: goFigure passes `control` AND this together, because moving `control.opened` back to
+  // zero leaves the SHEET standing -- an empty list drawn over a fresh board, with a keyboard that
+  // declines every key -- and this signal is the only thing that shuts it from out there. PuzzleFrame
+  // passes both as well, for the three adapter types and for the pack ones alike. Every caller in the
+  // app is signaled; what the default covers is a caller with nothing to say.
   resetSignal?: number
   // The answer, composed by the CALLER and rendered verbatim -- the same contract `hint.text` has,
   // for the same reason. A phrase bench's answer is its phrase and goFigure's is an expression drawn
@@ -270,8 +286,22 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
 /**
  * The ladder, rendered by the SHELL and never by a game component.
  *
- * Missing Vowels, Cryptogram and Phrazle are one phrase in three costumes, so a hint about what the
- * phrase MEANS serves all three -- and a board that never learns hints exist cannot leak one.
+ * IT DOES NOT KNOW WHERE A RUNG CAME FROM, and since 2026-08-31 half the catalog answers that
+ * differently. Missing Vowels, Cryptic Clue and goFigure carry a ladder on the pack. Cryptogram,
+ * Phrazle and Themed Anagrams compute theirs on the device, from vendored rules, against what the
+ * player has already established -- because their rungs are about LETTERS rather than about what a
+ * phrase MEANS, and a letter is worth nothing to a player who already holds it. That is precisely
+ * why the first two changed: they used to take the shared phrase ladder, which is a hint aimed at a
+ * different game. Missing Vowels is the one bench where that ladder was always the right one, and it
+ * still gets it. This bar is handed an array either way and decides only WHEN a rung is shown.
+ *
+ * A BOARD NEVER WRITES THE HINT FIELD, AND TWO BOARDS READ IT. That is the rule `registry/index.ts`
+ * and `puzzle-frame/index.tsx` both state, said here so this file agrees rather than inventing a
+ * third phrasing: the shell is the only writer, and a board reads hint state exactly when a hint
+ * changes what it DRAWS. Cryptogram locks a revealed letter into its grid and Themed Anagrams pins
+ * letters into position, so both must; Phrazle's rungs move no tile and its board is handed no way
+ * to. "A board that never learns hints exist cannot leak one" was the older and prettier promise,
+ * and it is not the one this bar's callers keep.
  *
  * No time gate, no penalty, no cost. Rungs open in order because a ladder is only meaningful in
  * order. On a solved puzzle it renders exactly as it always does: the answer is already on screen,
@@ -294,10 +324,13 @@ export const HintBar = ({
   // different component rather than a prop change, and re-reading storage on every render would
   // hand this component back its own writes.
   //
-  // NOT READ AT ALL when controlled, which is the ternary's whole job and not a micro-optimization.
-  // The controlled caller is the goFigure board, and `CLAUDE.md` says a puzzle component gets no
-  // storage -- a bar that read the count and then discarded it would satisfy the behavior and
-  // quietly break the rule, so a test spies on `readHints` rather than on the count.
+  // NOT READ AT ALL when controlled, which is the ternary's whole job and not a micro-optimization,
+  // and it now has two reasons rather than one. One controlled caller is the goFigure BOARD, and
+  // `CLAUDE.md` says a puzzle component gets no storage -- a bar that read the count and then
+  // discarded it would satisfy the behavior and quietly break the rule, so a test spies on
+  // `readHints` rather than on the count. The other three are PuzzleFrame with an adapter in hand,
+  // where the count is already in the board's progress string: a read here would be a second store
+  // for one number, and the two can disagree.
   //
   // WHICH MODE A BAR IS IN IS FIXED FOR ITS LIFETIME, and nothing here enforces that. The
   // initializer closes over the first render's `control`, so a bar mounted controlled and then
@@ -315,8 +348,11 @@ export const HintBar = ({
   // there is not, which is the only arrangement under which both modes are actually correct.
   const opened = control?.opened ?? storedOpened
 
-  // Open state is a VIEW concern and is never persisted: `lull:hints:<puzzleId>` stays the opened
-  // count and only the opened count, so a closed sheet is not an unopened rung.
+  // Open state is a VIEW concern and is never persisted at all: what is stored is the opened count
+  // and only the opened count, so a closed sheet is not an unopened rung. WHERE that count is stored
+  // is the caller's business and not this component's -- `lull:hints:<puzzleId>` when the bar is
+  // uncontrolled, the board's own progress string when an owner holds it, in which case this file
+  // writes no key of any kind.
   //
   // ALWAYS SHUT, and never derived from the count. Deriving it looked like generosity -- a returning
   // player got their rungs back for free -- but the count cannot tell the two cases apart: a player
@@ -346,10 +382,15 @@ export const HintBar = ({
   const isSpent = opened >= hints.length
 
   // The reveal has ITS OWN COUNT rather than a boolean beside the ladder's, and that is what makes
-  // starting over work without a line of code: the shell deletes `lull:hints:<puzzleId>` and the
-  // board writes '', so one number carries the rungs and the answer and one erasure takes both.
-  // A separate `revealed` flag would need its own store, its own reset and its own validation, and
-  // could disagree with the count in a state no test would think to write.
+  // starting over work without a line of code: one number carries the rungs and the answer, so one
+  // erasure takes both. A separate `revealed` flag would need its own store, its own reset and its
+  // own validation, and could disagree with the count in a state no test would think to write.
+  //
+  // WHICH ERASURE depends on where the number lives, and both benches get the property for free. On
+  // an uncontrolled bar the shell deletes `lull:hints:<puzzleId>` and the board writes ''. On a
+  // controlled one the count is in the board's own progress string, so the board's `onProgress('')`
+  // takes the rungs and the reveal together -- the adapter's `merge` answers a board write of '' with
+  // '' -- and `removeHints` is a no-op on a key nothing wrote.
   const hasSolution = solution !== undefined
   const isRevealed = hasSolution && opened > hints.length
 
@@ -579,8 +620,11 @@ export const HintBar = ({
               </div>
             )}
             {/* `hint.text` is rendered VERBATIM and nothing here derives a word of it. A rung is
-                authored by lull-api, which is also the only place that knows what a rung is allowed
-                to give away -- this bar decides when a rung is shown, never what it says.
+                authored by whoever built the ladder, which is also the only place that knows what a
+                rung is allowed to give away -- lull-api for the three types that carry one on the
+                pack, and the type's own registry adapter over a vendored rule for the three that
+                compute theirs on the device. This bar decides when a rung is shown, never what it
+                says, and it cannot tell the two authors apart.
 
                 Keyed on the text rather than on the index, and the guarantee that makes that safe
                 lives UPSTREAM rather than here. lull-api rejects any phrase whose three hints
@@ -616,10 +660,12 @@ export const HintBar = ({
               </ol>
             )}
             {/* OUTSIDE the list, and that is a statement about what this is rather than a layout
-                choice. The <ol> is the ladder -- lull-api orders those rungs by how much each
-                reveals, and the decimal markers beside them are that order made visible. An answer
-                appended as a fourth <li> would be numbered "4." by the marker and read as the next
-                rung in a ladder that has three.
+                choice. The <ol> is the ladder -- whoever builds one orders its rungs by how much each
+                reveals, lull-api on the pack benches and the type's own builder on the three that
+                compute theirs, and the decimal markers beside them are that order made visible. An
+                answer appended as a fourth <li> would be numbered "4." by the marker and read as the
+                next rung in a ladder that has three -- or in one that has two, which the adapter
+                benches and Cryptic Clue both legitimately ship.
 
                 It carries the same VERBATIM contract as a rung: the caller composed the sentence,
                 including whether it hedges. goFigure's must, because its ladder pins an operator

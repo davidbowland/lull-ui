@@ -550,8 +550,21 @@ export const PhrazleBoard = ({
     hush()
     // A LIFECYCLE SIGNAL, not game state: onReset says "the player started this puzzle over" and
     // takes no argument and names no destination, so deleting lull:hints:<puzzleId> and resetting
-    // the hint bar stay entirely the shell's business. It is needed because an empty progress string
-    // cannot carry that meaning on its own.
+    // the hint bar stay entirely the shell's business.
+    //
+    // WHAT IT IS NEEDED FOR HAS CHANGED, and the old sentence -- that an empty progress string cannot
+    // carry that meaning -- is now backwards on this bench. The ladder lives IN the string, so the ''
+    // below is exactly what clears it: the adapter's `merge` answers a board write of '' with '', and
+    // `removeHints` on the shell's side is a no-op on a key nothing wrote. What the signal still does
+    // is the half an erasure never covered -- it tells the MOUNTED hint bar to shut its sheet and
+    // stop announcing yesterday's rungs.
+    //
+    // AND ON THIS BENCH THE '' IS UNAMBIGUOUS, which is the one place it reads better than at the
+    // sibling writing bench. `encode` here always writes a JSON object, so this line is the only
+    // thing in the component that can produce '' -- there is no emptied-board spelling of it to be
+    // confused with, and no player who loses a ladder to a backspace. Themed Anagrams accepts that
+    // trade deliberately because its `encode` does write '' on four empty boxes; see its own
+    // `playAgain`.
     onProgress('')
     onReset?.()
   }

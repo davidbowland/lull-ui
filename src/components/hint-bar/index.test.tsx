@@ -239,9 +239,12 @@ describe('HintBar', () => {
     // The case `hintsOf` newly admits, and the one goFigure hands the bar in controlled mode: a
     // ladder whose rungs carry `metadata`. The bar must not notice. It is asserted VERBATIM and in
     // arrival order rather than by any property of the metadata, because that is the whole contract
-    // -- lull-api decides what a rung gives away and in what order the ladder reveals it, and this
-    // component decides only when. The fixture's rung order is 1, 0, 2, so a bar that quietly sorted
-    // by slot would come out left to right here and fail.
+    // -- the ladder's AUTHOR decides what a rung gives away and in what order the ladder reveals it,
+    // and this component decides only when. For this fixture the author is lull-api, which is where
+    // goFigure's ladder comes from; on the three benches that compute their own it is the type's
+    // registry adapter, and the contract this bar keeps is the same either way. The fixture's rung
+    // order is 1, 0, 2, so a bar that quietly sorted by slot would come out left to right here and
+    // fail.
     it('renders a ladder whose rungs carry metadata exactly as it arrived', async () => {
       const user = userEvent.setup({ delay: null })
       render(<HintBar hints={goFigureHints} puzzleId={puzzleId} />)
@@ -482,9 +485,12 @@ describe('HintBar', () => {
     })
   })
 
-  // The bar is handed its count instead of reading one, which is what lets the goFigure bench render
-  // it inside the board's own subtree without that subtree touching storage. The shell keeps owning
-  // persistence; the bench only owns the number.
+  // The bar is handed its count instead of reading one, so the count can live wherever the ladder
+  // does. Four callers take the mode and they take it for two different reasons: the goFigure BOARD
+  // renders this bar inside its own subtree, which must not touch storage, and PuzzleFrame drives it
+  // for the three types whose rungs are computed on the device, whose count already rides in the
+  // board's progress string beside the rungs it bought. The shell keeps owning persistence; a
+  // controlled owner only owns the number.
   describe('controlled mode', () => {
     it('reports the reveal as one past the ladder and writes nothing', async () => {
       const user = userEvent.setup({ delay: null })
@@ -505,10 +511,12 @@ describe('HintBar', () => {
       expect(writeHints).not.toHaveBeenCalled()
     })
 
-    // Storage is not merely ignored, it is NOT REACHED. That is the whole reason the mode exists:
-    // the goFigure bench renders this bar inside the board's own subtree, and `CLAUDE.md` names a
-    // puzzle component's distance from storage as what makes the display-only rule structural
-    // rather than aspirational. An assertion on the count alone would still pass a bar that read
+    // Storage is not merely ignored, it is NOT REACHED, and that property is load-bearing for both
+    // kinds of controlled caller. The goFigure bench renders this bar inside the board's own subtree,
+    // and `CLAUDE.md` names a puzzle component's distance from storage as what makes the display-only
+    // rule structural rather than aspirational. The three adapter benches keep their count in the
+    // board's progress string, where a `lull:hints:` read would be a second store for one number and
+    // the two could disagree. An assertion on the count alone would still pass a bar that read
     // storage and threw the answer away, so the spy is the test.
     //
     // `Show 2 hints` rather than `Open hint 3 of 3`: the sheet is shut at mount in both modes, and a
@@ -979,9 +987,13 @@ describe('HintBar', () => {
       expect(document.activeElement).toBe(elsewhere)
     })
 
-    // The default, and what keeps every other caller unaffected. A bar with no shell behind it --
-    // the controlled `bare` bar on the goFigure bench, whose owner moves `control.opened` itself --
+    // The default, and what keeps a caller with nothing to report unaffected: a bar handed no signal
     // never enters the effect at all, so nothing it holds is disturbed and nothing is announced.
+    //
+    // IT IS NOT THE CONTROLLED BAR. goFigure passes `control` and `resetSignal` together -- zeroing
+    // its count leaves the sheet standing, and the signal is the only thing that shuts it from out
+    // there -- and PuzzleFrame passes both too, adapter type or not. So the state under test is a bar
+    // whose caller declined the prop, which in this app today is a test.
     it('does nothing at all without a signal', async () => {
       const user = userEvent.setup({ delay: null })
       const { rerender } = renderBar()
