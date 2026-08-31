@@ -12,6 +12,7 @@ import {
   crypticCluePuzzleId,
   cryptogramPack,
   cryptogramPuzzleId,
+  cryptogramStalePackLadder,
   goFigurePuzzle,
   missingVowelsPuzzleId,
   pack,
@@ -21,10 +22,15 @@ import {
   phrazlePack,
   phrazlePuzzle,
   phrazlePuzzleId,
+  phrazleStalePackLadder,
   puzzleId,
   quickPuzzleId,
+  stalePackCryptogramPack,
+  stalePackPhrazlePack,
+  stalePackThemedAnagramsPack,
   themedAnagramsPack,
   themedAnagramsPuzzleId,
+  themedAnagramsStalePackLadder,
 } from '@test/__mocks__'
 import { HintLadder, Pack, PuzzleComponent, PuzzleComponentProps } from '@types'
 
@@ -455,8 +461,15 @@ describe('PuzzleFrame', () => {
     // Cipher and writing get the docked hint bar; the tile bench spends its 60px on the goal plate
     // and its worked example instead. Read off the bench, so a second type on the same surface
     // inherits the decision rather than repeating it.
+    //
+    // THE SHIPPED ADAPTER IS NAMED, because `entryFor` is mocked here and writes `hints:
+    // stubbedAdapter` over whatever the registry holds -- so leaving it unset would take a real
+    // entry's adapter away and test a configuration that no longer exists. This type's ladder comes
+    // off the device now and its pack ships no `hints` at all, so an unset adapter means no bar and
+    // the row would be asserting the wrong absence.
     it('gives the cipher bench a hint bar', async () => {
       setupPack(cryptogramPack)
+      stubbedAdapter = REGISTRY.cryptogram.hints
 
       renderFrame(cryptogramPuzzleId)
 
@@ -504,6 +517,7 @@ describe('PuzzleFrame', () => {
     // `entry.bench !== 'tile'`, so this type inherits the docked bar the way Cryptic Clue did.
     it('gives the third writing-bench type the same hint bar', async () => {
       setupPack(themedAnagramsPack)
+      stubbedAdapter = REGISTRY.themedanagrams.hints
 
       renderFrame(themedAnagramsPuzzleId)
 
@@ -522,6 +536,7 @@ describe('PuzzleFrame', () => {
     it('closes the themed anagrams ladder with all four answers', async () => {
       const user = userEvent.setup({ delay: null })
       setupPack(themedAnagramsPack)
+      stubbedAdapter = REGISTRY.themedanagrams.hints
       renderFrame(themedAnagramsPuzzleId)
       await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
       await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
@@ -599,6 +614,7 @@ describe('PuzzleFrame', () => {
     // frame renders it after both -- which is exactly what the `order` rules then undo.
     it('renders the hint bar after the component that owns the two bands around it', async () => {
       setupPack(cryptogramPack)
+      stubbedAdapter = REGISTRY.cryptogram.hints
 
       renderFrame(cryptogramPuzzleId)
       const board = await screen.findByRole('region', { name: 'Board' })
@@ -746,13 +762,18 @@ describe('PuzzleFrame', () => {
 
     const THREE_RUNGS = ['From the adapter, first.', 'From the adapter, second.', 'From the adapter, third.']
 
-    // THE FIXTURE STILL SHIPS A PACK LADDER, and that is what makes the first test an assertion
+    // A FIXTURE THAT STILL SHIPS A PACK LADDER, and that is what makes the first test an assertion
     // rather than a tautology. Both ladders are live; only the branch decides which one is drawn.
+    //
+    // It has to be the STALE-PACK fixture now. `cryptogramPuzzle` models the post-transition wire and
+    // carries no `hints` at all, so this row against it would leave nothing for the adapter to win
+    // over: `queryByText(PACK_RUNG)` finds nothing however the branch is wired, and a frame that had
+    // lost the adapter branch entirely would still pass its negative half.
     const PACK_RUNG = 'A saying about a meal'
 
     it('draws the rungs the adapter reports rather than the ones the pack shipped', async () => {
       const user = userEvent.setup({ delay: null })
-      setupPack(cryptogramPack)
+      setupPack(stalePackCryptogramPack)
       stubbedAdapter = stubAdapter(THREE_RUNGS)
 
       renderFrame(cryptogramPuzzleId)
@@ -1010,7 +1031,7 @@ describe('PuzzleFrame', () => {
     // count in `lull:hints:` and writes no progress, which is the mirror image of the rows above.
     it('leaves a type with no adapter reading the ladder off the pack', async () => {
       const user = userEvent.setup({ delay: null })
-      setupPack(cryptogramPack)
+      setupPack(stalePackCryptogramPack)
 
       renderFrame(cryptogramPuzzleId)
       await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
@@ -1019,6 +1040,114 @@ describe('PuzzleFrame', () => {
       expect(window.localStorage.getItem(`lull:hints:${cryptogramPuzzleId}`)).toEqual('1')
       expect(readProgress(cryptogramPuzzleId)).toBeNull()
     })
+
+    // A PACK THAT SHIPPED NO LADDER AT ALL, which is the wire this app is being written against and
+    // the state every pack reaches once lull-api's deploy follows this one. No adapter and no
+    // `hints` is the one combination that has to draw NOTHING -- `hintsOf` answers null on a missing
+    // field exactly as it does on a malformed one -- and without this row the fixtures could have
+    // lost their ladders while a bar drawn from stale bytes went on passing everything above.
+    it('draws no bar when the pack ships no ladder and the type has no adapter', async () => {
+      setupPack(cryptogramPack)
+
+      renderFrame(cryptogramPuzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(screen.queryByRole('button', { name: /hint/i })).not.toBeInTheDocument()
+    })
+  })
+
+  // THE DEPLOY WINDOW, AND IT IS OPEN RIGHT NOW rather than a shape out of the archive. This app
+  // ships BEFORE lull-api stops sending `hints` -- clause (b) of that repo's rebuild runbook makes
+  // the order mandatory, because a pack that dropped the field first would leave three of six benches
+  // with no hint bar at all -- so for the whole gap between the two deploys every pack that arrives
+  // carries a ladder the adapters have already replaced. It outlives the gap on any device holding a
+  // pack cached inside it, for as long as that pack is kept.
+  //
+  // THE SHIPPED ADAPTERS, NOT THE STUB ABOVE, and that is the difference between this describe and
+  // the one before it. That one proves the frame reads no grammar and a stub is the right instrument
+  // for it. This one proves that on a pack carrying BOTH ladders the sentences a player reads are the
+  // ones computed from their own board -- a claim about which of two real ladders wins, which a stub
+  // whose rungs are invented strings cannot make.
+  //
+  // EVERY RUNG IS OPENED, so the negative half is a real negative. With one rung bought the bar draws
+  // one sentence whichever ladder it read, and a `queryByText` over the other two would pass on a
+  // frame that had chosen wrong.
+  describe('a stale pack ladder arriving beside a live adapter', () => {
+    // PHRAZLE IS GATED ON THE WORD LIST and the other two are not, so every row here renders inside a
+    // ready DictionaryContext rather than only the row that needs one. A frame that cannot see a word
+    // list refuses a Phrazle deep link outright and draws no bar to read either ladder off -- which
+    // would fail this row for a reason that has nothing to do with precedence. The value is a literal
+    // rather than a provider, so no network, no timers and no Cache API are involved; the gate itself
+    // is asserted in its own describe further down.
+    const renderReady = (id: string): ReturnType<typeof render> =>
+      render(
+        <DictionaryContext.Provider value={{ status: 'ready', words: phrazleDictionary }}>
+          <PuzzleFrame locale="en-US" now={noonOnPackDate} puzzleId={id} />
+        </DictionaryContext.Provider>,
+      )
+
+    const openWholeLadder = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+    }
+
+    // The adapter rungs are WRITTEN OUT rather than folded from the adapter here, for the reason each
+    // adapter's own suite gives: an expectation built by re-running the rule agrees with whatever the
+    // rule became. These are what the shipped builders produce for these fixtures on a board nobody
+    // has touched, and they are the same strings those suites pin.
+    //
+    // The table is ANNOTATED rather than inferred, because a bare literal widens every column to the
+    // union of its six cells and the adapter stops being assignable to anything.
+    const benches: [string, Pack, string, HintAdapter | undefined, string[], string[]][] = [
+      [
+        'cryptogram',
+        stalePackCryptogramPack,
+        cryptogramPuzzleId,
+        REGISTRY.cryptogram.hints,
+        ['Every E is an E.', 'Every Z is a T.', 'One of the words is ATE.'],
+        cryptogramStalePackLadder.map((hint) => hint.text),
+      ],
+      [
+        'phrazle',
+        stalePackPhrazlePack,
+        phrazlePuzzleId,
+        REGISTRY.phrazle.hints,
+        [
+          'The phrase has no A, no G, and no S.',
+          'The phrase contains D, H, and L.',
+          'Word 2 uses these letters, alphabetized: D, H, L, and O.',
+        ],
+        phrazleStalePackLadder.map((hint) => hint.text),
+      ],
+      [
+        'themedanagrams',
+        stalePackThemedAnagramsPack,
+        themedAnagramsPuzzleId,
+        REGISTRY.themedanagrams.hints,
+        [
+          'The 2nd answer starts with S.',
+          'The 3rd answer starts with S and ends with T.',
+          'The 4th answer starts with SPA.',
+        ],
+        themedAnagramsStalePackLadder.map((hint) => hint.text),
+      ],
+    ]
+
+    it.each(benches)(
+      'shows %s the rungs its adapter computed and none the stale pack carried',
+      async (_type, stalePack, id, adapter, computed, shipped) => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(stalePack)
+        stubbedAdapter = adapter
+
+        renderReady(id)
+        await openWholeLadder(user)
+
+        expect(computed.map((text) => screen.getByText(text))).toHaveLength(3)
+        expect(shipped.flatMap((text) => screen.queryAllByText(text))).toEqual([])
+      },
+    )
   })
 
   describe('a puzzle that is not here', () => {

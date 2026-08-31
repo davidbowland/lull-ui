@@ -9,10 +9,8 @@ import {
   Pack,
   PackDate,
   PhrazleData,
-  PhrazleHintLadder,
   Puzzle,
   ThemedAnagramsData,
-  ThemedAnagramsHintLadder,
 } from '@types'
 
 export const packDate: PackDate = '2026-08-18'
@@ -141,18 +139,16 @@ export const phrasePack: Pack = {
 // VZE VZE ZEV under { E: E, V: A, Z: T } spells ATE ATE TEA.
 export const cryptogramPuzzleId = '2026-08-18:cryptogram:7c6b5a49'
 
-export const cryptogramHints: HintLadder = [
-  { text: 'A saying about a meal' },
-  { text: 'What you say when the plate is empty' },
-  { text: 'Three words, and two of them are the same' },
-]
-
+// NO `hints` KEY, and its ABSENCE is the wire shape rather than a shortcut. lull-api stopped
+// shipping a ladder for this type when the rungs moved onto the device, so a fixture carrying one
+// would let a board -- or a frame -- read a field no future pack sends. Absent, never `[]` and never
+// `null`: there is no empty HintLadder and the type cannot express one, so a client tests for the
+// field and then reads its length.
 export const cryptogramPuzzle: Puzzle<CryptogramData> = {
   data: {
     answer: 'Ate ate tea',
     category: 'Saying',
     ciphertext: 'VZE VZE ZEV',
-    hints: cryptogramHints,
   },
   difficulty: 2,
   estimatedSeconds: 210,
@@ -164,14 +160,45 @@ export const cryptogramPuzzle: Puzzle<CryptogramData> = {
 // no placeholder, no separator -- so a fixture without the key is the only way to cover it.
 export const hiddenCategoryCryptogram: Puzzle<CryptogramData> = {
   ...cryptogramPuzzle,
-  data: { answer: 'Ate ate tea', ciphertext: 'VZE VZE ZEV', hints: cryptogramHints },
+  data: { answer: 'Ate ate tea', ciphertext: 'VZE VZE ZEV' },
   difficulty: 3,
+}
+
+// THE DEPLOY WINDOW, AND IT IS A SHAPE ON THE WIRE RIGHT NOW rather than a museum piece. This app
+// ships FIRST -- clause (b) of lull-api's rebuild runbook makes that ordering mandatory, because a
+// pack that stopped carrying `hints` before this reader existed would have left three of six benches
+// with no hint bar at all -- so for the whole gap between the two deploys every pack a device
+// receives still carries the old prose ladder while the adapter is already live. Every `lull:pack:`
+// cached during that gap keeps the shape for as long as the pack is kept, which outlives the second
+// deploy rather than ending at it.
+//
+// The three prose rungs are the shared phrase ladder this type used to inherit: sentences about what
+// the phrase MEANS, aimed at a player trying to recognize it, which is not what a cryptogram player
+// is doing. They are here to be IGNORED, and the frame's precedence rows are what prove they are.
+//
+// The cast is what a pack can actually deliver, said out loud: CryptogramData no longer has a place
+// to put this, and that is the contract change rather than a gap in the fixture.
+export const cryptogramStalePackLadder: HintLadder = [
+  { text: 'A saying about a meal' },
+  { text: 'What you say when the plate is empty' },
+  { text: 'Three words, and two of them are the same' },
+]
+
+export const stalePackCryptogram: Puzzle<CryptogramData> = {
+  ...cryptogramPuzzle,
+  data: { ...cryptogramPuzzle.data, hints: cryptogramStalePackLadder } as unknown as CryptogramData,
 }
 
 export const cryptogramPack: Pack = {
   complete: true,
   date: packDate,
   puzzles: [cryptogramPuzzle],
+}
+
+export const stalePackCryptogramPack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [stalePackCryptogram],
 }
 
 // Cryptic Clue
@@ -268,25 +295,8 @@ export const crypticCluePack: Pack = {
 // order could not tell a sort from a passthrough.
 export const themedAnagramsPuzzleId = '2026-08-18:themedanagrams:7c1e4b90'
 
-// Rungs 2, 3, 1 by entryIndex, which is deliberately not row order: the backend orders a ladder by
-// how much each rung reveals and nothing promises the rungs run down the board. The third rung is
-// the one the ordinal test walks -- `The 2nd answer is SAUCEPAN.` carries entryIndex 1, so the
-// 1-based sentence and the 0-based metadata name the same row on screen.
-export const themedAnagramsHints: ThemedAnagramsHintLadder = [
-  {
-    metadata: { entryIndex: 2, kind: 'themedanagrams-entry', reveal: 'initial' },
-    text: 'The 3rd answer starts with S.',
-  },
-  {
-    metadata: { entryIndex: 3, kind: 'themedanagrams-entry', reveal: 'bookends' },
-    text: 'The 4th answer starts with S and ends with A.',
-  },
-  {
-    metadata: { entryIndex: 1, kind: 'themedanagrams-entry', reveal: 'answer' },
-    text: 'The 2nd answer is SAUCEPAN.',
-  },
-]
-
+// NO `hints` KEY on the fixture below, for the reason spelled out on cryptogramPuzzle: an absent
+// field is the wire shape, and Themed Anagrams' ladder was the largest thing in its payload.
 export const themedAnagramsPuzzle: Puzzle<ThemedAnagramsData> = {
   data: {
     // FOUR ARRANGEMENTS EACH, which is the ceiling rather than the quota -- the length varies per
@@ -300,7 +310,6 @@ export const themedAnagramsPuzzle: Puzzle<ThemedAnagramsData> = {
       { answer: 'SKILLET', scrambles: ['LKSETIL', 'TILKELS', 'KTESLLI', 'LLKSETI'] },
       { answer: 'SPATULA', scrambles: ['TPSLAAU', 'AAUPLTS', 'PALSTUA', 'TUPSLAA'] },
     ],
-    hints: themedAnagramsHints,
     theme: 'Kitchen tools',
   },
   difficulty: 2,
@@ -366,10 +375,47 @@ export const legacyScrambleThemedAnagrams: Puzzle<ThemedAnagramsData> = {
   },
 }
 
+// THE DEPLOY WINDOW for this bench -- see stalePackCryptogram for why the window exists and how long
+// a pack cached inside it survives. This ladder is the one the generator ranked ONCE, by answer
+// length, before any player existed: it spends its whole-answer reveal on SAUCEPAN, the longest
+// entry, whether or not that row is already solved. That is the failure the device-side builder was
+// written to fix, so a fixture that models the window has to carry the bad ladder rather than a
+// harmless one.
+//
+// THE METADATA IS KEPT AND IT NO LONGER TYPECHECKS, which is the point of the cast. `HintMetadata`
+// narrowed to goFigure's arm when these ladders left the wire, so `themedanagrams-entry` is a shape
+// the contract can no longer express -- and a stored pack holds those bytes anyway. Nothing in this
+// app ever read them; the frame's precedence row is what says so.
+export const themedAnagramsStalePackLadder: HintLadder = [
+  {
+    metadata: { entryIndex: 2, kind: 'themedanagrams-entry', reveal: 'initial' },
+    text: 'The 3rd answer starts with S.',
+  },
+  {
+    metadata: { entryIndex: 3, kind: 'themedanagrams-entry', reveal: 'bookends' },
+    text: 'The 4th answer starts with S and ends with A.',
+  },
+  {
+    metadata: { entryIndex: 1, kind: 'themedanagrams-entry', reveal: 'answer' },
+    text: 'The 2nd answer is SAUCEPAN.',
+  },
+] as unknown as HintLadder
+
+export const stalePackThemedAnagrams: Puzzle<ThemedAnagramsData> = {
+  ...themedAnagramsPuzzle,
+  data: { ...themedAnagramsPuzzle.data, hints: themedAnagramsStalePackLadder } as unknown as ThemedAnagramsData,
+}
+
 export const themedAnagramsPack: Pack = {
   complete: true,
   date: packDate,
   puzzles: [themedAnagramsPuzzle],
+}
+
+export const stalePackThemedAnagramsPack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [stalePackThemedAnagrams],
 }
 
 // Phrazle
@@ -378,11 +424,44 @@ export const themedAnagramsPack: Pack = {
 // so a board test and a rule test that disagree are disagreeing about the same board.
 export const phrazlePuzzleId = '2026-08-18:phrazle:5e4d3c2b'
 
-// The 0-based/1-based mismatch is DELIBERATE and this fixture is where it is visible: `word` and
+// NO `category` KEY, and its absence is load-bearing. Phrazle never ships one, so a fixture that
+// carried it would let a board reserve space for something that cannot arrive -- and the sign row's
+// left slot is genuinely empty on this bench.
+//
+// NO `maxGuesses` KEY EITHER, and that absence is load-bearing in the same way. The guess limit came
+// off the wire because this game cannot be lost, so a fixture still carrying one would let a board
+// read a field no real pack ships.
+//
+// NO `hints` KEY, and that is the third absence and the newest one -- see cryptogramPuzzle for why
+// an absent field rather than an empty ladder is the shape to model.
+//
+// `answer` is the CANONICAL FORM: uppercase A-Z words separated by single spaces, which is what
+// splitPhrase produces and what markGuess marks.
+export const phrazlePuzzle: Puzzle<PhrazleData> = {
+  data: {
+    answer: 'TOE HOLD',
+  },
+  difficulty: 3,
+  estimatedSeconds: 240,
+  id: phrazlePuzzleId,
+  type: 'phrazle',
+}
+
+// THE DEPLOY WINDOW for this bench -- see stalePackCryptogram for why the window exists and how long
+// a pack cached inside it survives.
+//
+// THE LADDER IS BLIND, and that is what it is here to demonstrate. Rung k reveals the first
+// still-unrevealed position of word `k mod wordCount`, so a two-word phrase walks word 0, word 1,
+// word 0 and spells T, H, O -- chosen with no regard for what four guesses have already colored in,
+// which is how a rung routinely spent itself proving something the player had already proved. The
+// 0-based/1-based mismatch is DELIBERATE and this fixture is where it is visible: `word` and
 // `position` are 0-based because a renderer indexes a board from zero, and the sentence counts from
-// one because a sentence does. The rungs walk word 0, word 1, word 0 -- rung k takes the first
-// still-unrevealed position of word `k mod wordCount`, which for a two-word phrase is T, H, O.
-export const phrazleHints: PhrazleHintLadder = [
+// one because a sentence does.
+//
+// The metadata is kept and no longer typechecks, exactly as on themedAnagramsStalePackLadder, and
+// for the same reason: `HintMetadata` narrowed to goFigure's arm, and a stored pack holds these
+// bytes regardless.
+export const phrazleStalePackLadder: HintLadder = [
   {
     metadata: { kind: 'phrazle-reveal', letter: 'T', position: 0, word: 0 },
     text: 'Letter 1 of word 1 is T.',
@@ -395,33 +474,23 @@ export const phrazleHints: PhrazleHintLadder = [
     metadata: { kind: 'phrazle-reveal', letter: 'O', position: 1, word: 0 },
     text: 'Letter 2 of word 1 is O.',
   },
-]
+] as unknown as HintLadder
 
-// NO `category` KEY, and its absence is load-bearing. Phrazle never ships one, so a fixture that
-// carried it would let a board reserve space for something that cannot arrive -- and the sign row's
-// left slot is genuinely empty on this bench.
-//
-// NO `maxGuesses` KEY EITHER, and that absence is load-bearing in the same way. The guess limit came
-// off the wire because this game cannot be lost, so a fixture still carrying one would let a board
-// read a field no real pack ships.
-//
-// `answer` is the CANONICAL FORM: uppercase A-Z words separated by single spaces, which is what
-// splitPhrase produces and what markGuess marks.
-export const phrazlePuzzle: Puzzle<PhrazleData> = {
-  data: {
-    answer: 'TOE HOLD',
-    hints: phrazleHints,
-  },
-  difficulty: 3,
-  estimatedSeconds: 240,
-  id: phrazlePuzzleId,
-  type: 'phrazle',
+export const stalePackPhrazle: Puzzle<PhrazleData> = {
+  ...phrazlePuzzle,
+  data: { ...phrazlePuzzle.data, hints: phrazleStalePackLadder } as unknown as PhrazleData,
 }
 
 export const phrazlePack: Pack = {
   complete: true,
   date: packDate,
   puzzles: [phrazlePuzzle],
+}
+
+export const stalePackPhrazlePack: Pack = {
+  complete: true,
+  date: packDate,
+  puzzles: [stalePackPhrazle],
 }
 
 // Seven words: small enough to read in one line, and rich enough that a rejection test has a real

@@ -5,7 +5,7 @@ import React from 'react'
 import { PhrazleBoard } from './index'
 import { DEFAULT_WIDTH, tileSize } from './layout'
 import { HintBar } from '@components/hint-bar'
-import { phrazleDictionary, phrazleHints, phrazlePuzzle } from '@test/__mocks__'
+import { phrazleDictionary, phrazlePuzzle, phrazleStalePackLadder } from '@test/__mocks__'
 import { PhrazleData, Puzzle } from '@types'
 
 // tileSize IS A COLLABORATOR, and spying on it is the only way to see what the board's
@@ -1680,6 +1680,16 @@ describe('PhrazleBoard', () => {
     //
     // A puzzle id per test, because HintBar persists its opened count at lull:hints:<puzzleId> and a
     // shared id would carry one test's spent ladder into the next.
+    //
+    // THE LADDER'S CONTENT IS NOT WHAT THESE ROWS ARE ABOUT, and it is worth saying so now that the
+    // one they are handed is named for a wire shape this bench no longer receives. What they need is
+    // three rungs and a real sheet: three so the control reads "Open hint 1 of 3", and a real sheet
+    // so pressing it draws the `<section aria-label="Open hints">` the board's keydown guard follows
+    // by IDREF. `phrazleStalePackLadder` supplies both, and it is the honest choice rather than an
+    // arbitrary one -- an UNCONTROLLED HintBar is exactly the bar a pack ladder drives, so the pair
+    // on screen here is the pair a player saw before this app's adapter shipped. The shell hands the
+    // real bench a ladder the adapter computed instead; that seam is asserted in the frame's suite,
+    // and none of it changes what a keystroke on the sheet must do.
     // SCOPED TO THE BOARD'S OWN INSTRUMENT, because HintBar mounts a role="status" of its own -- the
     // one that announces "Hints reset." -- and an unscoped query is ambiguous the moment a real bar
     // is on the screen beside the board. Two live regions on one screen is what the shell ships.
@@ -1700,7 +1710,7 @@ describe('PhrazleBoard', () => {
             progress={null}
             puzzle={phrazlePuzzle}
           />
-          <HintBar hints={phrazleHints} puzzleId={puzzleId} />
+          <HintBar hints={phrazleStalePackLadder} puzzleId={puzzleId} />
         </>,
       )
       return { container, user }
