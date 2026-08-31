@@ -112,18 +112,29 @@ export const phrazleHints: HintAdapter = {
     const probe = fold(puzzle, progress)
     const { hints, opened } = decodeHints(progress)
 
-    // Nothing to sell on a board with no ladder, and nothing left once the answer is out. The frame
-    // draws no bar in the first case, so the guard is for a caller rather than for a player.
-    if (probe.length === 0 || opened > probe.length) return null
+    // Nothing to sell on a board with no ladder. The frame draws no bar in that case, so this guard
+    // is for a caller rather than for a player.
+    if (probe.length === 0) return null
+
+    // THE ANSWER IS OUT, AND THAT IS MEASURED AGAINST `hints.length`, NEVER `probe.length`. The two
+    // are not interchangeable and the difference is a real defect rather than a style choice: `probe`
+    // is the SPECULATIVE fold, so its length moves with the board, while the committed rung list does
+    // not. Measured against a moving tail, a board whose tail grew after the reveal was bought reads
+    // as having a rung still to sell, sells the answer a second time, and writes `hints.length + 2`
+    // -- which `decode` refuses outright, taking the player's whole ladder with it. `hints.length` is
+    // exact and cannot drift, which is why cryptogram's adapter measures the same way.
+    if (opened > hints.length) return null
 
     // THE STEP PAST THE LAST RUNG IS THE ANSWER, and it advances the count without appending a rung.
     // This is the branch a derived count cannot express, and the whole reason `opened` is stored:
     // HintBar reaches "Show answer" only when `opened > hints.length`, so an adapter that stopped at
     // its own last rung would take the reveal away from this bench.
+    //
+    // A rung is still for sale exactly when the fold found one the player has not bought. Once it
+    // finds nothing new, the ladder is complete at whatever length it reached -- one, two or three --
+    // and the next step is the reveal.
     const tail: PhrazleHintTail =
-      opened === probe.length
-        ? { hints, opened: opened + 1 }
-        : { hints: probe.slice(0, opened + 1), opened: opened + 1 }
+      opened < probe.length ? { hints: probe.slice(0, opened + 1), opened: opened + 1 } : { hints, opened: opened + 1 }
 
     return attachHints(progress, tail)
   },

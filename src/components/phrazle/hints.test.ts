@@ -136,6 +136,25 @@ describe('the phrazle hint adapter', () => {
       expect(phrazleHints.open(PUZZLE, buy(4))).toBeNull()
     })
 
+    // THE TAIL MOVES AND THE REVEAL MUST NOT BE MEASURED AGAINST IT. `fold` is speculative, so its
+    // length tracks the board; the committed rung list does not. This board bought a SHORT ladder --
+    // two rungs and the reveal -- and then lost its guesses, which `decode` really does truncate when
+    // a refetched pack's answer no longer fits the shape they were made against. The pools refill,
+    // the fold now finds a third rung, and an `open` measuring the reveal against that tail reads the
+    // board as still owing one: it sells the answer a second time and writes an `opened` of
+    // `hints.length + 2`, which `decode` refuses outright -- so the cost is the player's whole ladder
+    // rather than one bad press.
+    it('declines after the reveal even when the speculative tail has grown', () => {
+      const short = [0, 1, 2].reduce(
+        (progress: string) => phrazleHints.open(PUZZLE, progress) as string,
+        GUESSED_EVERYTHING,
+      )
+      const regrown = JSON.stringify({ ...JSON.parse(short), guesses: [] })
+
+      expect(phrazleHints.opened(regrown)).toEqual(3)
+      expect(phrazleHints.open(PUZZLE, regrown)).toBeNull()
+    })
+
     // A SHORT LADDER ENDS EARLIER, and the reveal still closes it. Two rungs, then the answer, then
     // nothing -- so a ladder that shortened because a pool ran dry does not take the reveal with it.
     it('reaches the answer on a short ladder too', () => {
