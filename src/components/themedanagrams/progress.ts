@@ -136,8 +136,9 @@ export const encode = (guesses: Guesses): string => {
 //
 // THE CHEAP CHECK COMES FIRST, and the order is the only thing it buys: the length bound is asked
 // BEFORE the split, so a megabyte of valid-looking text is rejected without first being cut into a
-// million pieces. `split` above reaches the same string with two `lastIndexOf` calls and allocates
-// nothing, so the bound still stands in front of the only cut this codec makes.
+// million pieces. `split` -- declared BELOW this, with the rest of the tail codec -- reaches the
+// same string with two `lastIndexOf` calls and allocates nothing, so the bound still stands in front
+// of the only cut this codec makes.
 //
 // 4 * MAX_GUESS + 3 is exactly the longest BOARD PORTION `encode` can produce -- four maximal
 // guesses and the three separators between them. It is measured against the board portion rather

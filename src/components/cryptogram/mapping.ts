@@ -249,10 +249,12 @@ export const attachHints = (boardWrite: string, tail: CryptogramHintTail): strin
 /**
  * The player's board with the letters a rung handed over standing on it: what the bench DRAWS.
  *
- * ONE IMPLEMENTATION, TWO CALLERS, and that is the whole reason it is here rather than inline in
- * either. `hints.ts` runs it to compose the string it stores at the moment of purchase, and the
+ * ONE IMPLEMENTATION, THREE CALLERS, and that is the whole reason it is here rather than inline in
+ * any of them. `hints.ts` runs it to compose the string it stores at the moment of purchase, and the
  * board runs it on every render against the live progress prop -- so what is drawn and what is
  * stored are the same arrangement of letters by construction rather than by two functions agreeing.
+ * The third is the board's UNDO, which re-overlays the same rungs onto the snapshot it restores;
+ * that caller is only correct because of the idempotence noted at the bottom of this comment.
  *
  * IT STEALS, exactly as `apply` does, and for the same reason: a plain letter stands on one cipher
  * letter or on none. A player holding a wrong guess of A on Z when a rung reveals that V is the A

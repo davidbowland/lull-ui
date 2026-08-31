@@ -33,11 +33,17 @@ is true and does not do the work: it would also permit `onSaveDraft(text)`, whic
 payload and a place to put it. `onReset()` takes no argument and names no destination, so deleting
 `lull:hints:<puzzleId>` and resetting the hint bar stay entirely the shell's business.
 
-It exists because empty progress cannot carry that meaning. Three boards write `''` for reasons that
-are not a reset: `encode({})` in `cryptogram/mapping.ts` when the last letter is cleared,
-`missingvowels` when the text is deleted, and goFigure's Undo and Clear — which under the current
-grammar write `''` only when no rung has been spent, since a cleared board with rungs spent stores
-`_______|2|`.
+It exists because empty progress cannot carry that meaning. Four boards write `''` for reasons that
+are not a reset: `encode({})` in `cryptogram/mapping.ts` when the last letter is cleared, `encode`
+in `themedanagrams/progress.ts` when the last of the four drafts is deleted, `missingvowels` when
+the text is deleted, and goFigure's Undo and Clear — which under the current grammar write `''` only
+when no rung has been spent, since a cleared board with rungs spent stores `_______|2|`.
+
+Themed Anagrams joined that list by acquiring something to lose rather than by changing behavior: it
+always wrote `''` on an emptied board, and it cost nothing while its ladder was on the wire. Since
+2026-08-31 the ladders for cryptogram, phrazle and themedanagrams live in the board's own progress
+string, so `''` takes the rungs with it. Each of the three accepts that trade deliberately and
+argues it where the trade is made, in `components/<type>/hints.ts`.
 
 **A board may receive a FACT; it may never receive a CAPABILITY.** `dictionary?: ReadonlySet<string>`
 is the second prop to widen this contract, and it sits on the line `onReset` drew. `onReset()` takes

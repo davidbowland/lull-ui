@@ -127,8 +127,8 @@ export interface RegistryEntry {
   // improve for being recomputed. So absent means "the pack's ladder", which is what the shell did
   // for every type before this field existed.
   //
-  // PHRAZLE SETS IT. Cryptogram and Themed Anagrams are wired with their adapters, one type at a
-  // time; the other three read their ladder off the pack and always will.
+  // THREE ENTRIES SET IT -- Cryptogram, Phrazle and Themed Anagrams, the types whose rungs are about
+  // letters and therefore about the board. The other three read their ladder off the pack.
   hints?: HintAdapter
   // The `d` of one path in a 0 0 24 24 viewBox, not JSX, so this file stays .ts and the
   // registry stays data. The shelf draws it inside an aria-hidden <svg> beside the label
@@ -245,7 +245,8 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     glyph:
       'M0.7 1.7h6v5.4h-6zM8 1.7h6v5.4h-6zM15.3 1.7h6v5.4h-6zM0.7 8.9h6v5.4h-6zM8 8.9h6v5.4h-6z' +
       'M15.3 8.9h6v5.4h-6zM3.7 4.4h.01M11 4.4h.01',
-    // THE FIRST ENTRY TO SET IT. Phrazle's rungs are about the letter economy of the phrase -- which
+    // THE ONLY ONE OF THE THREE THAT LEAVES ITS BOARD ALONE. Phrazle's rungs are about the letter
+    // economy of the phrase -- which
     // common letters are absent, which uncommon ones are present, which letters make up one word --
     // and every one of those depends on what the player's guesses have already established. A pack
     // ladder cannot know that, which is why this type stopped shipping one.

@@ -133,13 +133,19 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // re-reading storage on every render would hand the board back its own writes.
   //
   // STATE RATHER THAN A FROZEN VALUE, and the reason is the hint adapter below rather than the
-  // board. Every board reads this in a lazy initializer and never looks at it again -- all six, and
-  // that is checked rather than assumed -- so what a board is handed is unchanged: the value at
+  // board. Every board reads its OWN portion of this in a lazy initializer and owns it from then on
+  // -- all six -- so the squares, guesses and drafts a board draws are unchanged: the value at
   // mount. What changed is that the SHELL now reads it too, on every render, to ask an adapter how
   // many rungs are bought and what they say. Frozen, that question is answered against the board as
   // it was when the player arrived: the frame writes a rung through onProgress, this value does not
   // move, `opened` stays where it was, and the press opens a sheet with nothing in it. The bar would
   // offer "Open hint 1 of 3" forever.
+  //
+  // TWO BOARDS ALSO RE-READ IT, AND ONLY FOR THE HINT TAIL. Cryptogram and Themed Anagrams draw what
+  // a rung revealed, so they decode the SPENT LIST off this live prop on every render -- never their
+  // own portion, which stays mount-time state. A bought rung therefore lands without a remount and
+  // without discarding anything the player typed. Phrazle's rungs move no tile, so its board never
+  // reads hint state and is handed no way to.
   //
   // ONE READING AND NOT TWO. Keeping a frozen `progress` for the board beside a live one for the
   // shell was the other candidate, and it is the arrangement gofigure/board.ts argues against: two

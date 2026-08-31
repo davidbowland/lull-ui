@@ -25,9 +25,14 @@ const MAX_HINT_COUNT = 3
  * shell depends on would be exempt from the coverage gate.
  *
  * Structural, not exhaustive, in the same spirit as isValidPuzzle: it checks what the shell
- * dereferences, not what a puzzle type means. EVERY puzzle type carries a ladder now -- goFigure's
- * rungs place an operator where a phrase puzzle's describe a meaning -- so null no longer means "this
- * game has no hints". It means the shape is malformed, and nothing downstream should touch it.
+ * dereferences, not what a puzzle type means.
+ *
+ * NULL MEANS TWO THINGS AND THIS FUNCTION CANNOT TELL THEM APART: a malformed ladder, and a type
+ * that ships no `hints` key at all. Half the catalog is the second case -- cryptogram, phrazle and
+ * themedanagrams compute their rungs on the device -- and that is exactly why PuzzleFrame asks the
+ * REGISTRY first: an entry carrying a `hints` adapter never reaches this function, so it never has
+ * to distinguish them. For the three types that DO come here, a ladder is on the wire and null still
+ * means malformed, so nothing downstream should touch it.
  *
  * A SHORT LADDER IS NOT MALFORMED. See MIN_HINT_COUNT above: one to three rungs is what the wire
  * promises and what a bench that drops a redundant rung actually sends. Everything downstream reads

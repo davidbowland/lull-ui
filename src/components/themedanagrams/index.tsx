@@ -110,7 +110,7 @@ const SHUFFLED = 'Letters shuffled.'
 const REFRESH_GLYPH = 'M18.52 15.04A8 8 0 1 1 16.66 6.64L19.49 9.47M19.49 4.47v5h-5'
 
 // THE STANDING LINE, and it is the one rule of this game nobody can guess on arrival -- the exact
-// analogue of the tile bench's left-to-right rule and the cipher bench's one-substitution rule. The
+// analog of the tile bench's left-to-right rule and the cipher bench's one-substitution rule. The
 // theme on the sign row says what the four rows are about; it does not say that all four answers fit
 // it, and that is the fact the puzzle turns on.
 //
@@ -413,10 +413,13 @@ export const ThemedAnagramsBoard = ({
   // could not draw -- and `isValidPuzzle` leaves `data` opaque, so the wire can deliver one. That
   // used to be a wrong sentence: the floor stood `Solved. You got all four.` over a board with no
   // rows. Once the control became a ternary it turned into a `Play again` button, and one press
-  // reaches the shell's `removeHints` and deletes `lull:hints:<puzzleId>` -- the rungs a player
-  // actually spent, on a board that never had a box to type in. The hints come off `puzzle.hints`,
-  // not off `entries`, so an intact ladder beside a malformed `entries` is exactly the shape that
-  // loses something.
+  // writes `''` through `onProgress` -- which the adapter's `merge` answers with `''` -- taking the
+  // rungs a player actually spent, on a board that never had a box to type in. THE STORE MOVED AND
+  // THE HAZARD DID NOT: it used to be the shell's `removeHints` deleting `lull:hints:<puzzleId>`,
+  // and it is now the ladder co-located in this board's own progress string. The shape that loses
+  // something is still the same one, because `isEntry` here and `entriesOf` in ./hints.ts read
+  // different fields -- four intact `answer`s beside malformed `scrambles` empty `rows` while the
+  // adapter still builds a ladder, so there is a purchase with no board under it.
   //
   // NOT what the plan says it prevents. Its text has a rowless board firing `onSolved` and the shell
   // recording a false win, and that is already impossible: the mount-seeded `reported` ref never

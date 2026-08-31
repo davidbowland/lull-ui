@@ -173,8 +173,19 @@ export type GoFigureHintLadder = [GoFigureHint, GoFigureHint, GoFigureHint]
 
 export interface GoFigureData {
   goal: number
-  // REQUIRED. Every pack is rebuilt on deploy, so there is no puzzle without it and no reason for a
-  // read site to branch on its absence.
+  // REQUIRED, and no read site branches on its absence.
+  //
+  // Packs are NOT wiped on deploy, whatever an earlier version of this comment claimed.
+  // lull-api's template.yaml sets DeletionPolicy and UpdateReplacePolicy to Retain on the packs
+  // table, NO Lambda role holds a delete action on it -- all three are hand-scoped statements rather
+  // than managed policy templates -- and createPack TOPS UP rather than replaces (buildPack in
+  // services/packs.ts there) -- so a pack written before a shape change keeps its old puzzles
+  // indefinitely and nothing will ever rewrite it. What makes this field safe to declare
+  // non-optional is the MANUAL runbook in lull-api's endpoints.rest ("building a pack for a MISSING
+  // date by hand", and the delete-and-rebuild note beside it), run before release: delete every pack
+  // item by hand, deploy, re-bootstrap today and tomorrow, then fetch each live date and check the
+  // shape. Skip it and the guarantee is a lie at runtime -- and it is THIS app that would find out,
+  // since a goFigure board reads `hints` with no absence branch.
   hints: GoFigureHintLadder
   bank: number[] // each digit used exactly once
   operators: Operator[] // reusable
@@ -533,10 +544,18 @@ export interface PuzzleComponentProps<T = unknown> {
   // knowledge in either direction — the board does not learn that a ladder exists and the shell
   // does not learn what the board holds — so the display-only rule still holds with six props.
   //
-  // Empty progress cannot be this signal, which is the tempting zero-prop alternative. Three boards
+  // Empty progress cannot be this signal, which is the tempting zero-prop alternative. FOUR boards
   // write '' for reasons that are not a reset: cryptogram's encode({}) in mapping.ts when the last
-  // letter is cleared, missingvowels when the text is deleted, and goFigure's own Undo and Clear. A
-  // shell that treated '' as "start over" would wipe a player's spent rungs on a keystroke.
+  // letter is cleared, themedanagrams' encode when the last of the four drafts is deleted,
+  // missingvowels when the text is deleted, and goFigure's own Undo and Clear. A shell that treated
+  // '' as "start over" would wipe a player's spent rungs on a keystroke.
+  //
+  // IT WAS THREE, AND THE FOURTH IS NOT A COUNTING SLIP -- it is a bench that joined the list by
+  // acquiring something to lose. Themed Anagrams wrote '' on an emptied board before this too, and
+  // it cost nothing, because its ladder was on the wire and its progress held only guesses. Its
+  // ladder now lives in that string, so the same keystroke has the consequence the sentence above
+  // describes. The three benches that compute their own rungs each accept that trade deliberately
+  // and say so where the trade is made: components/{cryptogram,phrazle,themedanagrams}/hints.ts.
   //
   // OPTIONAL, so every board that predates it compiles and renders unchanged. A board that has no
   // replay affordance — cryptogram today — simply never calls it.
