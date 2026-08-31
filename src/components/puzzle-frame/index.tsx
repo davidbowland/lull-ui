@@ -174,17 +174,70 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // PuzzleComponentProps, and a context is exactly the thing that is not.
   const { words } = useDictionary()
 
+  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist, and
+  // PuzzleProgress stays an opaque per-type string HERE, whatever an adapter makes of it.
+  //
+  // THAT SENTENCE IS NOW HALF-TRUE IN AN INTERESTING WAY, so it is worth being exact about which
+  // half. A board still receives six props, still gets no `hints`, and still has no name for the
+  // thing that sold one. What it can no longer be told is that a hint left it alone: an adapter
+  // writes its rung into the board's own progress string, so a cryptogram board comes back to find
+  // some squares locked and does not know why. "The board never learns hints exist" is the promise;
+  // "the board is never affected by a hint" was never one, and it is the promise this seam spends.
+  //
+  // WHERE THE RUNGS COME FROM IS THE WHOLE CHANGE. A pack ladder is decided before the puzzle ships,
+  // which is right for a hint about what a phrase MEANS and useless for one about its letters --
+  // "every Q is an E" is worth nothing to a player who already has Q, and no generator can know
+  // whether they do. So three types compute theirs at play time and the other three do not, and the
+  // shell asks the registry which it is holding.
+  //
+  // READ OFF THE REGISTRY, which is the shell asking its own question -- the same standing
+  // `needsDictionary` has, and the reason neither one reaches a board. `hintsOf` is untouched: the
+  // pack path is what it always was, and it is still the path three types take.
+  //
+  // Read HERE, above the writer, because the writer needs it: an adapter type's board write has to
+  // be merged before it is stored, and the merge is what stops a board clobbering a rung.
+  const adapter = entry.hints
+
+  // The board as the player has built it, in the board's own grammar, which this file cannot read
+  // and does not try to. Normalized ONCE: `readProgress` answers null for a puzzle never touched,
+  // every adapter's grammar spells "nothing spent" as the empty string, and null would be a second
+  // spelling of that for every adapter to handle. Doing it here also means the four reads below
+  // cannot disagree about which one they got.
+  const boardState = progress ?? ''
+
   // The shell owns persistence; the board is handed three callbacks and no storage.
   //
   // IT IS THE SHELL'S ONE WRITER, which is why the hint control below spends its rung through this
   // rather than through a store of its own. A rung an adapter sells goes into the same string the
   // board writes, so there is one record, one erasure, and nothing to keep in step.
-  const onProgress = useCallback(
+  //
+  // NOT the board's callback, though: this is the raw write, and `onProgress` below is what the
+  // board gets. The hint control calls this one because an adapter's `open` has already composed the
+  // WHOLE string -- board portion and hint tail together -- so putting it through the merge would
+  // ask the adapter to re-attach a tail to a string it just wrote the tail into.
+  const commit = useCallback(
     (next: PuzzleProgress) => {
       writeProgress(puzzle.id, next)
       setProgress(next)
     },
     [puzzle.id],
+  )
+
+  // THE ONE-WRITER RULE, and it is the board's whole side of this seam. A board writes only its own
+  // portion -- its `encode` signature does not change and it has no name for the hint field -- so
+  // every board write is re-joined here with the tail that is currently stored. Without it the
+  // sequence is: the player buys a rung, the adapter writes it, the MOUNTED board still holds the
+  // state it read in a lazy initializer at mount, and its very next `encode` overwrites the field.
+  // The purchase is gone, silently, and no board is at fault for it.
+  //
+  // `boardState` IS THIS RENDER'S READING and that is safe here for a specific reason rather than by
+  // luck. React has not applied `setProgress` when a second call in the same handler runs, so this
+  // closure can be one write behind -- and it does not matter, because `merge` reads only the HINT
+  // field out of it, and the hint field cannot move except through `commit` above, which is the
+  // shell's own control and never fires in the same tick as a board's press.
+  const onProgress = useCallback(
+    (next: PuzzleProgress) => commit(adapter === undefined ? next : adapter.merge(next, boardState)),
+    [adapter, boardState, commit],
   )
   const onSolved = useCallback(() => markSolved(puzzle.id), [puzzle.id])
 
@@ -221,34 +274,6 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
     setResetNonce((nonce) => nonce + 1)
   }, [puzzle.id])
 
-  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist, and
-  // PuzzleProgress stays an opaque per-type string HERE, whatever an adapter makes of it.
-  //
-  // THAT SENTENCE IS NOW HALF-TRUE IN AN INTERESTING WAY, so it is worth being exact about which
-  // half. A board still receives six props, still gets no `hints`, and still has no name for the
-  // thing that sold one. What it can no longer be told is that a hint left it alone: an adapter
-  // writes its rung into the board's own progress string, so a cryptogram board comes back to find
-  // some squares locked and does not know why. "The board never learns hints exist" is the promise;
-  // "the board is never affected by a hint" was never one, and it is the promise this seam spends.
-  //
-  // WHERE THE RUNGS COME FROM IS THE WHOLE CHANGE. A pack ladder is decided before the puzzle ships,
-  // which is right for a hint about what a phrase MEANS and useless for one about its letters --
-  // "every Q is an E" is worth nothing to a player who already has Q, and no generator can know
-  // whether they do. So three types compute theirs at play time and the other three do not, and the
-  // shell asks the registry which it is holding.
-  //
-  // READ OFF THE REGISTRY, which is the shell asking its own question -- the same standing
-  // `needsDictionary` has, and the reason neither one reaches a board. `hintsOf` is untouched: the
-  // pack path is what it always was, and it is still the path three types take.
-  const adapter = entry.hints
-
-  // The board as the player has built it, in the board's own grammar, which this file cannot read
-  // and does not try to. Normalized ONCE: `readProgress` answers null for a puzzle never touched,
-  // every adapter's grammar spells "nothing spent" as the empty string, and null would be a second
-  // spelling of that for every adapter to handle. Doing it here also means the three reads below
-  // cannot disagree about which one they got.
-  const boardState = progress ?? ''
-
   const hints = adapter ? adapter.ladder(puzzle, boardState) : hintsOf(puzzle)
 
   // The count and the purchase, and both are the ADAPTER's answers rather than this frame's. The bar
@@ -267,7 +292,10 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
     ? {
         onOpen: (): void => {
           const next = adapter.open(puzzle, boardState)
-          if (next !== null) onProgress(next)
+          // `commit`, NOT `onProgress`. This string is the adapter's own -- it already carries both
+          // the board's portion and the tail it just extended -- so merging it would hand the
+          // adapter its own write back and ask it to re-attach a tail that is already there.
+          if (next !== null) commit(next)
         },
         opened: adapter.opened(boardState),
       }

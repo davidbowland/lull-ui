@@ -54,6 +54,14 @@ describe('PuzzleFrame', () => {
         <button onClick={() => onProgress('kept')} type="button">
           Record progress
         </button>
+        {/* The OTHER half of a real board's Play again, and it is a second button rather than part
+            of Start over below so the two can be driven independently. Every board spells "there is
+            nothing on this board" as `onProgress('')` -- goFigure, cryptogram's cleared mapping,
+            Phrazle's Again -- and for an adapter type that empty string is also what takes the
+            ladder with it, so it has to be reachable on its own. */}
+        <button onClick={() => onProgress('')} type="button">
+          Clear progress
+        </button>
         <button onClick={onSolved} type="button">
           Record a win
         </button>
@@ -701,10 +709,11 @@ describe('PuzzleFrame', () => {
     })
   })
 
-  // THE SEAM, AND ONLY THE SEAM. Three types are about to compute their rungs at play time from the
-  // board the player has built, because a rung that cannot see the board cannot know what is still
-  // worth saying -- "every Q is an E" is worth nothing to a player who already has Q. None of those
-  // adapters exists yet, so every test below drives a STUB registered against a real type.
+  // THE SEAM, AND ONLY THE SEAM. Three types compute their rungs at play time from the board the
+  // player has built, because a rung that cannot see the board cannot know what is still worth
+  // saying -- "every Q is an E" is worth nothing to a player who already has Q. Every test below
+  // drives a STUB registered against a real type, and it goes on doing so now that one of the three
+  // ships for real: an adapter's own suite is where its grammar is proved.
   //
   // A stub is the right instrument here rather than a shortcut around a missing one. What this
   // describe is for is the claim that the frame reads NO grammar: it asks the registry for an
@@ -712,17 +721,27 @@ describe('PuzzleFrame', () => {
   // that used cryptogram's real codec would prove that cryptogram's codec works and say nothing
   // about the seam.
   describe('a bench whose type carries a hint adapter', () => {
-    // The cheapest grammar that can carry a count: progress is a run of '#', one per rung bought.
-    // No board writes anything like this, which is the point.
+    // The cheapest grammar that can carry BOTH halves of a progress string: whatever the board
+    // wrote, then one '#' per step bought. It has to carry both, because the field the shell writes
+    // and the field the board writes living in one string is the whole thing `merge` is about -- a
+    // stub whose progress was only a count could not tell a merge that worked from one that threw
+    // the board's portion away.
     //
+    // No board writes anything like this, which is the point.
+    const openedOf = (progress: string): number => progress.replace(/[^#]/g, '').length
+
     // `open` sells one step PAST the last rung, because that step is the answer -- see HintBar's
     // `controlLabel`, where `opened > hints.length` is the reveal. goFigure's controlled owner does
     // the same thing, and an adapter that stopped at its own last rung would take the reveal away
-    // from the three benches that are about to use this seam.
+    // from the three benches that use this seam.
+    //
+    // `merge` ANSWERS '' WITH '', which is the reset every board spells that way. Re-attaching the
+    // tail there would hand a player back rungs they threw away on a board that no longer has them.
     const stubAdapter = (rungs: string[]): HintAdapter => ({
       ladder: () => rungs.map((text) => ({ text })) as HintLadder,
-      open: (_puzzle, progress) => (progress.length > rungs.length ? null : `${progress}#`),
-      opened: (progress) => progress.length,
+      merge: (boardWrite, current) => (boardWrite === '' ? '' : `${boardWrite}${'#'.repeat(openedOf(current))}`),
+      open: (_puzzle, progress) => (openedOf(progress) > rungs.length ? null : `${progress}#`),
+      opened: openedOf,
     })
 
     const THREE_RUNGS = ['From the adapter, first.', 'From the adapter, second.', 'From the adapter, third.']
@@ -755,6 +774,81 @@ describe('PuzzleFrame', () => {
       await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
 
       expect(readProgress(cryptogramPuzzleId)).toEqual('#')
+    })
+
+    // THE ONE-WRITER RULE, AND THE REGRESSION TEST FOR THE BUG THAT PUT `merge` ON THE INTERFACE.
+    //
+    // Every board reads `progress` once, in a lazy initializer, and owns its state from then on. So
+    // the write below is composed from a board that has never heard of the '#' the adapter just
+    // stored -- and stored verbatim it would erase a rung the player paid for, silently, with no
+    // board at fault for it. The frame routes it through `merge` instead, and the tail comes back.
+    //
+    // Asserted at BOTH ends on purpose. The stored string is what survives a reload; the control's
+    // label is what the player sees, and it is the half that would still read "Open hint 1 of 3" if
+    // the count had been thrown away.
+    it('keeps a bought rung when the board writes its own portion afterwards', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Record progress' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('kept#')
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
+      expect(screen.getByText('From the adapter, first.')).toBeInTheDocument()
+    })
+
+    // THE BOARD'S PORTION SURVIVES TOO, which is the other half of "each field has exactly one
+    // writer" and the half a merge that simply refused board writes would fail. The adapter is
+    // handed what the board wrote and re-attaches the tail to it; it never invents the board's side.
+    it('keeps what the board wrote when a rung is bought afterwards', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Record progress' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('kept#')
+    })
+
+    // A BOARD'S PLAY AGAIN GOES THROUGH THE SAME MERGE, and the adapter is what decides that ''
+    // means the ladder goes with the board. The frame does not special-case it -- it cannot, since
+    // '' is a per-type spelling like every other progress string -- so this is the row that says the
+    // reset reaches the adapter at all.
+    it('lets a board start over through the merge, ladder and all', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Clear progress' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('')
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // THE REVEAL IS REACHABLE, and it is the reason `opened` is stored rather than derived from the
+    // spent rungs: a bar reaches "Show answer" only when `opened` exceeds the ladder's length, and a
+    // count read off a three-rung list can never express four. This walks all three rungs and then
+    // the fourth step, which is the one a derived count cannot sell.
+    it('sells the step past the last rung, which is the answer', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answer is Ate ate tea.')).toBeInTheDocument()
+      expect(readProgress(cryptogramPuzzleId)).toEqual('####')
     })
 
     // WHERE THE RUNG IS NOT. `lull:hints:<puzzleId>` is the uncontrolled bar's own store, and an

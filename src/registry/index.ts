@@ -50,6 +50,23 @@ export const BENCH_ORDER: readonly Bench[] = ['cipher', 'guess', 'writing', 'til
  * why they are there. "The board never learns hints exist" was always the promise; "the board is
  * never affected by a hint" never was, and it is not one this seam keeps.
  *
+ * THE SHELL IS THE ONLY WRITER OF THE HINT FIELD, AND `merge` IS THE WHOLE OF THAT RULE. Every board
+ * in this app reads `progress` once, in a lazy initializer, and owns its state from then on -- so a
+ * field an adapter writes into that string is a field the mounted board neither renders nor knows
+ * about, and the board's very next `encode` writes over it. That is silent loss of a rung the player
+ * paid for, and no amount of care in an adapter can prevent it, because the clobbering write is the
+ * board's and the board is right to make it.
+ *
+ * So boards keep writing only their own portion, `PuzzleFrame` routes EVERY board write through this,
+ * and the tail is re-attached from what is currently stored. Two properties fall out and both are
+ * worth naming: each field has exactly one writer, and the adapter never has to guess what the board
+ * meant to say about its own squares -- it copies a tail it wrote itself and leaves the rest alone.
+ *
+ * A board write of '' IS A RESET and an adapter must answer it with ''. Play again writes the empty
+ * string through the same callback, `''` is what the shell reads as "no progress", and re-attaching a
+ * ladder to it would hand the player back rungs they just threw away on a board that no longer has
+ * them.
+ *
  * `ladder` returns the rungs already bought, rendered from their frozen records, followed by
  * speculative placeholders for the unspent tail. HintBar draws only `slice(0, opened)`, so the tail
  * is computed, never shown, and committed from live state at the moment it is bought -- which is
@@ -68,13 +85,25 @@ export const BENCH_ORDER: readonly Bench[] = ['cipher', 'guess', 'writing', 'til
  * hint-bar, where `opened > hints.length` is the reveal -- so an adapter that stops at its own last
  * rung takes the reveal away from its bench.
  *
- * `opened` is DERIVED FROM PROGRESS rather than stored beside it. The count and whatever the rung
- * did to the board are then two readings of one record and cannot disagree -- the mistake goFigure's
- * BoardState comment warns about, avoided here by not having a second field at all. It is also why
- * a board's Play again clears the ladder for free: it writes `''` through the same callback.
+ * `opened` IS STORED BESIDE THE SPENT RUNGS AND IS NOT DERIVED FROM THEM, which is goFigure's grammar
+ * (`<cells>|<opened>|<locked>`) and is what its BoardState comment already argues for. An earlier
+ * draft of this interface derived it -- one record, nothing to keep in step -- and that is a
+ * genuinely better property that this seam cannot have, for a reason that has nothing to do with
+ * keeping two numbers in step: `controlLabel` in hint-bar reaches "Show answer" only when
+ * `opened > hints.length`, so a bar must be able to sell one step PAST the last rung, and a count
+ * derived from a three-rung spent list can never express four. Deriving it makes the answer reveal
+ * unreachable on every adapter bench. So `open` must be able to advance the count without appending
+ * a rung, and that last step is the reveal.
+ *
+ * Co-locating the count with the rungs in the board's own progress string is still the point, and
+ * still goFigure's: split across two stores with different prune rules, the count and the rungs can
+ * disagree, and a board showing a spent ladder while offering "Open hint 1 of 3" is a state no test
+ * would think to write. It is also why a board's Play again clears the ladder for free -- it writes
+ * `''` through the same callback, and `merge` above answers '' with ''.
  */
 export interface HintAdapter {
   ladder(puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null
+  merge(boardWrite: PuzzleProgress, current: PuzzleProgress): PuzzleProgress
   open(puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null
   opened(progress: PuzzleProgress): number
 }
