@@ -1,7 +1,19 @@
+import { revealedCiphers } from '@rules/hint-cryptogram'
 import React, { useEffect, useRef, useState } from 'react'
 
+import { hintDataOf, revealedLetters } from './hints'
 import { DEFAULT_AVAILABLE, GAP, squareSize } from './layout'
-import { apply, Assignment, cipherLetters, decode, encode, isSolved, Mapping } from './mapping'
+import {
+  apply,
+  Assignment,
+  cipherLetters,
+  decode,
+  decodeHints,
+  encode,
+  isSolved,
+  Mapping,
+  withRevealed,
+} from './mapping'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
 import { CryptogramData, PuzzleComponentProps } from '@types'
@@ -123,6 +135,16 @@ const NOTHING_TO_CLEAR_FIRST = 'Nothing to clear — you’re on the first squar
 // mid-word with five squares behind it.
 const NO_SQUARE_THAT_WAY = 'No square that way.'
 const NO_WORD_THAT_WAY = 'No word that way.'
+// A tap that a locked square turned away -- rows 7 and 8 of `apply`'s table. TWO SENTENCES, because
+// the two refusals are about two different squares and a single one would leave the player looking
+// for a lock on the square under their finger when the lock is on the other side of the phrase.
+//
+// It says WHY, not just no. A square that silently declines a key is the broken-key reading every
+// message on this bench exists to remove, and a player who has forgotten that they bought a rung has
+// nothing else on screen that would tell them.
+const LOCKED_HERE = (cipher: string, plain: string): string => `Cipher ${cipher} is ${plain}. A hint revealed it.`
+const LOCKED_ELSEWHERE = (cipher: string, plain: string): string =>
+  `${plain} is on cipher ${cipher}, which a hint revealed. It can’t move.`
 
 // aria-pressed variants rather than disabled ones, because these controls stay genuinely enabled --
 // a disabled element blurs on press and drops focus to <body>.
@@ -163,6 +185,20 @@ const SQUARE =
 // --lull-accent on --lull-raised is a pair contrast.test.ts already holds to 4.5:1, well over the
 // 3:1 a boundary owes 1.4.11, so this introduces no pair that needs registering there.
 const SQUARE_CARET = 'inset-ring-2 inset-ring-[var(--lull-accent)]'
+
+// A square a rung handed over, which is a square no tap can change. WEIGHT AND GROUND, never hue --
+// the same argument the caret above makes one square along, and the same reason: this bench already
+// spends --lull-accent on the selection, and a lock told apart from a selection by which of two
+// colors it draws is a lock nobody with a color vision deficiency can find. --lull-rule at 2px reads
+// against an ordinary square's 1px and the caret's 4px inset edge: three weights, told apart at a
+// glance. The plate ground rather than the raised one drops the inset highlight, so the square reads
+// as set INTO the surface rather than resting on it -- pressed, and not pressable.
+//
+// None of that is what carries the fact. The square's accessible NAME says "revealed by a hint" and
+// the square is aria-disabled, so a reader who sees no border at all is told twice; the treatment
+// here is for the player looking at the phrase. jsdom lays nothing out and style assertions are
+// banned in this repo, so this string is carried by the device check and by this comment.
+const SQUARE_LOCKED = 'border-2 border-[var(--lull-rule)] bg-[var(--lull-plate)] shadow-none'
 
 // Never --lull-hair: that token is decorative and may not draw the boundary that identifies a
 // control. The selected border is --lull-accent and is stated in aria-pressed as well, so the
@@ -282,7 +318,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   const [letters] = useState(() => cipherLetters(ciphertext))
   // Restored once, at mount. The shell keys this component on the puzzle id, so a different puzzle
   // is a different component rather than a prop change, and re-reading would hand it its own writes.
-  const [mapping, setMapping] = useState<Mapping>(() => decode(progress, ciphertext))
+  const [mapping, setMapping] = useState<Mapping>(() => decode(progress, ciphertext).mapping)
   // The one pointer. A caret, not a selection: `null` means nothing has been picked yet, and with
   // the whole-board clear gone that is reachable AT MOUNT AND NOWHERE ELSE -- no input on this board
   // puts the pointer back. Two independent pointers cannot survive a typing flow, because there is
@@ -349,7 +385,33 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     squareRefs.current[cursor]?.focus()
   }, [cursor])
 
-  const solved = isSolved(ciphertext, mapping, answer)
+  // WHAT A RUNG HAS HANDED OVER, READ OFF THE LIVE `progress` PROP ON EVERY RENDER -- never off the
+  // mount-time state above, and that is the whole of why a bought rung appears at once.
+  //
+  // The shell writes a purchase into this board's own progress string and then re-renders it with a
+  // new `progress`. The board's `mapping` state was read in a lazy initializer at mount and has not
+  // moved, so a board that took its locks from state would sell a rung, charge for it, and show
+  // nothing until the player reloaded the page. Re-reading here costs one indexOf and a split of at
+  // most a dozen characters, against a remount that would throw away the caret, the undo history and
+  // whatever the player was in the middle of typing.
+  //
+  // THE BOARD READS THIS AND NEVER WRITES IT. `encode` still writes the pairs and nothing else, and
+  // PuzzleFrame re-attaches the tail through the adapter's `merge` -- so the board cannot clobber a
+  // rung on its next tap, which is the failure the one-writer rule exists to make unrepresentable.
+  //
+  // It knows nothing about hints beyond these two facts. There is no ladder here, no count, no
+  // sentence and no control: the board learns that some squares are settled, exactly as CLAUDE.md
+  // says it would, and has no name for the thing that settled them.
+  const spent = decodeHints(progress).hints
+  const hintData = hintDataOf(puzzle)
+  const locked = revealedCiphers(hintData, spent)
+  // The player's board with those letters standing on it, and the ONE value everything below reads.
+  // `mapping` is still the player's own -- their guesses, their steals, their undo history -- and
+  // this is the overlay. Composed by the same `withRevealed` the adapter stores through, so the
+  // squares drawn here and the pairs in storage are one arrangement rather than two that agree.
+  const board = withRevealed(mapping, revealedLetters(hintData, spent))
+
+  const solved = isSolved(ciphertext, board, answer)
 
   // Initialized with the MOUNT-TIME value, so a board restored into a solved mapping does not report
   // a solve that already happened -- the shell marked it solved when the player actually won. Every
@@ -379,10 +441,18 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
 
   // `source` exists so a square can be named against a mapping the STATE has not caught up to yet:
   // setMapping is async, so inside the handler that assigned, only the returned mapping is current.
-  const nameOf = (square: Square, source: Mapping = mapping): string => {
+  // A LOCKED SQUARE SAYS SO IN ITS OWN NAME, which is the half of the treatment that is not allowed
+  // to be a border. `SQUARE_LOCKED` above draws the weight; this is the fact, and it is the only
+  // thing a screen reader has to go on -- so it names what happened ("a hint revealed it") rather
+  // than the state it left behind ("locked"), because a player who hears "locked" has no way to find
+  // out why. The square also carries aria-disabled, which says the tap will not land; between them a
+  // reader is told the same thing twice, deliberately, since one is a name and the other a property
+  // and readers surface them at different moments.
+  const nameOf = (square: Square, source: Mapping = board): string => {
     const held = source[square.cipher]
     const state = held === undefined ? 'empty' : `holds ${held}`
-    return `Cipher ${square.cipher}, letter ${square.index + 1} of ${squares.length}, ${state}`
+    const settled = locked.has(square.cipher) ? ', revealed by a hint' : ''
+    return `Cipher ${square.cipher}, letter ${square.index + 1} of ${squares.length}, ${state}${settled}`
   }
 
   // The caret goes somewhere the player pointed at without activating anything: an arrow, the
@@ -449,7 +519,22 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // the PAD path passes one, on either key: the keyboard moves focus onto the landed square and the
   // square announces itself, so a tail there would say the same fact twice.
   const assign = (cipher: string, plain: string, landed: Square | null): Assignment => {
-    const result = apply(mapping, cipher, plain)
+    const result = apply(board, cipher, plain, locked)
+    // ROWS 7 AND 8, AND THE EARLIEST POSSIBLE RETURN. A refused assignment writes no state, no
+    // progress and no history entry -- pushing a snapshot for a move that did not happen would put
+    // an Undo on the stack that undoes nothing, which is the one thing a history must never contain.
+    // The caret does not advance either: `press` and `erase` both read `result` back, and neither
+    // treats a refusal as a move.
+    //
+    // It says which square refused rather than only that one did. `apply` names the LOCKED cipher
+    // letter, so the two sentences split on whether that is the square under the caret -- and the
+    // sentence for the other case has to name it, because the square that turned the tap away may be
+    // three words along and off the player's screen.
+    if (result.refused !== null) {
+      const settled = board[result.refused] ?? plain
+      say(result.refused === cipher ? LOCKED_HERE(cipher, settled) : LOCKED_ELSEWHERE(result.refused, settled))
+      return result
+    }
     setMapping(result.mapping)
     onProgress(encode(result.mapping))
     // The board as it stood a moment ago, and where the player was standing when they changed it.
@@ -461,7 +546,12 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     // this is a state update, not a mutation: the array has to be rebuilt anyway, and one
     // expression that is correct whatever length it starts at cannot drift out of step with the cap
     // the way a length check beside a push can.
-    setHistory((previous) => [...previous.slice(-(UNDO_DEPTH - 1)), { caret: cursor, mapping }])
+    //
+    // The snapshot is `board` rather than the raw `mapping` state, so a move made after a purchase
+    // rewinds to a board that still has the revealed letters on it. Restoring the player's own
+    // mapping instead would take a locked square off on the way back, and `withRevealed` would put
+    // it straight back on the next render -- one frame of a square emptying and refilling itself.
+    setHistory((previous) => [...previous.slice(-(UNDO_DEPTH - 1)), { caret: cursor, mapping: board }])
 
     // The solve REPLACES the assignment message: the answer is the complete news, and telling a
     // player to check the squares they are least sure of is simply false on a correct board.
@@ -485,7 +575,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     // corrections, where every square already holds a letter and the next pad tap overwrites
     // whichever one the caret silently moved to. Fullness is stale news on the fifth consecutive
     // full-board move; where the caret is standing is fresh news every time.
-    const wasFull = letters.every((letter) => mapping[letter] !== undefined)
+    const wasFull = letters.every((letter) => board[letter] !== undefined)
     const full = letters.every((letter) => result.mapping[letter] !== undefined)
     const assigned = assignmentMessage(cipher, plain, result)
     // Either the full-board notice or the tail, never both, and that stays true now that the ribbon
@@ -600,15 +690,25 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     // gestures would empty a run the player was only reading. Nothing is assigned and the caret
     // moves on. Ordered after the null guard because it has to read squares[cursor] to ask its
     // question.
-    if (mapping[here.cipher] === plain) {
+    //
+    // It fires on a LOCKED square holding the typed letter too, and it fires FIRST -- before the
+    // refusal below -- which is the right order rather than an accident. Typing the letter a revealed
+    // square already shows is not an attempt to change it, so answering "a hint revealed it" would
+    // refuse a keystroke that asked for nothing, and the caret would stop dead in the middle of a
+    // word the player was spelling out. The square is unchanged either way.
+    if (board[here.cipher] === plain) {
       const already = ALREADY(here.cipher, plain)
-      // No assignment ran, so the mapping STATE is already current and is the right source here.
+      // No assignment ran, so the drawn board is already current and is the right source here.
       say(keepFocus && landed !== null ? `${already} Now on ${nameOf(landed)}.` : already)
       advance()
       return
     }
 
     const result = assign(here.cipher, plain, keepFocus ? landed : null)
+    // A refused tap is not a move, so the caret stays where it is: advancing past a square the
+    // keystroke did not fill would leave the player somewhere they never asked to be, with the
+    // ribbon explaining a refusal about a square they can no longer see the caret on.
+    if (result.refused !== null) return
     // A solve ends the board, and moving the cursor off the answer would be a loss. SOLVED, not
     // merely full: a wrong letter in the last empty square still advances.
     if (isSolved(ciphertext, result.mapping, answer)) return
@@ -645,7 +745,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // one assignment touches at most two cipher letters, the one it wrote and the one it stole from,
   // so this is at most two clauses.
   const undoMessage = (restored: Mapping): string => {
-    const changed = letters.filter((letter) => restored[letter] !== mapping[letter])
+    const changed = letters.filter((letter) => restored[letter] !== board[letter])
     const parts = changed.map((letter) =>
       restored[letter] === undefined ? `${letter} is empty again.` : `Every ${letter} is ${restored[letter]} again.`,
     )
@@ -668,8 +768,17 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
       say(NOTHING_TO_UNDO)
       return
     }
-    setMapping(previous.mapping)
-    onProgress(encode(previous.mapping))
+    // PUT THROUGH `withRevealed` ON THE WAY BACK, and it is a safety net rather than the mechanism.
+    // Every snapshot taken since the purchase already carries the revealed letters -- `assign`
+    // pushes `board` -- so this is the identity on all of them. What it covers is the older entries:
+    // a player who made three moves, bought a rung and then pressed Undo four times walks back past
+    // the purchase into a snapshot that predates it, and restoring that raw would write a string
+    // without the rung's letters in it. A rung is not taken back by Undo, on this bench or on
+    // goFigure's, so the restore is composed with what the ladder has handed over rather than
+    // allowed to erase it.
+    const restoredBoard = withRevealed(previous.mapping, revealedLetters(hintData, spent))
+    setMapping(restoredBoard)
+    onProgress(encode(restoredBoard))
     setHistory((entries) => entries.slice(0, -1))
 
     // The tail rides on the caret actually MOVING, exactly as it does on the free keystroke: if the
@@ -683,15 +792,15 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
 
     // A restore can put the answer back on the board -- empty a run on a solved board, then Undo --
     // and the solve is the complete news there exactly as it is on the assignment path.
-    if (isSolved(ciphertext, previous.mapping, answer)) {
+    if (isSolved(ciphertext, restoredBoard, answer)) {
       say(solvedMessage())
       return
     }
-    const restored = undoMessage(previous.mapping)
+    const restored = undoMessage(restoredBoard)
     // Named against the RESTORED mapping, never against the mapping state, which has not updated
     // inside this handler -- the square the caret is going back to may be one this very undo just
     // emptied.
-    say(landed === null ? restored : `${restored} Now on ${nameOf(landed, previous.mapping)}.`)
+    say(landed === null ? restored : `${restored} Now on ${nameOf(landed, restoredBoard)}.`)
   }
 
   // The board's whole eraser, and the one place its branch table lives. Two inputs reach it -- the
@@ -729,7 +838,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     // corrupt pack, and the alternative is a TypeError thrown out of an event handler.
     const here = squares[cursor]
     if (here === undefined) return
-    const held = mapping[here.cipher]
+    const held = board[here.cipher]
     // Branch 2: clear in place. The correction case -- you are standing on the letter you want gone,
     // so nothing moves and nothing is armed. With re-activation no longer destructive, this and Undo
     // are the only ways a letter comes off the board at all.
@@ -745,7 +854,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     // Guaranteed to exist: `cursor` is only ever set from a square's own index or clamped into
     // range, and this line is past the `cursor === 0` return -- so cursor - 1 is a square.
     const previous = squares[cursor - 1]
-    const previousHeld = mapping[previous.cipher]
+    const previousHeld = board[previous.cipher]
     // Both step-back branches land strictly left of the caret, so the move always happens and
     // `move`'s own bail-out is unreachable from here. That is what makes arming the focus gate safe
     // on this path: a flag armed for a move that never happened would strand and eat the next
@@ -918,7 +1027,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // it is why the guards above are written as "what this declines to touch" rather than "what it
   // reaches" -- a listener at this range has to be explicit about the keys it hands back.
   //
-  // No dependency array on purpose. The handler closes over `cursor`, `mapping` and `history`, all
+  // No dependency array on purpose. The handler closes over `cursor`, `board` and `history`, all
   // of which change on nearly every press, so any array short of "everything" would leave a stale
   // closure typing into a board that has moved on. Re-subscribing on each render is one
   // removeEventListener and one addEventListener against a keystroke, which is not a cost worth a
@@ -930,7 +1039,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
 
   // Squares, not cipher letters: the count is of what is on screen, which is what the player is
   // looking at.
-  const filled = squares.filter((square) => mapping[square.cipher] !== undefined).length
+  const filled = squares.filter((square) => board[square.cipher] !== undefined).length
   const tally = solved ? 'You solved this one' : `${filled} of ${squares.length} squares filled`
 
   // The ribbon's string, carrying the repeat mark on every other message. Empty stays exactly empty
@@ -1040,9 +1149,23 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
                       // put the word in a screen reader's mouth eight times for the one square it
                       // is not about.
                       aria-current={cursor === square.index ? 'true' : undefined}
+                      // aria-disabled AND NOT `disabled`, which is the same call every pressed
+                      // control on this bench already makes: a disabled element blurs on press and
+                      // drops focus to <body>, and a revealed square still has to be reachable. It
+                      // is part of the phrase, it carries a letter worth reading, and the caret
+                      // still steps through it. What it will not do is take an assignment, which is
+                      // what this attribute says and what `apply`'s rows 7 and 8 enforce.
+                      //
+                      // Absent rather than "false" on every other square, matching aria-current
+                      // above: an explicit false on twenty squares puts the word in a reader's
+                      // mouth twenty times for the one square it is not about.
+                      aria-disabled={locked.has(square.cipher) ? true : undefined}
                       aria-label={nameOf(square)}
                       aria-pressed={selectedCipher === square.cipher}
-                      className={cursor === square.index ? `${SQUARE} ${SQUARE_CARET}` : SQUARE}
+                      className={[SQUARE, locked.has(square.cipher) ? SQUARE_LOCKED : '']
+                        .concat(cursor === square.index ? SQUARE_CARET : '')
+                        .filter((part) => part !== '')
+                        .join(' ')}
                       onClick={() => select(square)}
                       ref={(element) => void (squareRefs.current[square.index] = element)}
                       style={{ height: `${Math.round(size * SQUARE_ASPECT)}px`, width: `${size}px` }}
@@ -1063,7 +1186,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
                         className="lull-sign"
                         style={{ fontSize: `${Math.round(size * 0.77)}px` }}
                       >
-                        {mapping[square.cipher] ?? ''}
+                        {board[square.cipher] ?? ''}
                       </span>
                     </button>
                     {/* Which squares repeat is the entire information content of a cryptogram, so
@@ -1098,7 +1221,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
           <Keypad
             label="Letters, and what each one is on"
             letter={(plain) => {
-              const on = letters.find((cipher) => mapping[cipher] === plain)
+              const on = letters.find((cipher) => board[cipher] === plain)
 
               return {
                 name: on === undefined ? `${plain}, not used yet` : `${plain}, on cipher ${on}`,

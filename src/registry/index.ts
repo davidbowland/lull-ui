@@ -1,5 +1,6 @@
 import { CrypticClueBoard } from '@components/crypticclue'
 import { CryptogramBoard } from '@components/cryptogram'
+import { cryptogramHints } from '@components/cryptogram/hints'
 import { GoFigureBoard } from '@components/gofigure'
 import { MissingVowelsBoard } from '@components/missingvowels'
 import { PhrazleBoard } from '@components/phrazle'
@@ -184,6 +185,16 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // filled cell because the day strokes this path with no fill, which would leave a "filled"
     // square indistinguishable from its two empty neighbors.
     glyph: 'M0.7 2.6h6v10.8h-6zM8 2.6h6v10.8h-6zM15.3 2.6h6v10.8h-6zM3.7 8h.01',
+    // THE RUNGS ARE LETTERS, NOT MEANING, which is why this type stopped reading its ladder off the
+    // pack. Cryptogram inherited the shared phrase ladder -- three sentences about what the phrase
+    // MEANS -- and a player here is not trying to recognize a phrase; they are solving a substitution
+    // cipher one letter at a time. "Every Q is an E" is also worth nothing to a player who already
+    // has Q, and no generator can know whether they do.
+    //
+    // It changes the BOARD, and that is the difference from Phrazle's entry: a rung writes its
+    // letters into the grid and locks those squares, so the board reads hint state off its own live
+    // progress. It still never writes it -- see `merge` above.
+    hints: cryptogramHints,
     // An arrow crossing into a wall -- one thing standing for another, which is the whole game.
     icon: 'M4 12h9m0 0-3-3m3 3-3 3M18 5v14',
     label: 'Cryptogram',
