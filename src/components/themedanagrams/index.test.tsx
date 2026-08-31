@@ -22,16 +22,11 @@ describe('ThemedAnagramsBoard', () => {
     [3, 'The letters are T P S L A A U'],
   ]
 
-  // The same four runs as the per-letter names a reader now meets, one tile at a time. A separate
-  // table from SPELLED rather than a computed split of it: SPELLED is what the box's DESCRIPTION
-  // says, this is what the ROW's tiles say, and the two are different computations that happen to
-  // agree on an unhinted board.
-  const LETTERS: [number, string[]][] = [
-    [0, ['E', 'L', 'K', 'T', 'E', 'T']],
-    [1, ['U', 'N', 'A', 'S', 'A', 'P', 'C', 'E']],
-    [2, ['L', 'K', 'S', 'E', 'T', 'I', 'L']],
-    [3, ['T', 'P', 'S', 'L', 'A', 'A', 'U']],
-  ]
+  // ONE TABLE FOR BOTH READINGS, and on an unhinted board they are the same string. The row's image
+  // is NAMED with it and the box is DESCRIBED with it -- two different computations that agree here
+  // because nothing is pinned. The per-letter names a reader meets on a row a rung has touched are
+  // written out where they belong, in "a letter a hint revealed"; a second table of them up here
+  // would say they are the shape of every board, and they are what a bought rung pays for.
 
   // The four row indexes, so a per-row table can be written without repeating the literal. A
   // separate table from SPELLED because most of these assertions do not need the scramble.
@@ -169,15 +164,19 @@ describe('ThemedAnagramsBoard', () => {
       expect(runs()).toEqual(['ELKTET', 'UNASAPCE', 'LKSETIL', 'TPSLAAU'])
     })
 
-    // A scramble read aloud as one string is gibberish, exactly like Missing Vowels' consonant run.
-    // So the run is not one element with a spelled-out name any more -- it is one role="img" PER
-    // LETTER, each named for itself, which is what lets a pinned tile say "revealed" about the one
-    // letter it is about. A reader still gets the letters rather than word-shaped noise; they now
-    // also get them one at a time, which is how anyone reads a scramble anyway.
-    it.each(LETTERS)('names every letter of row %i for itself', (index, spelled) => {
+    // A scramble read aloud as one string is gibberish, exactly like Missing Vowels' consonant run,
+    // so the run is a role="img" whose NAME spells the letters out. ONE image per row while nothing
+    // is pinned, and that count is the assertion rather than the markup being described.
+    //
+    // ONE IMAGE PER LETTER IS WHAT A RUNG BUYS, AND ONLY THEN. Splitting unconditionally put up to
+    // nine image nodes per row into a reader's browse order -- thirty-six on an untouched board,
+    // where four used to be -- to carry a "revealed" distinction that does not exist until a rung has
+    // been bought. This row is the one that fails if the split creeps back onto every board; the
+    // split itself is asserted in "a letter a hint revealed".
+    it.each(SPELLED)('spells row %i out as one image', (index, spelled) => {
       setup()
 
-      expect(tiles(index)).toEqual(spelled)
+      expect(tiles(index)).toEqual([spelled])
     })
 
     // The box's DESCRIPTION is where the run is still spelled out in one breath, so a reader who
@@ -843,7 +842,7 @@ describe('ThemedAnagramsBoard', () => {
 
       await press(user)
 
-      expect(tiles(0)).toEqual(['E', 'L', 'E', 'T', 'K', 'T'])
+      expect(tiles(0)).toEqual(['The letters are E L E T K T'])
       expect(screen.getAllByRole('textbox')[0]).toHaveAccessibleDescription('The letters are E L E T K T')
     })
 
@@ -1635,6 +1634,18 @@ describe('ThemedAnagramsBoard', () => {
       setup(showPuzzle, INITIAL)
 
       expect(runs().slice(1)).toEqual(['ELKTET', 'LKSETIL', 'TPSLAAU'])
+    })
+
+    // AND IT IS UNTOUCHED IN THE ACCESSIBILITY TREE TOO, which is the half a visible-run assertion
+    // cannot see. The split into one image per letter is bought by the rung and paid for by the
+    // reader -- up to nine nodes in the browse order where there was one -- so it lands on the row
+    // the rung is about and on no other. Row 0 is split here and row 1 is one image, on the same
+    // board, in the same render.
+    it('splits only the row a rung pinned into one image per letter', () => {
+      setup(showPuzzle, INITIAL)
+
+      expect(tiles(0)).toEqual(['S, revealed', 'O', 'W', 'H'])
+      expect(tiles(1)).toEqual(['The letters are E L K T E T'])
     })
 
     // RESHUFFLE CYCLES THE REMAINDER AND LEAVES THE PINNING ALONE. The cursor moves, the pool is

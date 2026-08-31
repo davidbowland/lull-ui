@@ -58,10 +58,14 @@ const RUNG_SEPARATOR = ','
 // rung and two or three for a word one, against the ~40 a JSON record of the same fact costs -- and
 // this string is re-written on every tap, beside a mapping that is itself at most 52 characters.
 //
-// The index is bounded at two digits because lull-api caps a cryptogram phrase at 80 characters, so
-// the most words a legal puzzle can hold is 40. That is a fact about the OTHER repo and nothing here
-// enforces it, which is why the bound is generous rather than exact: a third digit would be refused
-// here and the tail dropped, costing a rung, and no phrase this app can be handed reaches it.
+// THIS IS THE SHAPE CHECK AND NOT THE BOUND. It says a rung is spelled the way this codec spells
+// one; `withinPuzzle` below says the rung is about THIS puzzle. The two are separate because only
+// the second needs a ciphertext, and `decodeHints` has none -- the same split phrazle's progress.ts
+// makes between `isSpentRung` and `withinAnswer`.
+//
+// The index is bounded at two digits here because lull-api caps a cryptogram phrase at 80
+// characters, so the most words a legal puzzle can hold is 40. That is a fact about the OTHER repo,
+// which is why this bound is generous rather than exact -- the exact one is `withinPuzzle`.
 const RUNG = /^(?:L[A-Z]|W\d{1,2})$/
 // The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in
 // hint-cryptogram.ts, and a test that imported the bound it checks against would assert the cap
@@ -78,6 +82,13 @@ const lettersOf = (text: string): string[] => text.toUpperCase().match(/[A-Z]/g)
 
 /** The distinct cipher letters the phrase actually uses, alphabetical. */
 export const cipherLetters = (ciphertext: string): string[] => [...new Set(lettersOf(ciphertext))].sort()
+
+/** The ciphertext's words. Index i here is index i of the answer's words, as the rule reads them. */
+const cipherWords = (ciphertext: string): string[] =>
+  ciphertext
+    .toUpperCase()
+    .split(/[^A-Z]+/)
+    .filter((word) => word.length > 0)
 
 /**
  * The mapping as sorted `cipherplain` pairs -- BFDMGKHSJNKTMRPOQAUWVIXEZL.
@@ -187,6 +198,30 @@ const hintTail = (rest: string[]): CryptogramHintTail => {
 }
 
 /**
+ * The two checks that need the PUZZLE rather than the grammar, and the only ones this codec makes
+ * with a ciphertext in hand.
+ *
+ * A word rung naming word 9 of a five-word phrase renders as "One of the words is ?." and a letter
+ * rung naming a cipher letter this ciphertext does not use renders as "Every Q is a ?." --
+ * `cryptogramHintFor` reads both through `?? '?'` and composes the sentence anyway, and the shell
+ * prints what it is handed verbatim. So the rung is refused here rather than printed. This is the
+ * ladder half of the rule `pairsOf` already applies to the board half of the same string, and it is
+ * the bound Themed Anagrams spells `[0-3]` in its pattern and Phrazle spells `withinAnswer`.
+ *
+ * THE WHOLE TAIL, NOT THE OFFENDING RUNG, for the reason `hintTail` gives above: three records whose
+ * ORDER is the ladder and whose COUNT is the price the player paid cannot have one taken out of the
+ * middle and still mean anything.
+ */
+const withinPuzzle = (tail: CryptogramHintTail, ciphertext: string): CryptogramHintTail => {
+  const available = new Set(lettersOf(ciphertext))
+  const words = cipherWords(ciphertext)
+
+  return tail.hints.every((rung) => (rung.kind === 'letter' ? available.has(rung.cipher) : rung.index < words.length))
+    ? tail
+    : noHints()
+}
+
+/**
  * A stored string back into the board and the ladder it carries.
  *
  * THE GRAMMAR IS `<pairs>|<opened>|<spent>`, and the BARE `<pairs>` form is still read. Every board
@@ -209,7 +244,7 @@ export const decode = (progress: string | null, ciphertext: string): CryptogramB
   const pairs = cut === -1 ? progress : progress.slice(0, cut)
   const rest = cut === -1 ? [] : progress.slice(cut + 1).split(FIELD)
 
-  return { ...hintTail(rest), mapping: pairsOf(pairs, ciphertext) }
+  return { ...withinPuzzle(hintTail(rest), ciphertext), mapping: pairsOf(pairs, ciphertext) }
 }
 
 /**
@@ -220,6 +255,14 @@ export const decode = (progress: string | null, ciphertext: string): CryptogramB
  * whom and it has no business reading either side's meaning. The BOARD reads it too, on every render,
  * for the same reason from the other end: the lock set is a fact about the ladder alone, and asking
  * for it through `decode` would re-walk 52 characters of pairs to answer a question about the tail.
+ *
+ * SO THIS AND `decode` DISAGREE ON EXACTLY ONE CLASS OF INPUT, and it is named rather than left to be
+ * found: a stored rung naming a word this phrase does not have or a cipher letter this ciphertext
+ * does not use. `decode` drops the tail and this keeps it, which is phrazle's arrangement and
+ * phrazle's trade. Nothing in this app writes such a string; every path that RENDERS a rung goes
+ * through `decode`, so no `?` sentence can reach a player; a letter rung the ciphertext does not hold
+ * locks a square that does not exist and draws nothing; and the next purchase overwrites the record.
+ * The alternative is an `opened` and a `merge` that take a puzzle they have no other use for.
  */
 export const decodeHints = (progress: string | null): CryptogramHintTail => {
   if (progress === null) return noHints()

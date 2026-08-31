@@ -886,6 +886,95 @@ describe('HintBar', () => {
     })
   })
 
+  // A CONTROLLED BAR'S LADDER IS RECOMPUTED FROM THE BOARD, so its LENGTH moves while the bar is
+  // mounted. Nothing here can see why; what it can see is that the offer it is painting changed from
+  // a rung to the answer without a press, on a button the player may be standing on.
+  describe('a ladder that shortens under a standing offer', () => {
+    const solution = 'The answer is NOTHING GOLD CAN STAY.'
+    const shortened: HintLadder = [hints[0], hints[1]]
+
+    const renderFolding = (ladder: HintLadder, opened: number): ReturnType<typeof render> =>
+      render(<HintBar control={{ onOpen: noop, opened }} hints={ladder} puzzleId={puzzleId} solution={solution} />)
+
+    const refoldTo = (rerender: (ui: React.ReactElement) => void, ladder: HintLadder, opened: number): void => {
+      rerender(<HintBar control={{ onOpen: noop, opened }} hints={ladder} puzzleId={puzzleId} solution={solution} />)
+    }
+
+    const NOTICE = 'No hints are left. This button now shows the answer.'
+
+    // THE SHEET IS OPENED FIRST IN EVERY ROW, because shut, the control reads "Show 2 hints" on both
+    // sides of the fold and there is nothing silent to catch. The regression lives on an OPEN sheet,
+    // where the control is the ladder's pager.
+    const withSheetOpen = async (user: UserEvent, opened: number): Promise<ReturnType<typeof render>> => {
+      const rendered = renderFolding(hints, opened)
+      await press(user, `Show ${opened} hint${opened === 1 ? '' : 's'}`)
+      return rendered
+    }
+
+    // THE PRESS THAT CHANGED WHAT IT DOES. Two rungs bought against a ladder of three, then the
+    // player solves the entries the third rung was aimed at: the adapter folds 3 to 2, `opened` is
+    // still 2, and `controlLabel` swaps "Open hint 3 of 3" for "Show answer". Screen readers do not
+    // re-read a focused element when its label changes -- the fact the reset announcement below
+    // exists for -- so without this the next press hands over the whole answer to a player who was
+    // told they were buying a hint.
+    it('says the button now shows the answer', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 2)
+
+      refoldTo(rerender, shortened, 2)
+
+      expect(screen.getByRole('status')).toHaveTextContent(NOTICE)
+    })
+
+    // THE OTHER HALF OF THE SAME FACT, and the row that makes the one above an assertion rather than
+    // a sentence: the control really has become the reveal, so the announcement is describing a
+    // change that happened rather than warning about one that did not.
+    it('changes the control to the reveal', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 2)
+
+      refoldTo(rerender, shortened, 2)
+
+      expect(screen.getByRole('button', { name: 'Show answer' })).toBeInTheDocument()
+    })
+
+    // A LADDER THAT SHORTENS ABOVE THE COUNT STILL OFFERS A RUNG, so nothing has changed for the
+    // player and nothing is said. Announcing here would be a live region talking about the shell's
+    // arithmetic rather than about what this control does.
+    it('says nothing when a rung is still on offer', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 1)
+
+      refoldTo(rerender, shortened, 1)
+
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+
+    // THE PURCHASE IS EXCLUDED BY THE COUNT MOVING, and it has to be: a bought rung routinely
+    // shortens the speculative tail in the same render it raises `opened`, and a bar that announced
+    // there would talk over the rung the player just paid for.
+    it('says nothing when the count moved with it', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 1)
+
+      refoldTo(rerender, shortened, 2)
+
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+
+    // NOTHING IS TAKEN AWAY WITHOUT AN ANSWER TO TAKE. With no `solution` the control becomes "Hide
+    // hints", which is the sheet's toggle and not a more destructive press.
+    it('says nothing on a bench with no answer to give', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = render(<HintBar control={{ onOpen: noop, opened: 2 }} hints={hints} puzzleId={puzzleId} />)
+      await press(user, 'Show 2 hints')
+
+      rerender(<HintBar control={{ onOpen: noop, opened: 2 }} hints={shortened} puzzleId={puzzleId} />)
+
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+  })
+
   // The shell raises a count when the player starts the puzzle over. It is a prop and an effect
   // rather than a changed `key` on this component, and every test here is about something the
   // remount destroyed: the focused control, the live region, and the second reset.

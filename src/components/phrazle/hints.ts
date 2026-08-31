@@ -102,7 +102,13 @@ const fold = (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PhrazleSpentRu
 export const phrazleHints: HintAdapter = {
   ladder: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null => {
     const answer = answerOf(puzzle)
-    const { hints, opened } = decodeHints(progress)
+    // `decode`, NOT `decodeHints`, AND THE DIFFERENCE IS A RENDERED SENTENCE. Only `decode` applies
+    // `withinAnswer`, which refuses a stored word rung naming a word this phrase does not have. The
+    // reveal branch below renders `hints` directly rather than the fold, so reading it through the
+    // codec that does not bound it put "Word 10 uses these letters, alphabetized: ." on screen --
+    // the exact sentence progress.ts says is "refused here rather than printed". The bound has to be
+    // applied on every path that RENDERS, and this is the second one.
+    const { hints = [], opened = 0 } = decode(progress, answer)
 
     // THE REVEAL CLOSES THE LADDER, and this is what makes "the tail is never shown" true rather than
     // nearly true. `opened` exceeds the bought rung count in exactly one state -- the answer has been
@@ -126,9 +132,10 @@ export const phrazleHints: HintAdapter = {
 
   open: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null => {
     const answer = answerOf(puzzle)
-    const { guesses } = decode(progress, answer)
+    // One read of the bounded codec for all three fields, for the reason `ladder` gives above: a
+    // rung `decode` has refused must not be carried forward into the record this writes either.
+    const { guesses, hints = [], opened = 0 } = decode(progress, answer)
     const probe = fold(puzzle, progress)
-    const { hints, opened } = decodeHints(progress)
 
     // Nothing to sell on a board with no ladder. The frame draws no bar in that case, so this guard
     // is for a caller rather than for a player.

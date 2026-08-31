@@ -1145,7 +1145,7 @@ describe('PuzzleFrame', () => {
         stalePackCryptogramPack,
         cryptogramPuzzleId,
         REGISTRY.cryptogram.hints,
-        ['Every E is an E.', 'Every Z is a T.', 'One of the words is ATE.'],
+        ['Every Q is an E.', 'Every Z is a T.', 'One of the words is ATE.'],
         cryptogramStalePackLadder.map((hint) => hint.text),
       ],
       [
@@ -1189,6 +1189,70 @@ describe('PuzzleFrame', () => {
       },
     )
 
+    // THE FRAME PASSES THE LIVE BOARD, AND THIS IS THE ONLY PLACE THAT CAN BE PINNED. "These types
+    // compute their rungs against the board the player actually built" is the whole feature, and the
+    // frame is the seam it crosses: `adapter.ladder(puzzle, boardState)`. Mutating that second
+    // argument to `''` left all eighty-four tests in this file green.
+    //
+    // WHY EVERY EXISTING ROW MISSED IT, because the hole is specific rather than general. The stub
+    // adapter above ignores both of its arguments by construction -- `ladder: () => rungs` -- so no
+    // row that uses it can see which progress it was handed. The stale-pack rows below use the real
+    // adapters but only ever on an UNTOUCHED board, where the live ladder and the fresh one are the
+    // same three sentences. And the won-board rows assert "Open hint 1 of 3", which the `''` fallback
+    // produces too. `opened`, `open` and `merge` each kill five or six rows under the same mutation;
+    // `ladder`'s second argument killed none.
+    //
+    // So both rows below stand on a board with progress on it, and both assert something that is
+    // DIFFERENT from what a fresh board would have been offered.
+    //
+    // 'QE' is cipher Q mapped correctly to E. Two cipher letters are left, so the ladder folds to two
+    // rungs -- a letter each, and then no word left to open -- where an untouched board is offered
+    // three. The COUNT is the assertion here and it costs no press.
+    it('counts the cryptogram ladder against the board the player has built', async () => {
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, 'QE')
+      stubbedAdapter = REGISTRY.cryptogram.hints
+
+      renderReady(cryptogramPuzzleId)
+
+      expect(await screen.findByRole('button', { name: 'Open hint 1 of 2' })).toBeInTheDocument()
+    })
+
+    // AND THE RUNG ITSELF, which is the half a count cannot cover. On an untouched board rung 1 is
+    // "Every Q is an E."; with Q already correct the chooser skips it and takes V. A frame handing
+    // the adapter '' buys the right rung -- `open` reads the live board -- and then RENDERS the
+    // fresh one, so the sentence on screen is about a square the player solved before they pressed.
+    it('draws the cryptogram rung the live board earned rather than the one a fresh board would', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, 'QE')
+      stubbedAdapter = REGISTRY.cryptogram.hints
+
+      renderReady(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 2' }))
+
+      expect(screen.getByText('Every V is an A.')).toBeInTheDocument()
+      expect(screen.queryByText('Every Q is an E.')).not.toBeInTheDocument()
+    })
+
+    // THE SECOND BENCH, and it moves the rung's SUBJECT rather than the ladder's length. With
+    // SAUCEPAN solved the longest unsolved entry is the third row, so rung 1 aims there; on an
+    // untouched board it aims at the second. Two adapters rather than one, because a frame that
+    // passed '' would be wrong on all three and a single bench cannot say whether the seam or the
+    // adapter is the thing under test.
+    it('draws the themed anagrams rung the live board earned', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(themedAnagramsPack)
+      writeProgress(themedAnagramsPuzzleId, '\nSAUCEPAN\n\n')
+      stubbedAdapter = REGISTRY.themedanagrams.hints
+
+      renderReady(themedAnagramsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(screen.getByText('The 3rd answer starts with S.')).toBeInTheDocument()
+      expect(screen.queryByText('The 2nd answer starts with C.')).not.toBeInTheDocument()
+    })
+
     // THE BAR DOES NOT VANISH ON THE WINNING KEYSTROKE, and this is asserted at the FRAME because
     // nothing else can see it. Two adapters had nothing left to CHOOSE on a won board -- every rung
     // aims at a square or a row the player has not got -- so `ladder` answered null, the frame's
@@ -1201,7 +1265,7 @@ describe('PuzzleFrame', () => {
     // storage, because the point is the state a returning player arrives in as much as the keystroke
     // that reaches it.
     it.each<[string, Pack, string, HintAdapter | undefined, string]>([
-      ['cryptogram', cryptogramPack, cryptogramPuzzleId, REGISTRY.cryptogram.hints, 'EEVAZT'],
+      ['cryptogram', cryptogramPack, cryptogramPuzzleId, REGISTRY.cryptogram.hints, 'QEVAZT'],
       [
         'themedanagrams',
         themedAnagramsPack,
@@ -1383,10 +1447,16 @@ describe('PuzzleFrame', () => {
   // The gate. A context value is supplied directly rather than a provider, so no network, no timers
   // and no Cache API are involved and the state under test is one literal.
   describe('a puzzle whose type needs a word list', () => {
+    // `now` IS PASSED HERE TOO, and its absence was a live `Date.now` reaching the component in the
+    // eight rows below -- the one thing the comment on `noonOnPackDate` says this file must not do.
+    // The trail reads the clock: the day crumb's href is `/` for today and `/?d=<date>` for any other
+    // day, and the year crumb spells a year for a day outside the reader's current one. Nothing in
+    // this describe asserts on the trail, so the omission cost nothing today and would have cost a
+    // failing suite on a date certain, with no commit in between to blame.
     const renderGated = (state: DictionaryState, id: string = phrazlePuzzleId): ReturnType<typeof render> =>
       render(
         <DictionaryContext.Provider value={state}>
-          <PuzzleFrame locale="en-US" puzzleId={id} />
+          <PuzzleFrame locale="en-US" now={noonOnPackDate} puzzleId={id} />
         </DictionaryContext.Provider>,
       )
 

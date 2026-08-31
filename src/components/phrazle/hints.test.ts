@@ -94,6 +94,21 @@ describe('the phrazle hint adapter', () => {
       expect(texts(regrown)).toHaveLength(2)
     })
 
+    // THE OUT-OF-RANGE GUARD ON THE PATH THAT BYPASSED IT. `withinAnswer` in progress.ts refuses a
+    // word rung naming a word this phrase has not got, and says so: the sentence it exists to stop
+    // is "Word 10 uses these letters, alphabetized: ." -- `phrazleHintFor` reads the word through
+    // `?? ''` and composes it anyway, and the shell prints what it is handed verbatim.
+    //
+    // The REVEAL branch of `ladder` renders the stored rungs directly rather than the fold, and it
+    // used to read them through `decodeHints`, which applies no bound at all. So the one board that
+    // rendered stored rungs unfolded was the one board the guard did not cover, and it printed the
+    // exact sentence progress.ts says is refused. Both paths read the bounded codec now.
+    it('draws no placeholder sentence for a word rung past the end of the phrase', () => {
+      const revealed = JSON.stringify({ guesses: [], hints: [{ index: 9, kind: 'word' }], opened: 2 })
+
+      expect(texts(revealed)).toEqual([ABSENT_RUNG, PRESENT_RUNG, WORD_RUNG])
+    })
+
     // A pack a player can genuinely be handed: `isValidPuzzle` leaves `data` opaque, so a puzzle
     // whose answer never arrived is a VALID pack with nothing to build a rung out of. Null is what
     // the frame reads as "no bar", which is the same answer a malformed pack ladder gets.

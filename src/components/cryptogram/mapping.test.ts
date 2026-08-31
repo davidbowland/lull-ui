@@ -10,10 +10,15 @@ import {
   withRevealed,
 } from './mapping'
 
-// V, Z and E are the letters the spec's own status-message examples use, so the six rows below read
-// against the table in the design doc without translation. Under { E: 'E', V: 'A', Z: 'T' } this
+// V, Z and Q are the letters the spec's own status-message examples use, so the six rows below read
+// against the table in the design doc without translation. Under { Q: 'E', V: 'A', Z: 'T' } this
 // deciphers to ATE ATE TEA, which is the ANSWER the isSolved block checks against.
-const CIPHERTEXT = 'VZE VZE ZEV'
+//
+// NO CIPHER LETTER STANDS FOR ITSELF, and this fixture used to break that. It ran cipher E against
+// plain E, which lull-api's `encipher` cannot produce -- the substitution it draws is a DERANGEMENT
+// -- so every rung over that square rendered "Every E is an E.", a sentence no real puzzle can
+// utter, and three suites pinned it as the expected output.
+const CIPHERTEXT = 'VZQ VZQ ZQV'
 
 describe('encode', () => {
   // Sorted by cipher letter and flattened, so the same mapping always encodes to the same string --
@@ -43,7 +48,7 @@ const mappingOf = (progress: string | null): Mapping => decode(progress, CIPHERT
 
 describe('decode', () => {
   it('reads back what encode wrote', () => {
-    const mapping: Mapping = { E: 'A', V: 'I', Z: 'T' }
+    const mapping: Mapping = { Q: 'A', V: 'I', Z: 'T' }
 
     expect(mappingOf(encode(mapping))).toEqual(mapping)
   })
@@ -89,7 +94,7 @@ describe('decode', () => {
   })
 
   it('rejects the whole string for a cipher letter the ciphertext does not contain', () => {
-    expect(mappingOf('VAQB')).toEqual({})
+    expect(mappingOf('VAXB')).toEqual({})
   })
 
   // A plain letter is on exactly one cipher letter or on none, always -- so a duplicate cannot be
@@ -212,17 +217,17 @@ describe('apply', () => {
   // "no steal while anything is locked". A wrong guess sitting on the letter is still released,
   // which is the whole of how a player corrects a board around a revealed square.
   it('still steals from an unlocked square while another square is locked', () => {
-    expect(apply({ E: 'T', V: 'A' }, 'Z', 'T', new Set(['V']))).toStrictEqual({
+    expect(apply({ Q: 'T', V: 'A' }, 'Z', 'T', new Set(['V']))).toStrictEqual({
       cleared: false,
       mapping: { V: 'A', Z: 'T' },
       refused: null,
       released: null,
-      stolenFrom: 'E',
+      stolenFrom: 'Q',
     })
   })
 
   it('leaves every other assignment alone', () => {
-    expect(apply({ E: 'T', V: 'A' }, 'V', 'I').mapping).toEqual({ E: 'T', V: 'I' })
+    expect(apply({ Q: 'T', V: 'A' }, 'V', 'I').mapping).toEqual({ Q: 'T', V: 'I' })
   })
 
   // The board renders from the returned mapping, so a mutated input would be a state change React
@@ -247,17 +252,17 @@ describe('isSolved', () => {
   // phrase is still wrong, which is the state the board's "check the ones you're least sure of"
   // message exists for.
   it('is not solved when a full mapping spells something else', () => {
-    expect(isSolved(CIPHERTEXT, { E: 'T', V: 'A', Z: 'E' }, ANSWER)).toBe(false)
+    expect(isSolved(CIPHERTEXT, { Q: 'T', V: 'A', Z: 'E' }, ANSWER)).toBe(false)
   })
 
   it('is solved when the full mapping spells the answer', () => {
-    expect(isSolved(CIPHERTEXT, { E: 'E', V: 'A', Z: 'T' }, ANSWER)).toBe(true)
+    expect(isSolved(CIPHERTEXT, { Q: 'E', V: 'A', Z: 'T' }, ANSWER)).toBe(true)
   })
 
   // Solved is DERIVED from the mapping rather than latched, so the board stays interactive and
   // changing a letter un-solves it.
   it('stops being solved when a letter is taken back off', () => {
-    expect(isSolved(CIPHERTEXT, { E: 'E', V: 'A' }, ANSWER)).toBe(false)
+    expect(isSolved(CIPHERTEXT, { Q: 'E', V: 'A' }, ANSWER)).toBe(false)
   })
 
   it('is not solved on an empty mapping', () => {
@@ -280,7 +285,7 @@ describe('isSolved', () => {
 
 describe('cipherLetters', () => {
   it('lists the distinct letters of the ciphertext in alphabetical order', () => {
-    expect(cipherLetters(CIPHERTEXT)).toEqual(['E', 'V', 'Z'])
+    expect(cipherLetters(CIPHERTEXT)).toEqual(['Q', 'V', 'Z'])
   })
 
   it('ignores the spaces', () => {
@@ -292,7 +297,7 @@ describe('cipherLetters', () => {
   // so the board can look a square's cipher letter up in the mapping without checking the case of
   // a string it did not write.
   it('reads a lowercase ciphertext as the same letters', () => {
-    expect(cipherLetters('vze')).toEqual(['E', 'V', 'Z'])
+    expect(cipherLetters('vzq')).toEqual(['Q', 'V', 'Z'])
   })
 })
 
@@ -302,12 +307,12 @@ describe('cipherLetters', () => {
 // puzzle, while a malformed ladder costs the ladder and nothing else -- the board beside it is still
 // this player's work and still perfectly readable.
 describe('the ladder field', () => {
-  const LETTER_RUNG = { cipher: 'E', kind: 'letter' } as const
+  const LETTER_RUNG = { cipher: 'Q', kind: 'letter' } as const
   const WORD_RUNG = { index: 0, kind: 'word' } as const
 
   describe('decode', () => {
     it('reads the rungs and the count a stored string carries', () => {
-      expect(decode('VAZT|2|LE,W0', CIPHERTEXT)).toStrictEqual({
+      expect(decode('VAZT|2|LQ,W0', CIPHERTEXT)).toStrictEqual({
         hints: [LETTER_RUNG, WORD_RUNG],
         mapping: { V: 'A', Z: 'T' },
         opened: 2,
@@ -327,7 +332,7 @@ describe('the ladder field', () => {
     // A rung bought before a single square was touched. The pairs field is legitimately empty and
     // the ladder is not, which is the one shape that proves the two fields are read independently.
     it('reads a ladder bought on a board with nothing on it', () => {
-      expect(decode('|1|LE', CIPHERTEXT)).toStrictEqual({ hints: [LETTER_RUNG], mapping: {}, opened: 1 })
+      expect(decode('|1|LQ', CIPHERTEXT)).toStrictEqual({ hints: [LETTER_RUNG], mapping: {}, opened: 1 })
     })
 
     // ONE ROW PER FAULT, and every one of them KEEPS THE BOARD. That is the whole point of the
@@ -335,11 +340,11 @@ describe('the ladder field', () => {
     // a player the squares they filled in.
     it.each<[string, string]>([
       ['one field instead of two', 'VAZT|1'],
-      ['three fields instead of two', 'VAZT|1|LE|X'],
-      ['a count that is not a number', 'VAZT|x|LE'],
-      ['a count with a sign on it', 'VAZT|+1|LE'],
-      ['a count below the rungs it stands beside', 'VAZT|0|LE'],
-      ['a count more than one past the last rung', 'VAZT|3|LE'],
+      ['three fields instead of two', 'VAZT|1|LQ|X'],
+      ['a count that is not a number', 'VAZT|x|LQ'],
+      ['a count with a sign on it', 'VAZT|+1|LQ'],
+      ['a count below the rungs it stands beside', 'VAZT|0|LQ'],
+      ['a count more than one past the last rung', 'VAZT|3|LQ'],
       // A REVEAL ON A LADDER OF ZERO, which `open` cannot produce from any board: the first press
       // either appends a rung or declines. Admitted, it put a free speculative rung on screen --
       // HintBar draws `slice(0, opened)` over a ladder whose tail the adapter folds from live state.
@@ -348,7 +353,7 @@ describe('the ladder field', () => {
       ['a letter rung naming no letter', 'VAZT|1|L'],
       ['a word rung naming no index', 'VAZT|1|W'],
       ['a word index longer than any legal phrase', 'VAZT|1|W100'],
-      ['more rungs than the rule will ever sell', 'VAZT|4|LE,LV,LZ,W0'],
+      ['more rungs than the rule will ever sell', 'VAZT|4|LQ,LV,LZ,W0'],
     ])('drops a ladder with %s and keeps the board', (_description, progress) => {
       expect(decode(progress, CIPHERTEXT)).toStrictEqual({ hints: [], mapping: { V: 'A', Z: 'T' }, opened: 0 })
     })
@@ -357,13 +362,13 @@ describe('the ladder field', () => {
     // the pairs beside it. A board that belongs to another puzzle is refused whole; the rungs the
     // player paid for are still theirs.
     it('drops a board that names a square this ciphertext has not got and keeps the ladder', () => {
-      expect(decode('QB|1|LE', CIPHERTEXT)).toStrictEqual({ hints: [LETTER_RUNG], mapping: {}, opened: 1 })
+      expect(decode('XB|1|LQ', CIPHERTEXT)).toStrictEqual({ hints: [LETTER_RUNG], mapping: {}, opened: 1 })
     })
 
     // The answer reveal: one step past the last rung, which is the count a derived one could never
     // express. See CryptogramHintTail.
     it('accepts a count one past the last rung, which is the answer reveal', () => {
-      expect(decode('|2|LE', CIPHERTEXT).opened).toEqual(2)
+      expect(decode('|2|LQ', CIPHERTEXT).opened).toEqual(2)
     })
   })
 
@@ -394,7 +399,7 @@ describe('the ladder field', () => {
 
   describe('attachHints', () => {
     it('writes the count and the rungs after the board’s own portion', () => {
-      expect(attachHints('VAZT', { hints: [LETTER_RUNG, WORD_RUNG], opened: 2 })).toEqual('VAZT|2|LE,W0')
+      expect(attachHints('VAZT', { hints: [LETTER_RUNG, WORD_RUNG], opened: 2 })).toEqual('VAZT|2|LQ,W0')
     })
 
     // An empty tail hands `boardWrite` back byte for byte, which is what keeps an untouched board
@@ -451,7 +456,7 @@ describe('withRevealed', () => {
   // Idempotent, which the board depends on: a render after a render, and an Undo restoring a
   // snapshot taken after the purchase, both come out where they went in.
   it('changes nothing the second time it is applied', () => {
-    const once = withRevealed({ E: 'X', Z: 'A' }, { V: 'A' })
+    const once = withRevealed({ Q: 'X', Z: 'A' }, { V: 'A' })
 
     expect(withRevealed(once, { V: 'A' })).toEqual(once)
   })

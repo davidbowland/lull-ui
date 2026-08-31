@@ -4,7 +4,7 @@ import { cryptogramPuzzle } from '@test/__mocks__'
 import { Puzzle } from '@types'
 
 describe('the cryptogram hint adapter', () => {
-  // VZE VZE ZEV under { E: E, V: A, Z: T } spells ATE ATE TEA, off the fixture rather than retyped
+  // VZQ VZQ ZQV under { Q: E, V: A, Z: T } spells ATE ATE TEA, off the fixture rather than retyped
   // so this suite and the board's cannot drift on the phrase both are built around.
   const PUZZLE = cryptogramPuzzle as Puzzle<unknown>
   const CIPHERTEXT = cryptogramPuzzle.data.ciphertext
@@ -15,13 +15,13 @@ describe('the cryptogram hint adapter', () => {
   // the alphabetically first candidate and the walk-up finds nothing higher and takes the last -- and
   // the row that would catch a percentile silently becoming an index is the row that spells the
   // answers out.
-  const LOW_RUNG = 'Every E is an E.'
+  const LOW_RUNG = 'Every Q is an E.'
   const HIGH_RUNG = 'Every Z is a T.'
   const WORD_RUNG = 'One of the words is ATE.'
 
   // Every cipher letter mapped correctly, which is the state that used to empty the fold and take the
   // hint bar with it.
-  const SOLVED_BOARD = encode({ E: 'E', V: 'A', Z: 'T' })
+  const SOLVED_BOARD = encode({ Q: 'E', V: 'A', Z: 'T' })
 
   // Buying driven through `open` rather than by writing a progress string by hand, so what these
   // rows exercise is the string the adapter actually stores.
@@ -46,16 +46,35 @@ describe('the cryptogram hint adapter', () => {
       expect(texts('')).toEqual([LOW_RUNG, HIGH_RUNG, WORD_RUNG])
     })
 
+    // A STORED RUNG THIS PUZZLE CANNOT HOLD, AND WHAT IT RENDERS AS. Both strings below are ones a
+    // player can type into localStorage, and both used to reach `cryptogramHintFor`'s `?? '?'`
+    // fallbacks -- so the shell, which prints a rung's `text` verbatim, drew "One of the words is ?."
+    // and "Every X is a ?.". The pattern in mapping.ts checks the SPELLING of a rung and cannot check
+    // either of these: it has no ciphertext. `withinPuzzle` does, on the one path that renders.
+    //
+    // The whole tail goes, so the bar falls back to what a fresh board would have been offered. That
+    // is the arrangement Themed Anagrams gets from bounding its index to [0-3] in the pattern and
+    // Phrazle from `withinAnswer`, and this bench was the one of the three with neither.
+    //
+    // A `not.toThrow()` row covered both of these before. It passes on every string a composer can
+    // produce, including the two sentences a player would have read.
+    it.each<[string, string]>([
+      ['a word rung naming a word this phrase has not got', '|1|W9'],
+      ['a letter rung naming a cipher letter this ciphertext has not got', '|1|LX'],
+    ])('draws no placeholder sentence for %s', (_description, progress) => {
+      expect(texts(progress)).toEqual([LOW_RUNG, HIGH_RUNG, WORD_RUNG])
+    })
+
     // THE HINT-FARM DEFENSE, and the row this design most needs. A rung is frozen into the stored
     // record when it is bought and rendered from that record forever after, so a player cannot buy
     // rung 1, learn something, and watch rung 1 upgrade itself into a better hint. The fixture is
     // chosen so the two answers genuinely differ: with E correctly mapped, a fresh fold picks Z as
     // its low rung, and the bought rung stays the one that was paid for.
     it('renders a bought rung from its frozen record however the board moves afterwards', () => {
-      const bought = cryptogramHints.merge(encode({ E: 'E' }), buy(1))
+      const bought = cryptogramHints.merge(encode({ Q: 'E' }), buy(1))
 
       expect(texts(bought)[0]).toEqual(LOW_RUNG)
-      expect(texts(encode({ E: 'E' }))[0]).not.toEqual(LOW_RUNG)
+      expect(texts(encode({ Q: 'E' }))[0]).not.toEqual(LOW_RUNG)
     })
 
     // Nothing here draws, so the tail is stable for a given board with no seed to carry -- every
@@ -81,7 +100,7 @@ describe('the cryptogram hint adapter', () => {
     // with one rung bought, taking the reveal on that one-rung ladder, and then clearing a square.
     it('stops growing its tail once the reveal is bought', () => {
       const revealed = cryptogramHints.open(PUZZLE, cryptogramHints.merge(SOLVED_BOARD, buy(1))) as string
-      const cleared = cryptogramHints.merge(encode({ E: 'E' }), revealed)
+      const cleared = cryptogramHints.merge(encode({ Q: 'E' }), revealed)
 
       expect(cryptogramHints.opened(cleared)).toEqual(2)
       expect(texts(cleared)).toEqual([LOW_RUNG])
@@ -122,8 +141,8 @@ describe('the cryptogram hint adapter', () => {
     // into the board.
     it('freezes the rung it sold and writes its letter onto the board', () => {
       expect(decode(buy(1), CIPHERTEXT)).toStrictEqual({
-        hints: [{ cipher: 'E', kind: 'letter' }],
-        mapping: { E: 'E' },
+        hints: [{ cipher: 'Q', kind: 'letter' }],
+        mapping: { Q: 'E' },
         opened: 1,
       })
     })
@@ -136,16 +155,16 @@ describe('the cryptogram hint adapter', () => {
     // three squares. That is the escalation made concrete -- a rare letter opens few squares, a
     // common one opens many, a word opens a word.
     it('writes every letter of the word rung onto the board', () => {
-      expect(decode(buy(3), CIPHERTEXT).mapping).toEqual({ E: 'E', V: 'A', Z: 'T' })
+      expect(decode(buy(3), CIPHERTEXT).mapping).toEqual({ Q: 'E', V: 'A', Z: 'T' })
     })
 
     // IT STEALS, and only from an unlocked square. A player who guessed A onto Z buys the rung that
     // reveals V is the A: the wrong guess is released rather than left to contradict the square the
     // rung just filled, which would be two squares claiming one letter.
     it('releases a wrong guess sitting on a letter the rung reveals', () => {
-      const bought = cryptogramHints.open(PUZZLE, `${encode({ Z: 'A' })}|2|LE,LZ`) as string
+      const bought = cryptogramHints.open(PUZZLE, `${encode({ Z: 'A' })}|2|LQ,LZ`) as string
 
-      expect(decode(bought, CIPHERTEXT).mapping).toEqual({ E: 'E', V: 'A', Z: 'T' })
+      expect(decode(bought, CIPHERTEXT).mapping).toEqual({ Q: 'E', V: 'A', Z: 'T' })
     })
 
     // THE STEP PAST THE LAST RUNG IS THE ANSWER, and it is the reason `opened` is stored rather than
@@ -179,11 +198,11 @@ describe('the cryptogram hint adapter', () => {
   // hints is right to write only its own half.
   describe('merge', () => {
     it('keeps a bought rung when the board writes its own portion afterwards', () => {
-      const merged = cryptogramHints.merge(encode({ E: 'E', V: 'I' }), buy(1))
+      const merged = cryptogramHints.merge(encode({ Q: 'E', V: 'I' }), buy(1))
 
       expect(decode(merged, CIPHERTEXT)).toStrictEqual({
-        hints: [{ cipher: 'E', kind: 'letter' }],
-        mapping: { E: 'E', V: 'I' },
+        hints: [{ cipher: 'Q', kind: 'letter' }],
+        mapping: { Q: 'E', V: 'I' },
         opened: 1,
       })
     })
@@ -221,7 +240,7 @@ describe('the cryptogram hint adapter', () => {
     })
 
     it('gives back every distinct letter of the word a word rung named', () => {
-      expect(revealedLetters(DATA, [{ index: 0, kind: 'word' }])).toEqual({ E: 'E', V: 'A', Z: 'T' })
+      expect(revealedLetters(DATA, [{ index: 0, kind: 'word' }])).toEqual({ Q: 'E', V: 'A', Z: 'T' })
     })
 
     // A pack whose answer is shorter than its ciphertext leaves some cipher letters with no true
@@ -229,7 +248,7 @@ describe('the cryptogram hint adapter', () => {
     // squares carry nothing, which is the honest rendering of a rung that revealed a letter the pack
     // never shipped, and the board still LOCKS them so it does not claim they can be filled in.
     it('gives back nothing for a cipher letter the answer never reached', () => {
-      expect(revealedLetters({ answer: 'A', ciphertext: 'VZE' }, [{ index: 0, kind: 'word' }])).toEqual({ V: 'A' })
+      expect(revealedLetters({ answer: 'A', ciphertext: 'VZQ' }, [{ index: 0, kind: 'word' }])).toEqual({ V: 'A' })
     })
   })
 
@@ -242,7 +261,7 @@ describe('the cryptogram hint adapter', () => {
       ['nothing at all', ''],
       ['a bare board with no ladder', 'VAZT'],
       ['a separator and nothing after it', 'VAZT|'],
-      ['a count no ladder could justify', 'VAZT|9|LE'],
+      ['a count no ladder could justify', 'VAZT|9|LQ'],
       ['a rung of an unknown kind', 'VAZT|1|??'],
       ['a word rung naming a word this phrase has not got', 'VAZT|1|W9'],
       ['a very long run of letters', 'A'.repeat(2000)],
@@ -260,8 +279,8 @@ describe('the cryptogram hint adapter', () => {
       ['no fields at all', {}],
       ['no data at all', null],
       ['a ciphertext that is a number', { answer: 'Ate ate tea', ciphertext: 7 }],
-      ['an answer shorter than its ciphertext', { answer: 'A', ciphertext: 'VZE VZE ZEV' }],
-      ['a perfectly good phrase', { answer: 'Ate ate tea', ciphertext: 'VZE VZE ZEV' }],
+      ['an answer shorter than its ciphertext', { answer: 'A', ciphertext: 'VZQ VZQ ZQV' }],
+      ['a perfectly good phrase', { answer: 'Ate ate tea', ciphertext: 'VZQ VZQ ZQV' }],
     ])('builds a ladder over a pack carrying %s without throwing', (_description, data) => {
       const puzzle = { ...PUZZLE, data } as Puzzle<unknown>
 

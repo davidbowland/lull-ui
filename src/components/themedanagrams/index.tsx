@@ -647,34 +647,49 @@ export const ThemedAnagramsBoard = ({
             // Keyed by index because the array is a fixed four-tuple in wire order that this board
             // never sorts, filters or reorders -- the one case where an index key is stable.
             <li className={ROW} key={index}>
-              {/* ONE role="img" PER LETTER, where this row used to be one role="img" over the whole
-                  run, and the split is what the pinning bought. A scramble is word-shaped noise with
-                  a second encoding to translate -- that is why the letters are images at all, here
-                  and not on the cryptic bench one file over, whose clue is a grammatical sentence
-                  with a surface reading that is the whole joke -- but a pinned tile is a fact about
-                  ONE letter, and the children of a role="img" are not exposed at all. A single image
-                  could only say it in prose, which would leave "which letter is true" resolvable
-                  only by counting along a sentence.
+              {/* ONE role="img" PER LETTER **ONLY WHERE A RUNG HAS PINNED SOMETHING**, and one image
+                  over the whole run everywhere else. A scramble is word-shaped noise with a second
+                  encoding to translate -- that is why the letters are images at all, here and not on
+                  the cryptic bench one file over, whose clue is a grammatical sentence with a surface
+                  reading that is the whole joke.
 
-                  So each letter names itself, and a pinned one names itself as revealed. The row
-                  reads "S revealed, O, W, H" letter by letter, which is what `spellOut` was
-                  achieving in one breath, and `getByRole('img', { name: 'S, revealed' })` is then an
-                  assertion about the accessibility tree rather than about a class.
+                  The SPLIT is what the pinning bought. A pinned tile is a fact about ONE letter, and
+                  the children of a role="img" are not exposed at all, so a single image could only
+                  say it in prose -- which leaves "which letter is true" resolvable only by counting
+                  along a sentence. Split, each letter names itself, a pinned one names itself as
+                  revealed, the row reads "S revealed, O, W, H" letter by letter, and
+                  `getByRole('img', { name: 'S, revealed' })` is an assertion about the accessibility
+                  tree rather than about a class.
+
+                  IT IS A COST WHERE THERE IS NOTHING TO PIN, which is why it is a branch rather than
+                  the shape of every row. Splitting unconditionally put up to NINE image nodes per row
+                  -- thirty-six on an untouched board -- where the reader used to meet four, one per
+                  row, each spelling its letters in a breath. That is a browse order nine times longer
+                  on the state a player is in before they have bought anything, to carry a distinction
+                  that does not exist there. So a row with an empty pinned set keeps exactly the
+                  markup it had before the ladder existed, and the box's own `aria-describedby` below
+                  carries the letters either way.
 
                   Keyed by position because these are letters at fixed indices of a run this board
                   never sorts or filters -- the same case the row keys above are. */}
-              <p className={SCRAMBLE}>
-                {[...displayOf(index)].map((letter, at) => (
-                  <span
-                    aria-label={pinnedIn(index).has(at) ? `${letter}, revealed` : letter}
-                    className={pinnedIn(index).has(at) ? PINNED : undefined}
-                    key={at}
-                    role="img"
-                  >
-                    {letter}
-                  </span>
-                ))}
-              </p>
+              {pinnedIn(index).size === 0 ? (
+                <p aria-label={spellOut(displayOf(index))} className={SCRAMBLE} role="img">
+                  <span aria-hidden="true">{displayOf(index)}</span>
+                </p>
+              ) : (
+                <p className={SCRAMBLE}>
+                  {[...displayOf(index)].map((letter, at) => (
+                    <span
+                      aria-label={pinnedIn(index).has(at) ? `${letter}, revealed` : letter}
+                      className={pinnedIn(index).has(at) ? PINNED : undefined}
+                      key={at}
+                      role="img"
+                    >
+                      {letter}
+                    </span>
+                  ))}
+                </p>
+              )}
               <div className="flex items-center gap-[var(--lull-s3)]">
                 {/* The label is a SIBLING, never a wrapper: sr-only hides its subtree, so a wrapping
                     label would take the box with it. htmlFor is the whole of the association. */}

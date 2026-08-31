@@ -136,7 +136,11 @@ export const phrasePack: Pack = {
 // has something to count. It does NOT clear lull-api's twelve-letter structural floor and is not
 // meant to: this is a rendering fixture, and the floor is a generation rule.
 //
-// VZE VZE ZEV under { E: E, V: A, Z: T } spells ATE ATE TEA.
+// VZQ VZQ ZQV under { Q: E, V: A, Z: T } spells ATE ATE TEA.
+//
+// NO CIPHER LETTER STANDS FOR ITSELF. lull-api's `encipher` draws a DERANGEMENT over A-Z, so a
+// fixture mapping E to E is a puzzle that repo cannot emit -- and every rung over that square read
+// "Every E is an E.", which is a sentence no player will ever be shown.
 export const cryptogramPuzzleId = '2026-08-18:cryptogram:7c6b5a49'
 
 // NO `hints` KEY, and its ABSENCE is the wire shape rather than a shortcut. lull-api stopped
@@ -148,7 +152,7 @@ export const cryptogramPuzzle: Puzzle<CryptogramData> = {
   data: {
     answer: 'Ate ate tea',
     category: 'Saying',
-    ciphertext: 'VZE VZE ZEV',
+    ciphertext: 'VZQ VZQ ZQV',
   },
   difficulty: 2,
   estimatedSeconds: 210,
@@ -160,7 +164,7 @@ export const cryptogramPuzzle: Puzzle<CryptogramData> = {
 // no placeholder, no separator -- so a fixture without the key is the only way to cover it.
 export const hiddenCategoryCryptogram: Puzzle<CryptogramData> = {
   ...cryptogramPuzzle,
-  data: { answer: 'Ate ate tea', ciphertext: 'VZE VZE ZEV' },
+  data: { answer: 'Ate ate tea', ciphertext: 'VZQ VZQ ZQV' },
   difficulty: 3,
 }
 

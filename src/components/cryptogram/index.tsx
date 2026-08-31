@@ -409,7 +409,28 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // `mapping` is still the player's own -- their guesses, their steals, their undo history -- and
   // this is the overlay. Composed by the same `withRevealed` the adapter stores through, so the
   // squares drawn here and the pairs in storage are one arrangement rather than two that agree.
-  const board = withRevealed(mapping, revealedLetters(hintData, spent))
+  const revealed = revealedLetters(hintData, spent)
+  const board = withRevealed(mapping, revealed)
+
+  // WHAT A PURCHASE TOOK OFF THE BOARD, so the one state change on this bench that used to happen in
+  // silence stops doing so.
+  //
+  // `withRevealed` STEALS, exactly as `apply` does and for the same reason: a plain letter stands on
+  // one cipher letter or on none. So a rung that reveals A on cipher V empties whatever square was
+  // holding a wrong A. Every ORDINARY tap announces that -- `stolenFrom` and `released` on the
+  // Assignment exist for it and the ribbon reads them out -- but a purchase never goes through
+  // `assign`: the press is in the SHELL's hint bar, the adapter writes the string, and the board
+  // learns about it as a changed `progress` prop. The square went empty off-screen, on a press that
+  // was not on the board, with nothing said.
+  //
+  // COMPUTED AGAINST THE PLAYER'S OWN `mapping` rather than against the previous render's `board`,
+  // because that is the value the letter is taken FROM and the only one that still names the square
+  // that lost it. A pair survives when the rung fills that very square -- `revealed[cipher]` is
+  // defined -- and that is a square being ANSWERED rather than emptied, which the lock's own name
+  // already says.
+  const stolenByHint = Object.keys(mapping).filter(
+    (cipher) => board[cipher] === undefined && revealed[cipher] === undefined,
+  )
 
   const solved = isSolved(ciphertext, board, answer)
 
@@ -438,6 +459,31 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // Every write to the ribbon goes through here, so no caller has to remember that saying the same
   // thing twice is a different job from saying it once. The counter is what the DOM sees change.
   const say = (text: string): void => setMessage((previous) => ({ nonce: previous.nonce + 1, text }))
+
+  // FIRED ON THE RUNG COUNT AND NOTHING ELSE, and the ref is seeded with the MOUNT-TIME count so a
+  // returning player is not told about a purchase they made yesterday. The dependency is the count
+  // rather than the stolen list: the list is recomputed every render and a player retyping into a
+  // square the hint stole from would otherwise hear the same sentence again on every keystroke.
+  //
+  // One sentence per square, because each is a different square in a different place on the plate
+  // and a reader working through them needs to know which. There are at most a handful: a letter
+  // rung can steal one, and a word rung one per distinct letter it reveals.
+  const announcedRungs = useRef(spent.length)
+  useEffect(() => {
+    const bought = spent.length > announcedRungs.current
+    announcedRungs.current = spent.length
+    if (!bought || stolenByHint.length === 0) return
+
+    say(
+      stolenByHint
+        .map((cipher) => {
+          const plain = mapping[cipher]
+          const taker = Object.keys(revealed).find((letter) => revealed[letter] === plain) ?? ''
+          return `Cipher ${cipher} is empty now — a hint put ${plain} on cipher ${taker}.`
+        })
+        .join(' '),
+    )
+  }, [spent.length])
 
   // `source` exists so a square can be named against a mapping the STATE has not caught up to yet:
   // setMapping is async, so inside the handler that assigned, only the returned mapping is current.

@@ -65,10 +65,10 @@ export const BENCH_ORDER: readonly Bench[] = ['cipher', 'guess', 'writing', 'til
  * worth naming: each field has exactly one writer, and the adapter never has to guess what the board
  * meant to say about its own squares -- it copies a tail it wrote itself and leaves the rest alone.
  *
- * A board write of '' IS A RESET and an adapter must answer it with ''. Play again writes the empty
- * string through the same callback, `''` is what the shell reads as "no progress", and re-attaching a
- * ladder to it would hand the player back rungs they just threw away on a board that no longer has
- * them.
+ * A BOARD WRITE OF '' IS NOT A RESET, AND `merge` EXTENDS IT LIKE ANY OTHER BOARD WRITE. The rule is
+ * argued once, at the bottom of this comment; it is named here because this is the paragraph a fourth
+ * adapter author reads first, and what stood here said the OPPOSITE -- that '' is a reset and an
+ * adapter must answer it with '' -- which is the exact bug the reset signal was added to fix.
  *
  * `ladder` returns the rungs already bought, rendered from their frozen records, followed by
  * speculative placeholders for the unspent tail. HintBar draws only `slice(0, opened)`, so the tail

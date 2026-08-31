@@ -470,6 +470,39 @@ export const HintBar = ({
     setAnnouncement('Hints reset.')
   }, [resetSignal])
 
+  // THE DENOMINATOR MOVES UNDER THE PLAYER, and when it does this control changes what pressing it
+  // DOES while telling nobody. Buy rungs 1 and 2 on a Themed Anagrams board of four five-letter
+  // answers, then solve the other three entries: the adapter's ladder folds from three rungs to two,
+  // `opened` is still 2, and `controlLabel` flips "Open hint 3 of 3" to "Show answer" on a button
+  // that may be the one the player is standing on. Screen readers do not re-read a focused element
+  // when its label changes -- the same fact the reset announcement above exists for -- so a keyboard
+  // or reader player presses what they were told was another hint and is handed the whole answer.
+  //
+  // FOUR CONDITIONS, AND EACH ONE EXCLUDES A CASE THIS MUST NOT FIRE ON. The sheet has to be OPEN,
+  // because that is the only state in which the flip is silent: shut, the control reads "Show 2
+  // hints" on both sides of the fold and nothing about it has changed. The ladder has to have
+  // SHRUNK, so growing a speculative tail says nothing. `opened` has to be UNCHANGED, which is what
+  // separates a fold happening underneath the player from the press that spends a rung -- a purchase
+  // moves the count in the same render the tail shortens, and announcing there would talk over the
+  // rung the player just bought. And the offer has to have crossed from a rung to the ANSWER: a
+  // ladder that shortens above the count still offers a rung, and one with no `solution` beside it
+  // becomes "Hide hints", which takes nothing away.
+  //
+  // ANNOUNCING IS THE FLOOR RATHER THAN THE FIX, and the stronger version was considered and not
+  // taken here: refusing the next press, or making the reveal need a second one, is a rule about
+  // what a control OFFERS and it would have to hold for goFigure's bar and the pack benches too.
+  // This is the one thing that can be done inside a component that is handed a ladder and a count
+  // and told nothing about where either came from.
+  const offered = useRef({ length: hints.length, opened })
+  useEffect(() => {
+    const was = offered.current
+    offered.current = { length: hints.length, opened }
+
+    if (!isOpen || hints.length >= was.length || opened !== was.opened) return
+    if (opened < hints.length || was.opened >= was.length || !hasSolution) return
+    setAnnouncement('No hints are left. This button now shows the answer.')
+  }, [hasSolution, hints.length, isOpen, opened])
+
   const press = (): void => {
     // The reset has been read by now, so it stops being said. Left standing it would sit in the
     // live region beside the rung the player just opened, and a reader working through the region
@@ -563,17 +596,21 @@ export const HintBar = ({
             -- which is the whole difference between an announcement and a node inserted into a
             region nobody subscribed to.
 
-            KEYED ON THE SIGNAL, which is what makes a second reset audible. The text is the same
-            every time, so re-rendering the same node with the same string is not a change and
-            announces nothing; a new key makes React remove the node and insert a fresh one, and an
-            inserted node is exactly what aria-atomic="false" reads out. It is a piece of state
-            rather than markup gated on `resetSignal` directly so that the next press can take it
-            back down -- see `press`.
+            KEYED ON THE SIGNAL AND THE SENTENCE, which is what makes a second reset audible and a
+            second KIND of announcement audible after it. The reset's text is the same every time, so
+            re-rendering the same node with the same string is not a change and announces nothing; a
+            new key makes React remove the node and insert a fresh one, and an inserted node is
+            exactly what aria-atomic="false" reads out. The sentence joined the key when a second
+            announcement arrived -- the ladder folding under a standing offer, see `offered` above --
+            because two different strings under one key are a text change inside a node a reader is
+            already watching, which is the weaker of the two things this region can do. It is a piece
+            of state rather than markup gated on `resetSignal` directly so that the next press can
+            take it back down -- see `press`.
 
             sr-only rather than visible: the bar is a 60px band with a name, three rung markers and
             a control in it, and there is no room for a sentence that is only true for one press. */}
         {announcement !== '' && (
-          <p className="sr-only" key={resetSignal}>
+          <p className="sr-only" key={`${resetSignal}:${announcement}`}>
             {announcement}
           </p>
         )}
