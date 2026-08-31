@@ -259,6 +259,39 @@ describe('HintBar', () => {
         'The 3rd operator from the left is "×".',
       ])
     })
+
+    // THE <li> KEY, ASSERTED THROUGH THE ONE THING IT CAN CHANGE. A repeated rung text used to be
+    // impossible by WARRANT rather than by construction: lull-api refuses a phrase whose three hints
+    // collapse to fewer than three distinct strings, and every ladder in the app came from lull-api.
+    // Half the catalog no longer does -- Cryptogram, Phrazle and Themed Anagrams build theirs on the
+    // device -- and nothing there re-checks it, so the key is the array index, which cannot collide
+    // on a list that only grows and never reorders.
+    //
+    // IT PASSES UNDER THE OLD KEY TOO, AND THAT IS THE POINT RATHER THAN A WEAKNESS IN IT -- measured,
+    // because the temptation was to write "the second rung never reaches the screen" and it is not
+    // true. React answers two children under one key with a console warning whose own wording is
+    // "Non-unique keys may cause children to be duplicated and/or omitted": it renders all three here
+    // today, on this reconciliation path, in this version. What a text key buys is undefined behavior
+    // and a warning, and what this row pins is the behavior the ladder is entitled to whatever React
+    // does with a duplicate. A test that fails only on the key would be a test of React.
+    //
+    // THE REPEAT IS AT BOTH ENDS, so one assertion carries both properties: every rung comes out, and
+    // they come out in arrival order -- an omitted or duplicated child fails on either count.
+    it('renders every rung of a ladder that says one thing twice, in arrival order', async () => {
+      const user = userEvent.setup({ delay: null })
+      const repeated: HintLadder = [
+        { text: 'The phrase has no D.' },
+        { text: 'The phrase contains K.' },
+        { text: 'The phrase has no D.' },
+      ]
+      render(<HintBar hints={repeated} puzzleId={puzzleId} />)
+
+      await press(user, 'Open hint 1 of 3')
+      await press(user, 'Open hint 2 of 3')
+      await press(user, 'Open hint 3 of 3')
+
+      expect(openRungs()).toEqual(['The phrase has no D.', 'The phrase contains K.', 'The phrase has no D.'])
+    })
   })
 
   // The end of the ladder, and the state that used to be a dead end. A player who spent all three

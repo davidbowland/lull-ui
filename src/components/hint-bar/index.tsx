@@ -626,11 +626,39 @@ export const HintBar = ({
                 compute theirs on the device. This bar decides when a rung is shown, never what it
                 says, and it cannot tell the two authors apart.
 
-                Keyed on the text rather than on the index, and the guarantee that makes that safe
-                lives UPSTREAM rather than here. lull-api rejects any phrase whose three hints
-                collapse to fewer than three distinct strings, and builds each goFigure rung off a
-                distinct ordinal over a permutation of slots 0 1 2 -- so a duplicate rung is a bug in
-                the pack, not a state this list has to survive. Nothing in this repo re-checks it.
+                KEYED BY INDEX, which is correct here for the reason index keys are usually wrong
+                elsewhere. A key has to be stable for the thing it identifies, and the failure mode
+                of an index is a list that is reordered, inserted into or filtered, where position i
+                stops naming the same item and React reuses the wrong node. This list can do none of
+                those: it is `hints.slice(0, opened)` over a fixed array, `opened` only ever climbs,
+                and a rung's position in the ladder IS its identity -- the decimal marker beside it
+                says so. Position i names rung i for the life of the mount, so an index is not a
+                stand-in for identity here, it is the identity.
+
+                IT USED TO BE KEYED ON THE TEXT, and that rested on a guarantee that has stopped
+                covering the catalog. lull-api rejects any phrase whose three hints collapse to fewer
+                than three distinct strings and builds each goFigure rung off a distinct ordinal over
+                a permutation of slots 0 1 2 -- so a duplicate rung was a bug in the pack, not a state
+                this list had to survive, and nothing in this repo re-checked it. Since 2026-08-31
+                three of the six types never send their rungs through lull-api at all: Cryptogram,
+                Phrazle and Themed Anagrams compute theirs on the device, so that warrant covers half
+                the benches and nothing on-device replaces it.
+
+                The three builders cannot produce a duplicate today -- each ladder draws at most one
+                rung of each kind and each kind composes its own sentence frame, and the two cipher
+                letters a cryptogram ladder can name are drawn from a pool the first has already left
+                -- but no decoder rejects one. A hand-edited progress string naming the same kind
+                twice reaches this list, because a stored ladder is untrusted input everywhere else in
+                this file's neighborhood and is treated as such. So the key stops resting on anybody's
+                promise about the text and rests on the shape of the list instead.
+
+                WHAT A DUPLICATE KEY WOULD HAVE COST IS NOT A CRASH, which is worth saying because it
+                is what made the old key survivable for so long: React answers two children under one
+                key with a console warning saying non-unique keys may cause children to be duplicated
+                and/or omitted, and on this path it happens to render both. Undefined behavior behind
+                a warning nobody reads is a worse thing to ship than a visible break, and it is the
+                reason the row that pins this asserts the LADDER -- see "says one thing twice" in the
+                suite -- rather than asserting anything about the key.
 
                 GATED ON THE SHEET BEING OPEN, like the header above, and this gate is about the
                 live region rather than about the sheet. `hidden` does not empty a subtree: it takes
@@ -654,8 +682,8 @@ export const HintBar = ({
                 filling is two changes where the player asked for one. */}
             {isOpen && (
               <ol className={LIST}>
-                {hints.slice(0, opened).map((hint) => (
-                  <li key={hint.text}>{hint.text}</li>
+                {hints.slice(0, opened).map((hint, index) => (
+                  <li key={index}>{hint.text}</li>
                 ))}
               </ol>
             )}
@@ -704,11 +732,11 @@ export const HintBar = ({
           {/* Scenery. The control's own label counts the rungs out in words, so nothing here is the
               only carrier of anything.
 
-              Keyed by INDEX, unlike the sheet's list above, because these markers carry no identity
-              -- they are three positions that fill in, not three rungs. Keying them on rung text
-              would hand React duplicate keys on a list it reconciles every time `opened` changes,
-              and the failure mode there is a stale or missing marker rather than a console
-              warning. */}
+              Keyed by INDEX, the same as the sheet's list above and for a stronger version of the
+              same reason: these markers carry no identity at all -- they are three positions that
+              fill in, not three rungs. Keying them on rung text would hand React duplicate keys on a
+              list it reconciles every time `opened` changes, and the failure mode there is a stale or
+              missing marker rather than a console warning. */}
           <span aria-hidden="true" className="flex gap-[3px]">
             {hints.map((_hint, index) => (
               <span
