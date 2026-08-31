@@ -3,6 +3,7 @@ import { CryptogramBoard } from '@components/cryptogram'
 import { GoFigureBoard } from '@components/gofigure'
 import { MissingVowelsBoard } from '@components/missingvowels'
 import { PhrazleBoard } from '@components/phrazle'
+import { phrazleHints } from '@components/phrazle/hints'
 import { ThemedAnagramsBoard } from '@components/themedanagrams'
 import { HintLadder, Puzzle, PuzzleComponent, PuzzleProgress, PuzzleType } from '@types'
 
@@ -124,7 +125,8 @@ export interface RegistryEntry {
   // improve for being recomputed. So absent means "the pack's ladder", which is what the shell did
   // for every type before this field existed.
   //
-  // NO ENTRY SETS IT YET. The three that will are wired with their adapters, one type at a time.
+  // PHRAZLE SETS IT. Cryptogram and Themed Anagrams are wired with their adapters, one type at a
+  // time; the other three read their ladder off the pack and always will.
   hints?: HintAdapter
   // The `d` of one path in a 0 0 24 24 viewBox, not JSX, so this file stays .ts and the
   // registry stays data. The shelf draws it inside an aria-hidden <svg> beside the label
@@ -231,6 +233,15 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     glyph:
       'M0.7 1.7h6v5.4h-6zM8 1.7h6v5.4h-6zM15.3 1.7h6v5.4h-6zM0.7 8.9h6v5.4h-6zM8 8.9h6v5.4h-6z' +
       'M15.3 8.9h6v5.4h-6zM3.7 4.4h.01M11 4.4h.01',
+    // THE FIRST ENTRY TO SET IT. Phrazle's rungs are about the letter economy of the phrase -- which
+    // common letters are absent, which uncommon ones are present, which letters make up one word --
+    // and every one of those depends on what the player's guesses have already established. A pack
+    // ladder cannot know that, which is why this type stopped shipping one.
+    //
+    // It changes nothing about the BOARD, and that is the seam working rather than a coincidence:
+    // these rungs are sentences in the shell's docked bar and they move no tile, so the board never
+    // reads hint state and is handed no way to.
+    hints: phrazleHints,
     // A row divided into three cells above one undivided box. The divided row is a VERDICT --
     // marked cell by cell, which is the only thing that ever happens to a committed row. The
     // undivided box is the phrase you are still composing, which has no verdict yet because you
