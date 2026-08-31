@@ -37,8 +37,9 @@ export interface Pack {
 // What every HINTED puzzle carries, which today is every puzzle type. It lives HERE rather than in
 // the phrase section below because it is not a phrase type's business: it is the base the shared UI
 // shell reads to find hints without knowing the type, and `hints` is the ONLY thing it needs for
-// that job. The ladder is exactly three rungs by HintLadder above, and each rung's shape is fixed by
-// CLAUDE.md ("Every hint on the wire is { text, metadata? }").
+// that job. The ladder is ONE TO THREE rungs by HintLadder above -- not always three, since
+// 2026-08-24 -- and each rung's shape is fixed by CLAUDE.md ("Every hint on the wire is
+// { text, metadata? }"). The shell must read `hints.length` rather than assuming it.
 //
 // It ships with two conforming implementations rather than as a base nothing reads: GoFigureData
 // already satisfies it without knowing it, because GoFigureHintLadder is assignable to HintLadder.
@@ -252,12 +253,34 @@ export interface CrypticClueData extends HintedPuzzleData {
 // back light on a single tag produce zero puzzles of a type.
 export type PhraseShape = 'compact' | 'idiom' | 'quote' | 'title'
 
-// Exactly three. The count is checked once, at the parse boundary; the tuple carries that guarantee
-// to every read site downstream.
+// ORDERED BY THE BACKEND, and NOT necessarily least to most revealing -- render them in the order
+// they arrive and do not sort or renumber. The prose ladder Missing Vowels ships does run least to
+// most revealing, but a goFigure ladder with a unique operator tuple deliberately does not: it
+// spends rung 1 on op2, so its slots come out 1, 0, 2. This type is the wire shape for every type
+// that ships hints at all, so a promise true of only one of them does not belong on it.
 //
-// A rung index is NOT a slot index. lull-api orders rungs by how much each reveals, so difficulties
-// 4 and 5 run slots 1, 0, 2. Never write hints[slot].
-export type HintLadder = [Hint, Hint, Hint]
+// For phrase puzzles the count is checked once, at the parse boundary in phrase-checks; the tuple
+// carries that guarantee to every read site downstream.
+//
+// ONE TO THREE RUNGS, and the lower bound is the type rather than a comment: `[Hint, ...Hint[]]` is
+// a NON-EMPTY array, so `ladder[0]` needs no guard while `ladder[2]` does. It was a fixed 3-tuple
+// until 2026-08-24.
+//
+// WHY IT WIDENED. Cryptic Clue draws its rungs from a pool whose entries drop when the clue already
+// says what they would say, and on one clue shape -- an indicator that announces the device, a
+// one-word definition, and no usable gloss -- only two survive that are worth a player's hint.
+// Padding to three meant emitting a second letter reveal, and two letter reveals in a row is not a
+// ladder, it is the same hint twice. A rung you do not have is better than a bad one.
+//
+// THE OTHER TWO TYPES THAT SHIP A LADDER STILL SHIP EXACTLY THREE -- goFigure through
+// GoFigureHintLadder, a 3-tuple that stays assignable to this, and Missing Vowels through
+// toHintLadder over a PhraseHints triple. So the tuple was never load-bearing for them and this
+// widening costs them nothing; what it costs is that a client can no longer index blind.
+//
+// A FOURTH CASE IS NOT THIS TYPE'S. Cryptogram, Phrazle and Themed Anagrams ship no `hints` key,
+// which is an ABSENT field rather than a short ladder -- there is no empty HintLadder and this type
+// cannot express one. A client tests for the field, then reads its length.
+export type HintLadder = [Hint, ...Hint[]]
 
 // What the MODEL returned, which is not what goes on the wire. Keeping the two named apart is what
 // stops a prose gate quietly running over objects.
