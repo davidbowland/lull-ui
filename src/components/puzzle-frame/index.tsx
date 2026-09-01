@@ -103,6 +103,12 @@ const trailFor = (date: PackDate | null, locale: string, now: () => number, here
 // progress by age any more (see writeHints in services/storage.ts), which narrowed this to Play
 // again and to a board that stores nothing at all -- fewer readers see the line, and every one
 // who does is looking at a board that says nothing about the win on its own.
+//
+// A LADDER WITH NO BOARD UNDER IT IS PROGRESS, and it reads as such here rather than as an exception.
+// An adapter type stores its rungs in the board's own string, so a player who bought two hints and
+// then emptied every box has `|2|I2,B3` stored and is reported as having started -- which is true.
+// They have started: they spent two hints on it. The line below is for the player who threw the whole
+// thing away, and Play again is the press that writes '' over the ladder as well (see onReset).
 const wasSolvedBefore = (puzzleId: string): boolean =>
   readMeta().solved.includes(puzzleId) && (readProgress(puzzleId) ?? '') === ''
 
@@ -129,9 +135,35 @@ const DeadEnd = ({ children, trail }: DeadEndProps): React.ReactNode => (
 // board's `order` with it.
 const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   const { Component } = entry
-  // Read once. The board restores from it at mount and owns it from then on; re-reading storage
-  // on every render would hand the board back its own writes.
-  const [progress] = useState(() => readProgress(puzzle.id))
+  // Read once from storage. The board restores from it at mount and owns it from then on;
+  // re-reading storage on every render would hand the board back its own writes.
+  //
+  // STATE RATHER THAN A FROZEN VALUE, and the reason is the hint adapter below rather than the
+  // board. Every board reads its OWN portion of this in a lazy initializer and owns it from then on
+  // -- all six -- so the squares, guesses and drafts a board draws are unchanged: the value at
+  // mount. What changed is that the SHELL now reads it too, on every render, to ask an adapter how
+  // many rungs are bought and what they say. Frozen, that question is answered against the board as
+  // it was when the player arrived: the frame writes a rung through onProgress, this value does not
+  // move, `opened` stays where it was, and the press opens a sheet with nothing in it. The bar would
+  // offer "Open hint 1 of 3" forever.
+  //
+  // ALL THREE ADAPTER BOARDS ALSO RE-READ IT, AND ONLY FOR THE HINT TAIL. Cryptogram and Themed
+  // Anagrams draw what a rung revealed, so they decode the SPENT LIST off this live prop on every
+  // render -- never their own portion, which stays mount-time state. A bought rung therefore lands
+  // without a remount and without discarding anything the player typed. Phrazle joined them: its
+  // rungs still move no tile, but they strike and fill keys on its pad, because a rung about the
+  // alphabet belongs on the keyboard.
+  //
+  // ONE READING AND NOT TWO. Keeping a frozen `progress` for the board beside a live one for the
+  // shell was the other candidate, and it is the arrangement gofigure/board.ts argues against: two
+  // readings of one record, at different ages, able to disagree in a state no test would think to
+  // write. It also buys nothing -- a state change here re-renders the board either way.
+  //
+  // It tracks what was WRITTEN and never re-reads to confirm. `writeProgress` refuses a value over
+  // 8192 characters and says nothing back, so a refused write leaves this holding a string the
+  // device does not. That is already every board's posture through the same refusal, and re-reading
+  // would replace one wrong answer with a different one.
+  const [progress, setProgress] = useState(() => readProgress(puzzle.id))
   // Frozen at arrival: winning right now is the board's own news to announce, and a second line
   // appearing above it would say it twice.
   //
@@ -155,8 +187,71 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // PuzzleComponentProps, and a context is exactly the thing that is not.
   const { words } = useDictionary()
 
+  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist, and
+  // PuzzleProgress stays an opaque per-type string HERE, whatever an adapter makes of it.
+  //
+  // THAT SENTENCE IS NOW HALF-TRUE IN AN INTERESTING WAY, so it is worth being exact about which
+  // half. A board still receives six props, still gets no `hints`, and still has no name for the
+  // thing that sold one. What it can no longer be told is that a hint left it alone: an adapter
+  // writes its rung into the board's own progress string, so a cryptogram board comes back to find
+  // some squares locked and does not know why. "The board never learns hints exist" is the promise;
+  // "the board is never affected by a hint" was never one, and it is the promise this seam spends.
+  //
+  // WHERE THE RUNGS COME FROM IS THE WHOLE CHANGE. A pack ladder is decided before the puzzle ships,
+  // which is right for a hint about what a phrase MEANS and useless for one about its letters --
+  // "every Q is an E" is worth nothing to a player who already has Q, and no generator can know
+  // whether they do. So three types compute theirs at play time and the other three do not, and the
+  // shell asks the registry which it is holding.
+  //
+  // READ OFF THE REGISTRY, which is the shell asking its own question -- the same standing
+  // `needsDictionary` has, and the reason neither one reaches a board. `hintsOf` is untouched: the
+  // pack path is what it always was, and it is still the path three types take.
+  //
+  // Read HERE, above the writer, because the writer needs it: an adapter type's board write has to
+  // be merged before it is stored, and the merge is what stops a board clobbering a rung.
+  const adapter = entry.hints
+
+  // The board as the player has built it, in the board's own grammar, which this file cannot read
+  // and does not try to. Normalized ONCE: `readProgress` answers null for a puzzle never touched,
+  // every adapter's grammar spells "nothing spent" as the empty string, and null would be a second
+  // spelling of that for every adapter to handle. Doing it here also means the four reads below
+  // cannot disagree about which one they got.
+  const boardState = progress ?? ''
+
   // The shell owns persistence; the board is handed three callbacks and no storage.
-  const onProgress = useCallback((next: PuzzleProgress) => writeProgress(puzzle.id, next), [puzzle.id])
+  //
+  // IT IS THE SHELL'S ONE WRITER, which is why the hint control below spends its rung through this
+  // rather than through a store of its own. A rung an adapter sells goes into the same string the
+  // board writes, so there is one record, one erasure, and nothing to keep in step.
+  //
+  // NOT the board's callback, though: this is the raw write, and `onProgress` below is what the
+  // board gets. The hint control calls this one because an adapter's `open` has already composed the
+  // WHOLE string -- board portion and hint tail together -- so putting it through the merge would
+  // ask the adapter to re-attach a tail to a string it just wrote the tail into.
+  const commit = useCallback(
+    (next: PuzzleProgress) => {
+      writeProgress(puzzle.id, next)
+      setProgress(next)
+    },
+    [puzzle.id],
+  )
+
+  // THE ONE-WRITER RULE, and it is the board's whole side of this seam. A board writes only its own
+  // portion -- its `encode` signature does not change and it has no name for the hint field -- so
+  // every board write is re-joined here with the tail that is currently stored. Without it the
+  // sequence is: the player buys a rung, the adapter writes it, the MOUNTED board still holds the
+  // state it read in a lazy initializer at mount, and its very next `encode` overwrites the field.
+  // The purchase is gone, silently, and no board is at fault for it.
+  //
+  // `boardState` IS THIS RENDER'S READING and that is safe here for a specific reason rather than by
+  // luck. React has not applied `setProgress` when a second call in the same handler runs, so this
+  // closure can be one write behind -- and it does not matter, because `merge` reads only the HINT
+  // field out of it, and the hint field cannot move except through `commit` above, which is the
+  // shell's own control and never fires in the same tick as a board's press.
+  const onProgress = useCallback(
+    (next: PuzzleProgress) => commit(adapter === undefined ? next : adapter.merge(next, boardState)),
+    [adapter, boardState, commit],
+  )
   const onSolved = useCallback(() => markSolved(puzzle.id), [puzzle.id])
 
   // A NONCE, not a boolean, and it counts rather than toggles because the same puzzle can be
@@ -175,26 +270,79 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // hint 2 of 3", and the next press wrote 3 back over the zero.
   const [resetNonce, setResetNonce] = useState(0)
 
-  // The board asked for two things it cannot do itself, and neither of them tells it anything back.
+  // The board asked for three things it cannot do itself, and none of them tells it anything back.
   // Deleting the count is storage, which a board gets none of; raising the signal is this frame's
-  // own state. So the ladder is reset without the board ever learning that a ladder exists.
+  // own state; and dropping the ladder out of the board's own progress string is a fact about hints,
+  // which is the one subject a board has no name for. So the ladder is reset without the board ever
+  // learning that a ladder exists.
   //
-  // THE PAIR IS NOT ATOMIC, and it is worth knowing before rediscovering it. A board's Play again
+  // THE FIRST LINE IS WHAT MAKES A BACKSPACE STOP COSTING A PURCHASE, and it is the whole of this
+  // seam's half of that repair. Four boards write '' through `onProgress` for reasons that are not a
+  // reset -- an emptied last box, a cleared last cipher square -- so an adapter's `merge` cannot read
+  // '' as "start over" and must extend it like any other board write. That leaves the shell needing a
+  // way to tell the two apart, and it already has one: `playAgain` raises THIS signal and an ordinary
+  // keystroke does not. So the board keeps writing only its own portion, the adapter keeps
+  // re-attaching the tail, and the one press that means "throw it away" is the one that throws it
+  // away.
+  //
+  // '' RATHER THAN THE BOARD PORTION WITH THE TAIL CUT OFF, and the difference is nil in practice and
+  // worth a sentence anyway. Every raiser of this signal calls `onProgress('')` immediately before
+  // it, in the same handler, so the board portion is already empty by the time this runs -- and '' is
+  // what every codec here spells "no progress" with, which is what `wasSolvedBefore` and the shelf
+  // read. Writing the constant rather than deriving it also means this cannot be one write behind:
+  // React has not applied the first `setProgress` yet, so anything derived from `boardState` here
+  // would still be holding the drafts the player just cleared.
+  //
+  // GATED ON THERE BEING AN ADAPTER, because a type without one keeps its count in
+  // `lull:hints:<puzzleId>` and its progress is its own business. goFigure owns its ladder inside its
+  // progress string and is not reached through the registry at all; clearing it from out here would
+  // be the shell overwriting a board it does not read.
+  //
+  // THE SEQUENCE IS NOT ATOMIC, and it is worth knowing before rediscovering it. A board's Play again
   // calls `onProgress('')` and then `onReset()`, which React batches, so no render ever sees the
-  // half-applied state. Storage is not batched: `writeProgress` and `removeHints` each dispatch
-  // STORAGE_EVENT synchronously, so between the two dispatches a listener re-reading storage sees
-  // empty progress alongside the stale hint count. Nothing observes it today -- the only subscriber
-  // is the shelf, which is never mounted with a bench -- so this is a note rather than a defect. A
-  // future listener that derives one from the other has to tolerate the interleave or be told once,
-  // after both.
+  // half-applied state. Storage is not batched: the two `writeProgress` calls and `removeHints` each
+  // dispatch STORAGE_EVENT synchronously, so between them a listener re-reading storage sees a
+  // ladder still attached, or empty progress alongside a stale hint count. Nothing observes it today
+  // -- the only subscriber is the shelf, which is never mounted with a bench -- so this is a note
+  // rather than a defect. A future listener that derives one from the other has to tolerate the
+  // interleave or be told once, after all three.
+  //
+  // TWO WRITES OF THE SAME KEY IN ONE HANDLER is the cost of the '' above, and it is the cheap half
+  // of the trade: `onProgress('')` stores the board's write with the tail re-attached, and this
+  // stores '' over it a moment later. The alternative is the adapter guessing which kind of '' it was
+  // handed, which is the guess that made a backspace cost a purchase.
   const onReset = useCallback(() => {
+    if (adapter !== undefined) commit('')
     removeHints(puzzle.id)
     setResetNonce((nonce) => nonce + 1)
-  }, [puzzle.id])
+  }, [adapter, commit, puzzle.id])
 
-  // The shell owns the ladder. The board's props are unchanged -- it never learns hints exist,
-  // and PuzzleProgress stays an opaque per-type string.
-  const hints = hintsOf(puzzle)
+  const hints = adapter ? adapter.ladder(puzzle, boardState) : hintsOf(puzzle)
+
+  // The count and the purchase, and both are the ADAPTER's answers rather than this frame's. The bar
+  // is handed a number and a callback and learns no grammar either.
+  //
+  // `control` IS NOT NEW. It was built for the goFigure bench, whose rungs also do something to the
+  // board rather than only say something about it, and it carries this whole interaction unchanged
+  // -- which is the test that the seam is in the right place. If HintBar had needed a contract
+  // change to serve this, the wiring would have been wrong rather than the bar.
+  //
+  // `onOpen` IGNORES THE COUNT THE BAR OFFERS IT. The bar says what the next count WOULD be; an
+  // adapter answers with a progress string or with null, and null is a decline that leaves the count
+  // exactly where it was. Undefined when there is no adapter, because absence is what tells the bar
+  // to keep its own count in `lull:hints:` the way it always has.
+  const control = adapter
+    ? {
+        onOpen: (): void => {
+          const next = adapter.open(puzzle, boardState)
+          // `commit`, NOT `onProgress`. This string is the adapter's own -- it already carries both
+          // the board's portion and the tail it just extended -- so merging it would hand the
+          // adapter its own write back and ask it to re-attach a tail that is already there.
+          if (next !== null) commit(next)
+        },
+        opened: adapter.opened(boardState),
+      }
+    : undefined
 
   // The end of the ladder, and still the shell's business rather than the board's. The board never
   // learns that hints exist and it does not learn that an answer does either -- both come off the
@@ -320,8 +468,14 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           So the nonce is a signal the bar reacts to rather than an identity it is rebuilt under.
           Nothing else here is given it: the board keeps its own state through a reset, because the
           board is the thing that just chose to reset. */}
+      {/* `resetSignal` STAYS WIRED AS IT WAS, and for an adapter type it now rides on the same press
+          that drops the ladder. Those types keep their count in the board's own progress string, so
+          `onReset` above writes `''` over it and `removeHints` is a harmless no-op on a key nothing
+          wrote. What the signal does beside that is the half a deletion never covers: it tells the
+          MOUNTED bar to shut its sheet and stop announcing yesterday's rungs, since the bar reads its
+          own count once, at mount, and subscribes to nothing. */}
       {hasHintBar && hints !== null && (
-        <HintBar hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} solution={solution} />
+        <HintBar control={control} hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} solution={solution} />
       )}
     </>
   )

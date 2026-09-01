@@ -33,11 +33,28 @@ is true and does not do the work: it would also permit `onSaveDraft(text)`, whic
 payload and a place to put it. `onReset()` takes no argument and names no destination, so deleting
 `lull:hints:<puzzleId>` and resetting the hint bar stay entirely the shell's business.
 
-It exists because empty progress cannot carry that meaning. Three boards write `''` for reasons that
-are not a reset: `encode({})` in `cryptogram/mapping.ts` when the last letter is cleared,
-`missingvowels` when the text is deleted, and goFigure's Undo and Clear — which under the current
-grammar write `''` only when no rung has been spent, since a cleared board with rungs spent stores
-`_______|2|`.
+It exists because empty progress cannot carry that meaning. Four boards write `''` for reasons that
+are not a reset: `encode({})` in `cryptogram/mapping.ts` when the last letter is cleared, `encode`
+in `themedanagrams/progress.ts` when the last of the four drafts is deleted, `missingvowels` when
+the text is deleted, and goFigure's Undo and Clear — which under the current grammar write `''` only
+when no rung has been spent, since a cleared board with rungs spent stores `_______|2|`.
+
+**So `''` is never read as a reset, and `onReset` is the only thing that is.** Since 2026-08-31 the
+ladders for cryptogram, phrazle and themedanagrams live in the board's own progress string, which
+gave that ambiguity something to destroy. An adapter's `merge` therefore re-attaches the stored hint
+tail to **every** board write, `''` included, and `PuzzleFrame`'s `onReset` writes `''` over the whole
+record. Themed Anagrams is the bench that proved this has to be the arrangement: `encode` returns
+`''` whenever all four drafts are empty and `change` calls it on every keystroke, so an adapter that
+answered a board write of `''` with `''` lost two purchased rungs to a backspace — silently, with the
+bar re-offering "Hint 1 of 3" and the pinned letters unpinned. The other two never met it, which is
+why the rule is stated here rather than left to be rediscovered: cryptogram's `apply` refuses to clear
+a locked square so `encode` cannot reach `''` once a rung is bought, and phrazle's `encode([])` is
+`{"guesses":[]}`.
+
+**A stored ladder beside an empty board is progress, and reports itself as such.** `|2|I2,B3` makes
+`wasSolvedBefore` and the shelf call the puzzle started, which used to be argued against as a lie.
+It is not one: those flags mean "this player has started this puzzle", and a player who has spent two
+hints on it has started it.
 
 **A board may receive a FACT; it may never receive a CAPABILITY.** `dictionary?: ReadonlySet<string>`
 is the second prop to widen this contract, and it sits on the line `onReset` drew. `onReset()` takes

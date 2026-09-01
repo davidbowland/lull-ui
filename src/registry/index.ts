@@ -1,10 +1,13 @@
 import { CrypticClueBoard } from '@components/crypticclue'
 import { CryptogramBoard } from '@components/cryptogram'
+import { cryptogramHints } from '@components/cryptogram/hints'
 import { GoFigureBoard } from '@components/gofigure'
 import { MissingVowelsBoard } from '@components/missingvowels'
 import { PhrazleBoard } from '@components/phrazle'
+import { phrazleHints } from '@components/phrazle/hints'
 import { ThemedAnagramsBoard } from '@components/themedanagrams'
-import { PuzzleComponent, PuzzleType } from '@types'
+import { themedAnagramsHints } from '@components/themedanagrams/hints'
+import { HintLadder, Puzzle, PuzzleComponent, PuzzleProgress, PuzzleType } from '@types'
 
 // The surface a type is played on, named for the input it is shaped around rather than for
 // the type that happens to use it today. A bench is a room: 'cipher' is a grid you select
@@ -34,6 +37,87 @@ export type Bench = 'cipher' | 'guess' | 'tile' | 'writing'
 // then an accident rather than a decision.
 export const BENCH_ORDER: readonly Bench[] = ['cipher', 'guess', 'writing', 'tile']
 
+/**
+ * How a type computes its own hints, for the types whose rungs depend on what the player has
+ * established. The shell owns WHEN a rung is shown; this owns WHICH.
+ *
+ * It exists because a rung that cannot see the board cannot know what is still worth saying. A pack
+ * ladder is decided before the puzzle ships, which is right for a hint about what a phrase MEANS and
+ * useless for a hint about its letters: "every Q is an E" is worth nothing to a player who already
+ * has Q, and the generator cannot know whether they do.
+ *
+ * IT IS THE SHELL'S QUESTION, NOT THE BOARD'S -- the same standing `needsDictionary` has. A board
+ * still receives its six props and still never learns that hints exist. The half of that sentence
+ * worth reading twice: a rung an adapter sells is written into the board's OWN progress string, so
+ * the board does find, say, some letters locked. It reads that off its own progress and has no idea
+ * why they are there. "The board never learns hints exist" was always the promise; "the board is
+ * never affected by a hint" never was, and it is not one this seam keeps.
+ *
+ * THE SHELL IS THE ONLY WRITER OF THE HINT FIELD, AND `merge` IS THE WHOLE OF THAT RULE. Every board
+ * in this app reads `progress` once, in a lazy initializer, and owns its state from then on -- so a
+ * field an adapter writes into that string is a field the mounted board neither renders nor knows
+ * about, and the board's very next `encode` writes over it. That is silent loss of a rung the player
+ * paid for, and no amount of care in an adapter can prevent it, because the clobbering write is the
+ * board's and the board is right to make it.
+ *
+ * So boards keep writing only their own portion, `PuzzleFrame` routes EVERY board write through this,
+ * and the tail is re-attached from what is currently stored. Two properties fall out and both are
+ * worth naming: each field has exactly one writer, and the adapter never has to guess what the board
+ * meant to say about its own squares -- it copies a tail it wrote itself and leaves the rest alone.
+ *
+ * A BOARD WRITE OF '' IS NOT A RESET, AND `merge` EXTENDS IT LIKE ANY OTHER BOARD WRITE. The rule is
+ * argued once, at the bottom of this comment; it is named here because this is the paragraph a fourth
+ * adapter author reads first, and what stood here said the OPPOSITE -- that '' is a reset and an
+ * adapter must answer it with '' -- which is the exact bug the reset signal was added to fix.
+ *
+ * `ladder` returns the rungs already bought, rendered from their frozen records, followed by
+ * speculative placeholders for the unspent tail. HintBar draws only `slice(0, opened)`, so the tail
+ * is computed, never shown, and committed from live state at the moment it is bought -- which is
+ * what stops a ladder recomputed on every render from letting a player open rung 1, learn something,
+ * and watch rung 1 silently upgrade itself into a better hint.
+ *
+ * IT IS ONE TO THREE RUNGS, NEVER ALWAYS THREE. `chooseNext` answers null once the player has
+ * established everything a rung could say, and the speculative tail stops there rather than padding.
+ * That is crypticclue's "a rung you do not have beats a bad one", reached from the other direction.
+ * `null` is the further case -- nothing worth saying at all -- and the frame reads it exactly as it
+ * reads a malformed pack ladder: no bar.
+ *
+ * `open` returns the NEXT PROGRESS STRING, or null when there is nothing left to sell. Null is a
+ * decline and the count stays where it is, which is the behavior HintBar already documents for a
+ * controlled owner that says no. One step past the last rung is the ANSWER -- see `controlLabel` in
+ * hint-bar, where `opened > hints.length` is the reveal -- so an adapter that stops at its own last
+ * rung takes the reveal away from its bench.
+ *
+ * `opened` IS STORED BESIDE THE SPENT RUNGS AND IS NOT DERIVED FROM THEM, which is goFigure's grammar
+ * (`<cells>|<opened>|<locked>`) and is what its BoardState comment already argues for. An earlier
+ * draft of this interface derived it -- one record, nothing to keep in step -- and that is a
+ * genuinely better property that this seam cannot have, for a reason that has nothing to do with
+ * keeping two numbers in step: `controlLabel` in hint-bar reaches "Show answer" only when
+ * `opened > hints.length`, so a bar must be able to sell one step PAST the last rung, and a count
+ * derived from a three-rung spent list can never express four. Deriving it makes the answer reveal
+ * unreachable on every adapter bench. So `open` must be able to advance the count without appending
+ * a rung, and that last step is the reveal.
+ *
+ * Co-locating the count with the rungs in the board's own progress string is still the point, and
+ * still goFigure's: split across two stores with different prune rules, the count and the rungs can
+ * disagree, and a board showing a spent ladder while offering "Open hint 1 of 3" is a state no test
+ * would think to write.
+ *
+ * WHAT IT DOES NOT BUY IS A FREE RESET, and an earlier draft of this paragraph claimed it did -- that
+ * a board's Play again clears the ladder by writing `''` through the same callback. It does not,
+ * because `merge` extends '' like any other board write, and it has to: four boards write '' when
+ * their last box, square or draft is emptied, and Themed Anagrams does it on an ordinary keystroke.
+ * An adapter reading that as a reset takes two purchased rungs away for a backspace. So `merge`
+ * answers the STRING and `PuzzleFrame`'s `onReset` answers the SIGNAL, storing '' over the whole
+ * record; the board raises the signal it already had and learns nothing new.
+ */
+export interface HintAdapter {
+  ladder(puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null
+  merge(boardWrite: PuzzleProgress, current: PuzzleProgress): PuzzleProgress
+  open(puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null
+  opened(progress: PuzzleProgress): number
+}
+
 export interface RegistryEntry {
   bench: Bench
   Component: PuzzleComponent
@@ -42,6 +126,17 @@ export interface RegistryEntry {
   // shape of the bench it opens and choosing is visibly choosing between four different rooms.
   // Stroked, not filled, like `icon`: every glyph here has to read as an outline.
   glyph: string
+  // OPTIONAL, unlike `needsDictionary` above, and the asymmetry is a decision rather than an
+  // oversight. A type that needs a word list and forgets to say so links to a board the shell will
+  // refuse to mount, so that question is required and every entry answers it. This one has a correct
+  // default: three of the six types compute nothing and read their ladder off the pack, and they
+  // always will -- a hint about what a phrase MEANS is decided before the puzzle ships and does not
+  // improve for being recomputed. So absent means "the pack's ladder", which is what the shell did
+  // for every type before this field existed.
+  //
+  // THREE ENTRIES SET IT -- Cryptogram, Phrazle and Themed Anagrams, the types whose rungs are about
+  // letters and therefore about the board. The other three read their ladder off the pack.
+  hints?: HintAdapter
   // The `d` of one path in a 0 0 24 24 viewBox, not JSX, so this file stays .ts and the
   // registry stays data. The shelf draws it inside an aria-hidden <svg> beside the label
   // -- decoration next to words, never a glyph standing alone.
@@ -98,6 +193,16 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // filled cell because the day strokes this path with no fill, which would leave a "filled"
     // square indistinguishable from its two empty neighbors.
     glyph: 'M0.7 2.6h6v10.8h-6zM8 2.6h6v10.8h-6zM15.3 2.6h6v10.8h-6zM3.7 8h.01',
+    // THE RUNGS ARE LETTERS, NOT MEANING, which is why this type stopped reading its ladder off the
+    // pack. Cryptogram inherited the shared phrase ladder -- three sentences about what the phrase
+    // MEANS -- and a player here is not trying to recognize a phrase; they are solving a substitution
+    // cipher one letter at a time. "Every Q is an E" is also worth nothing to a player who already
+    // has Q, and no generator can know whether they do.
+    //
+    // It changes the BOARD, and that is the difference from Phrazle's entry: a rung writes its
+    // letters into the grid and locks those squares, so the board reads hint state off its own live
+    // progress. It still never writes it -- see `merge` above.
+    hints: cryptogramHints,
     // An arrow crossing into a wall -- one thing standing for another, which is the whole game.
     icon: 'M4 12h9m0 0-3-3m3 3-3 3M18 5v14',
     label: 'Cryptogram',
@@ -147,6 +252,18 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     glyph:
       'M0.7 1.7h6v5.4h-6zM8 1.7h6v5.4h-6zM15.3 1.7h6v5.4h-6zM0.7 8.9h6v5.4h-6zM8 8.9h6v5.4h-6z' +
       'M15.3 8.9h6v5.4h-6zM3.7 4.4h.01M11 4.4h.01',
+    // Phrazle's rungs are about the letter economy of the phrase -- which common letters are absent,
+    // which uncommon ones are present, which letters make up one word -- and every one of those
+    // depends on what the player's guesses have already established. A pack ladder cannot know that,
+    // which is why this type stopped shipping one.
+    //
+    // IT MOVES NO TILE AND IT DOES MOVE THE BOARD, and this entry used to claim the second half was
+    // free. The rungs are sentences in the shell's docked bar, and they are sentences about the
+    // ALPHABET -- so the pad strikes the letters one rules out and fills the letters one names, which
+    // is the only place on this bench where the alphabet is drawn. The seam is unchanged: the rung
+    // goes into the board's own progress string through `merge`, and the board decodes it off the
+    // live prop with no new prop and no name for what sold it.
+    hints: phrazleHints,
     // A row divided into three cells above one undivided box. The divided row is a VERDICT --
     // marked cell by cell, which is the only thing that ever happens to a committed row. The
     // undivided box is the phrase you are still composing, which has no verdict yet because you
@@ -175,6 +292,16 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // the rule is a closed box, because on this bench the boundary is a control's, not a
     // baseline's. Stroked with no fill, like the other five.
     glyph: 'M3 2.2v3.4M7.8 3.8v3.4M12.6 1.8v3.4M17.6 3.2v3.4M1 9.4h20v5.2H1z',
+    // THE RUNGS ARE POSITION ON WORDS STILL UNSOLVED, which is the fact a pack ladder cannot know.
+    // This type used to pick its three target entries by answer LENGTH, ranked once at generate
+    // time, so a player who had already solved the longest entry still got the whole-answer reveal
+    // spent on it. Ranking the UNSOLVED set instead is the entire difference, and it needs the board.
+    //
+    // It changes the BOARD, so the board reads hint state off its own live progress: a revealed
+    // letter is pinned at its true index in the scramble and the rest fill the gaps in the current
+    // arrangement's order. The input box is untouched -- no prefill, no locking -- because what a
+    // rung here buys is knowing WHICH letter is true, not typing it for you.
+    hints: themedAnagramsHints,
     // Two arrows, one over the other, pointing opposite ways -- the same things exchanging places,
     // which is what an anagram is and the one fact that separates this type from Missing Vowels.
     // The glyphs and the icons divide the work deliberately: the glyph says what the surface looks

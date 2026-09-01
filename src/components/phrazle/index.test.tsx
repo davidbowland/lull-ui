@@ -5,7 +5,7 @@ import React from 'react'
 import { PhrazleBoard } from './index'
 import { DEFAULT_WIDTH, tileSize } from './layout'
 import { HintBar } from '@components/hint-bar'
-import { phrazleDictionary, phrazleHints, phrazlePuzzle } from '@test/__mocks__'
+import { phrazleDictionary, phrazlePuzzle, phrazleStalePackLadder } from '@test/__mocks__'
 import { PhrazleData, Puzzle } from '@types'
 
 // tileSize IS A COLLABORATOR, and spying on it is the only way to see what the board's
@@ -682,6 +682,197 @@ describe('PhrazleBoard', () => {
 
       expect(keyNamed(/^Guess$/)).toHaveAccessibleName('Guess')
       expect(keyNamed(/^Delete$/)).toHaveAccessibleName('Delete')
+    })
+  })
+
+  // A BOUGHT RUNG IS A VERDICT LIKE ANY OTHER, and this block is the whole of what changed when this
+  // bench stopped being the one where a hint moves nothing. Every rung this game sells is a statement
+  // about the alphabet -- which letters are wasted, which are in play -- so every rung lands on the
+  // alphabet, in the same three tones a guess uses and with no fourth tone to learn.
+  //
+  // THE FIXTURES ARE STORED RECORDS, in `attachHints`'s own key order (guesses, opened, hints), and
+  // every one of them is a string the app can actually write. The board reads them off the LIVE
+  // progress prop, which is what the two `rerender` tests below exist to hold.
+  describe('the state a bought hint puts on a letter key', () => {
+    const struck = (container: HTMLElement): NodeListOf<Element> => container.querySelectorAll('[data-struck]')
+
+    // TOE HOLD has no B, no G and no P, so this is a rung the rule can genuinely draw -- and none of
+    // the three appears in any guess this file plays, so a mark on them can only have come from here.
+    const ABSENT_RUNG = '{"guesses":[],"opened":1,"hints":[{"kind":"absent","letters":"BGP"}]}'
+    // D, E and L are all in TOE HOLD. `letters` is canonical (sorted) because that is the one
+    // spelling `canonical` writes, and a fixture in any other order would be a record the app cannot
+    // produce.
+    const PRESENT_RUNG = '{"guesses":[],"opened":1,"hints":[{"kind":"present","letters":"DEL"}]}'
+    // Word 2 of TOE HOLD is HOLD, so this rung's four letters are H, O, L and D.
+    const WORD_RUNG = '{"guesses":[],"opened":1,"hints":[{"kind":"word","index":1}]}'
+    // A LADDER NOBODY PAID FOR. `opened` below the rung count is the shape a leak of the adapter's
+    // speculative tail would have, and `hintTail` refuses the whole record -- so the pad must show
+    // nothing at all.
+    const UNBOUGHT_RUNG = '{"guesses":[],"opened":0,"hints":[{"kind":"absent","letters":"BGP"}]}'
+    // One guess and one rung on the same board: HOT HAND rules out A and N, the rung rules out B, G
+    // and P, and the two sources have to add up rather than replace each other.
+    const RUNG_AND_GUESS = '{"guesses":["HOT HAND"],"opened":1,"hints":[{"kind":"absent","letters":"BGP"}]}'
+
+    // The whole of the reported bug: the bar said "The phrase has no B, no G, and no P." and the pad
+    // went on offering all three as though nobody had asked.
+    it('rules out the keys an absent rung names', () => {
+      renderBoard(phrazlePuzzle, ABSENT_RUNG)
+
+      expect(keyNamed(/^B,/)).toHaveAccessibleName('B, not in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^G,/)).toHaveAccessibleName('G, not in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^P,/)).toHaveAccessibleName('P, not in the phrase, fills word 1 letter 1')
+    })
+
+    // COLOR IS NOT A CHANNEL ON ITS OWN here either, so the strike has to arrive with the name. Three,
+    // and exactly three, on a board where no guess has been marked at all -- which is what says the
+    // mark came from the rung rather than from a tile.
+    it('strikes the keys an absent rung names and only those', () => {
+      const { container } = renderBoard(phrazlePuzzle, ABSENT_RUNG)
+
+      expect(struck(container)).toHaveLength(3)
+    })
+
+    it('marks the keys a present rung names', () => {
+      renderBoard(phrazlePuzzle, PRESENT_RUNG)
+
+      expect(keyNamed(/^D,/)).toHaveAccessibleName('D, in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^E,/)).toHaveAccessibleName('E, in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^L,/)).toHaveAccessibleName('L, in the phrase, fills word 1 letter 1')
+    })
+
+    // A present rung is the opposite verdict, so it must not bring the mark that says the opposite.
+    it('draws no strike for a present rung', () => {
+      const { container } = renderBoard(phrazlePuzzle, PRESENT_RUNG)
+
+      expect(struck(container)).toHaveLength(0)
+    })
+
+    // `in the phrase` AND NOT `in place`, which is the one thing a key may never say. The rung names
+    // a word and alphabetizes its letters precisely so no position can be read off it, and the pad
+    // has no position to offer either -- so what the four letters get is membership and nothing more.
+    it('marks the keys a word rung names without claiming a position', () => {
+      renderBoard(phrazlePuzzle, WORD_RUNG)
+
+      expect(keyNamed(/^H,/)).toHaveAccessibleName('H, in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^O,/)).toHaveAccessibleName('O, in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^L,/)).toHaveAccessibleName('L, in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^D,/)).toHaveAccessibleName('D, in the phrase, fills word 1 letter 1')
+    })
+
+    // A word rung says nothing about the letters it left out, and T is in word 1.
+    it('leaves the letters a word rung did not name untouched', () => {
+      renderBoard(phrazlePuzzle, WORD_RUNG)
+
+      expect(keyNamed(/^T,/)).toHaveAccessibleName('T, fills word 1 letter 1')
+    })
+
+    // THE HINT-FARM HOLE, closed at the pad. The adapter folds a speculative tail forward from live
+    // state on every render and HintBar never draws it; a pad that read the fold instead of the
+    // bought rungs would hand a player three letters for free, permanently, without a press.
+    //
+    // REDDENS ON: the board reading the adapter's ladder rather than the stored `hints`.
+    it('marks nothing for a rung the player has not bought', () => {
+      const { container } = renderBoard(phrazlePuzzle, UNBOUGHT_RUNG)
+
+      expect(keyNamed(/^B,/)).toHaveAccessibleName('B, fills word 1 letter 1')
+      expect(struck(container)).toHaveLength(0)
+    })
+
+    // TWO SOURCES, ONE PAD. A and N come off the marked tiles, B, G and P off the rung, and five
+    // strikes is the union rather than either side winning.
+    it('adds a rung to the verdicts the guesses already reached', () => {
+      const { container } = renderBoard(phrazlePuzzle, RUNG_AND_GUESS)
+
+      expect(keyNamed(/^A,/)).toHaveAccessibleName('A, not in the phrase, fills word 1 letter 1')
+      expect(keyNamed(/^G,/)).toHaveAccessibleName('G, not in the phrase, fills word 1 letter 1')
+      expect(struck(container)).toHaveLength(5)
+    })
+
+    // NOTHING IS EVER DISABLED, and a rung must not become the one thing that disables a key. A
+    // player spelling a real word that happens to contain a letter a hint ruled out is doing
+    // something ordinary.
+    it('leaves a key a rung ruled out pressable', async () => {
+      const { user } = renderBoard(phrazlePuzzle, ABSENT_RUNG)
+
+      await user.click(keyNamed(/^B,/))
+
+      expect(composing()).toHaveAccessibleName('Your guess, B')
+      expect(keyNamed(/^B,/)).toBeEnabled()
+      expect(keyNamed(/^B,/)).not.toHaveAttribute('aria-disabled')
+    })
+
+    // The mark is redundant with the name on this path too, and it is the SAME element -- so what
+    // this defends is that the rung route reaches `Strike` rather than growing a second mark of its
+    // own somewhere along the way.
+    it('keeps a rung-drawn strike out of the accessibility tree', () => {
+      const { container } = renderBoard(phrazlePuzzle, ABSENT_RUNG)
+
+      for (const mark of struck(container)) {
+        expect(mark).toHaveAttribute('aria-hidden', 'true')
+      }
+    })
+
+    // THE BAR ALREADY SAID THE SENTENCE. HintBar announces "The phrase has no B, no G, and no P." when
+    // the rung is bought, so a board that also announced the marks would read one purchase twice, in
+    // two voices, out of two live regions on one screen. The pad's own key names carry the whole of
+    // what this board owes a screen reader here.
+    //
+    // REDDENS ON: any message this board says about a rung.
+    it('announces nothing of its own about a rung', () => {
+      renderBoard(phrazlePuzzle, ABSENT_RUNG)
+
+      expect(ribbon()).toHaveProperty('textContent', '')
+    })
+
+    // THE READ IS OFF THE LIVE PROP AND THE GUESSES ARE NOT, which is the split cryptogram and Themed
+    // Anagrams already make and the reason a purchase lands without a remount. A rung bought
+    // mid-composition has to reach the pad on the very next render AND leave the half-typed row
+    // exactly where it was -- a board that re-read its own portion here would throw away three
+    // letters the player is looking at.
+    //
+    // REDDENS ON: the hint tail read in a mount-time initializer beside the guesses.
+    it('marks the pad when a rung lands on a board already being typed into', async () => {
+      const user = userEvent.setup({ delay: null })
+      const board = (progress: string | null): React.ReactNode => (
+        <PhrazleBoard
+          dictionary={phrazleDictionary}
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={progress}
+          puzzle={phrazlePuzzle}
+        />
+      )
+      const { rerender } = render(board(null))
+      await type(user, 'TOE')
+
+      rerender(board(ABSENT_RUNG))
+
+      expect(keyNamed(/^G,/)).toHaveAccessibleName('G, not in the phrase, fills word 2 letter 1')
+      expect(composing()).toHaveAccessibleName('Your guess, TOE')
+    })
+
+    // The other end of the same wire. Play again is the shell's to answer -- the board raises
+    // `onReset` and PuzzleFrame stores '' over the whole record -- so what arrives here is a progress
+    // prop with no ladder in it, and the marks have to go with it. A key still struck over a board
+    // with no rungs is a pad remembering a hint nobody owns.
+    it('forgets a rung when the shell clears the record', () => {
+      const board = (progress: string | null): React.ReactNode => (
+        <PhrazleBoard
+          dictionary={phrazleDictionary}
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={progress}
+          puzzle={phrazlePuzzle}
+        />
+      )
+      const { container, rerender } = render(board(ABSENT_RUNG))
+
+      rerender(board(''))
+
+      expect(keyNamed(/^G,/)).toHaveAccessibleName('G, fills word 1 letter 1')
+      expect(struck(container)).toHaveLength(0)
     })
   })
 
@@ -1680,6 +1871,16 @@ describe('PhrazleBoard', () => {
     //
     // A puzzle id per test, because HintBar persists its opened count at lull:hints:<puzzleId> and a
     // shared id would carry one test's spent ladder into the next.
+    //
+    // THE LADDER'S CONTENT IS NOT WHAT THESE ROWS ARE ABOUT, and it is worth saying so now that the
+    // one they are handed is named for a wire shape this bench no longer receives. What they need is
+    // three rungs and a real sheet: three so the control reads "Open hint 1 of 3", and a real sheet
+    // so pressing it draws the `<section aria-label="Open hints">` the board's keydown guard follows
+    // by IDREF. `phrazleStalePackLadder` supplies both, and it is the honest choice rather than an
+    // arbitrary one -- an UNCONTROLLED HintBar is exactly the bar a pack ladder drives, so the pair
+    // on screen here is the pair a player saw before this app's adapter shipped. The shell hands the
+    // real bench a ladder the adapter computed instead; that seam is asserted in the frame's suite,
+    // and none of it changes what a keystroke on the sheet must do.
     // SCOPED TO THE BOARD'S OWN INSTRUMENT, because HintBar mounts a role="status" of its own -- the
     // one that announces "Hints reset." -- and an unscoped query is ambiguous the moment a real bar
     // is on the screen beside the board. Two live regions on one screen is what the shell ships.
@@ -1700,7 +1901,7 @@ describe('PhrazleBoard', () => {
             progress={null}
             puzzle={phrazlePuzzle}
           />
-          <HintBar hints={phrazleHints} puzzleId={puzzleId} />
+          <HintBar hints={phrazleStalePackLadder} puzzleId={puzzleId} />
         </>,
       )
       return { container, user }

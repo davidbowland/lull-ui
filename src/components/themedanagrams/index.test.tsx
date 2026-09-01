@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 
@@ -22,6 +22,12 @@ describe('ThemedAnagramsBoard', () => {
     [3, 'The letters are T P S L A A U'],
   ]
 
+  // ONE TABLE FOR BOTH READINGS, and on an unhinted board they are the same string. The row's image
+  // is NAMED with it and the box is DESCRIBED with it -- two different computations that agree here
+  // because nothing is pinned. The per-letter names a reader meets on a row a rung has touched are
+  // written out where they belong, in "a letter a hint revealed"; a second table of them up here
+  // would say they are the shape of every board, and they are what a bought rung pays for.
+
   // The four row indexes, so a per-row table can be written without repeating the literal. A
   // separate table from SPELLED because most of these assertions do not need the scramble.
   const ROW_INDEXES: number[] = [0, 1, 2, 3]
@@ -44,10 +50,27 @@ describe('ThemedAnagramsBoard', () => {
 
   const boxNamed = (ordinal: number): HTMLElement => screen.getByRole('textbox', { name: `Answer ${ordinal} of 4` })
 
+  // The letters one row is showing, read off the ACCESSIBILITY TREE rather than off the markup: each
+  // letter is its own role="img" now, so this walks the row's tiles and joins their names. A pinned
+  // one names itself "S, revealed", which is why `tiles` below exists beside this -- the two answer
+  // different questions and neither can stand in for the other.
+  const runOf = (row: HTMLElement): string =>
+    within(row)
+      .getAllByRole('img')
+      .map((tile) => tile.textContent)
+      .join('')
+
   // The four visible runs, in row order. The scramble a row shows is no longer a fixed read off the
-  // pack -- the shuffle control can redraw it -- so the four of them are read together often enough
-  // to be worth a name.
-  const runs = (): (string | null)[] => screen.getAllByRole('img').map((run) => run.textContent)
+  // pack -- the shuffle control can redraw it, and a spent rung can pin letters into place -- so the
+  // four of them are read together often enough to be worth a name.
+  const runs = (): string[] => screen.getAllByRole('listitem').map(runOf)
+
+  // One row's tiles by NAME, which is where the "revealed" fact lives. A plain letter names itself;
+  // a pinned one names itself and says so.
+  const tiles = (index: number): (string | null)[] =>
+    within(screen.getAllByRole('listitem')[index])
+      .getAllByRole('img')
+      .map((tile) => tile.getAttribute('aria-label'))
 
   // The pack's own four, which is what a board draws until somebody presses shuffle and what it
   // draws again on the next visit.
@@ -138,30 +161,30 @@ describe('ThemedAnagramsBoard', () => {
     it('draws the scrambles in the order the pack sent them', () => {
       setup()
 
-      expect(screen.getAllByRole('img').map((run) => run.textContent)).toEqual([
-        'ELKTET',
-        'UNASAPCE',
-        'LKSETIL',
-        'TPSLAAU',
-      ])
+      expect(runs()).toEqual(['ELKTET', 'UNASAPCE', 'LKSETIL', 'TPSLAAU'])
     })
 
-    // A scramble read aloud as one string is gibberish, exactly like Missing Vowels' consonant run.
-    // The visible run is hidden from the accessibility tree and the element's NAME spells the
-    // letters out, so a blind player gets the letters rather than word-shaped noise.
-    it.each(SPELLED)('spells row %i out instead of reading it as a word', (index, spelled) => {
+    // A scramble read aloud as one string is gibberish, exactly like Missing Vowels' consonant run,
+    // so the run is a role="img" whose NAME spells the letters out. ONE image per row while nothing
+    // is pinned, and that count is the assertion rather than the markup being described.
+    //
+    // ONE IMAGE PER LETTER IS WHAT A RUNG BUYS, AND ONLY THEN. Splitting unconditionally put up to
+    // nine image nodes per row into a reader's browse order -- thirty-six on an untouched board,
+    // where four used to be -- to carry a "revealed" distinction that does not exist until a rung has
+    // been bought. This row is the one that fails if the split creeps back onto every board; the
+    // split itself is asserted in "a letter a hint revealed".
+    it.each(SPELLED)('spells row %i out as one image', (index, spelled) => {
       setup()
 
-      expect(screen.getAllByRole('img')[index]).toHaveAccessibleName(spelled)
+      expect(tiles(index)).toEqual([spelled])
     })
 
-    // Led with a positive assertion that throws first: a bare absence check also passes on a board
-    // that rendered nothing at all.
-    it('hides the visible run from a reader', () => {
+    // The box's DESCRIPTION is where the run is still spelled out in one breath, so a reader who
+    // tabs straight into the box is not made to browse the tiles to learn what is on the plate.
+    it('spells the whole run out for a reader who goes straight to the box', () => {
       setup()
 
-      expect(screen.getByText('ELKTET')).toBeInTheDocument()
-      expect(screen.getByText('ELKTET')).toHaveAttribute('aria-hidden', 'true')
+      expect(boxNamed(1)).toHaveAccessibleDescription('The letters are E L K T E T')
     })
   })
 
@@ -807,7 +830,7 @@ describe('ThemedAnagramsBoard', () => {
 
       await press(user)
 
-      expect([...(runs()[index] ?? '')].sort()).toEqual([...PACK_RUNS[index]].sort())
+      expect([...runs()[index]].sort()).toEqual([...PACK_RUNS[index]].sort())
     })
 
     // BOTH HALVES OF THE ROW MOVE TOGETHER. The visible run is aria-hidden noise and the spelled-out
@@ -819,7 +842,7 @@ describe('ThemedAnagramsBoard', () => {
 
       await press(user)
 
-      expect(screen.getAllByRole('img')[0]).toHaveAccessibleName('The letters are E L E T K T')
+      expect(tiles(0)).toEqual(['The letters are E L E T K T'])
       expect(screen.getAllByRole('textbox')[0]).toHaveAccessibleDescription('The letters are E L E T K T')
     })
 
@@ -924,7 +947,7 @@ describe('ThemedAnagramsBoard', () => {
     it('is gone when no row has anywhere to go', () => {
       setup(legacyScrambleThemedAnagrams)
 
-      expect(screen.getAllByRole('img').map((run) => run.textContent)).toEqual(PACK_RUNS)
+      expect(runs()).toEqual(PACK_RUNS)
       expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Shuffle letters' })).toBeNull()
     })
@@ -1513,6 +1536,230 @@ describe('ThemedAnagramsBoard', () => {
       const { container } = setup()
 
       expect(container.querySelector('.lull-board')).toContainElement(screen.getByRole('list'))
+    })
+  })
+
+  // WHAT THE LADDER HAS PINNED, read off the LIVE progress prop rather than off the state this board
+  // read at mount. The board never learns that hints exist and has no name for the thing that put
+  // these letters in place -- it finds a spent list in its own progress string and draws the run
+  // around it.
+  describe('a letter a hint revealed', () => {
+    // THE SPEC'S WORKED EXAMPLE, kept at its own four letters rather than translated onto the
+    // fixture's six. `SHOW` under `OSWH` is short enough that a reader can check the pool arithmetic
+    // by eye, which is the whole reason the design document chose it -- and this board draws whatever
+    // the pack sends, so the 5-to-9 wire contract is lull-api's gate and not a shape this file has to
+    // honor. The second arrangement is what the shuffle control cycles to.
+    const showPuzzle: Puzzle<ThemedAnagramsData> = {
+      ...themedAnagramsPuzzle,
+      data: {
+        ...themedAnagramsPuzzle.data,
+        entries: [
+          { answer: 'SHOW', scrambles: ['OSWH', 'WOHS'] },
+          { answer: 'KETTLE', scrambles: ['ELKTET'] },
+          { answer: 'SKILLET', scrambles: ['LKSETIL'] },
+          { answer: 'SPATULA', scrambles: ['TPSLAAU'] },
+        ],
+      },
+    }
+
+    // `I0` is the initial rung aimed at row 0, `B0` its bookends; the grammar is
+    // `<g0>\n<g1>\n<g2>\n<g3>|<opened>|<spent>` with the drafts omitted because nothing is typed.
+    // Written out rather than bought through the adapter, because these rows are about what the
+    // BOARD does with a stored string and an adapter in the arrangement would be a second thing that
+    // could be wrong.
+    const INITIAL = '|1|I0'
+    const BOOKENDS = '|1|B0'
+
+    // pinned {0}; the pool is O S W H less one S, which is O W H, filling positions 1, 2 and 3 in
+    // the scramble's own order.
+    it('stands the first letter in its true place and fills the rest from the scramble', () => {
+      setup(showPuzzle, INITIAL)
+
+      expect(runs()[0]).toEqual('SOWH')
+    })
+
+    // pinned {0, 3}; the pool is O S W H less one S and one W, which is O H.
+    it('stands both bookends in their true places', () => {
+      setup(showPuzzle, BOOKENDS)
+
+      expect(runs()[0]).toEqual('SOHW')
+    })
+
+    // THE LETTERS ARE THE SAME LETTERS. Pinning rearranges the run and may never add, drop or change
+    // one -- a row whose multiset moved would be a row the answer no longer fits, which is the one
+    // way this display could make a puzzle unsolvable.
+    it('keeps every letter the pack scrambled', () => {
+      setup(showPuzzle, BOOKENDS)
+
+      expect([...runs()[0]].sort()).toEqual([...'OSWH'].sort())
+    })
+
+    // A RUNG MAY NEVER SPELL THE ANSWER ONTO THE BOARD, which is `MIN_FREE_POSITIONS` in the rule
+    // stated where a player would actually see it breached. The bookends rung is the worst case on a
+    // four-letter answer -- half its positions pinned -- and two positions still differ.
+    it('leaves at least two positions still to work out', () => {
+      setup(showPuzzle, BOOKENDS)
+      const drawn = runs()[0]
+
+      expect([...drawn].filter((letter, at) => letter !== 'SHOW'[at])).toHaveLength(2)
+    })
+
+    // THE ACCESSIBILITY TREE CARRIES THE PINNING, and it has to be per LETTER: a row named in one
+    // breath could only say "S is revealed", which on a run with two of that letter leaves a reader
+    // counting. Neither half of the treatment is a color -- see PINNED, which is weight and a rule.
+    it('names a pinned tile as revealed and leaves the rest alone', () => {
+      setup(showPuzzle, INITIAL)
+
+      expect(tiles(0)).toEqual(['S, revealed', 'O', 'W', 'H'])
+    })
+
+    it('is findable by that name in the accessibility tree', () => {
+      setup(showPuzzle, INITIAL)
+
+      expect(screen.getByRole('img', { name: 'S, revealed' })).toBeInTheDocument()
+    })
+
+    // The box's description is what a reader who tabs straight in hears, and without this clause they
+    // would be told the letters and not which of them are true -- which is the entire thing the rung
+    // bought.
+    it('names the revealed letters in the box’s description too', () => {
+      setup(showPuzzle, BOOKENDS)
+
+      expect(boxNamed(1)).toHaveAccessibleDescription('The letters are S O H W. S, W are revealed and in place.')
+    })
+
+    // AN UNHINTED ROW IS UNTOUCHED, byte for byte what the pack scrambled. A rung buys one row and
+    // must not churn the other three.
+    it('draws every other row exactly as the pack sent it', () => {
+      setup(showPuzzle, INITIAL)
+
+      expect(runs().slice(1)).toEqual(['ELKTET', 'LKSETIL', 'TPSLAAU'])
+    })
+
+    // AND IT IS UNTOUCHED IN THE ACCESSIBILITY TREE TOO, which is the half a visible-run assertion
+    // cannot see. The split into one image per letter is bought by the rung and paid for by the
+    // reader -- up to nine nodes in the browse order where there was one -- so it lands on the row
+    // the rung is about and on no other. Row 0 is split here and row 1 is one image, on the same
+    // board, in the same render.
+    it('splits only the row a rung pinned into one image per letter', () => {
+      setup(showPuzzle, INITIAL)
+
+      expect(tiles(0)).toEqual(['S, revealed', 'O', 'W', 'H'])
+      expect(tiles(1)).toEqual(['The letters are E L K T E T'])
+    })
+
+    // RESHUFFLE CYCLES THE REMAINDER AND LEAVES THE PINNING ALONE. The cursor moves, the pool is
+    // rebuilt from the new arrangement, and the revealed letter is still standing in its true place
+    // -- which is the property that would have been lost had the pinning been folded into `cursors`
+    // instead of computed at draw time.
+    it('keeps a pinned letter in place across a shuffle', async () => {
+      const { user } = setup(showPuzzle, INITIAL)
+
+      await user.click(screen.getByRole('button', { name: 'Shuffle letters' }))
+
+      expect(runs()[0]).toEqual('SWOH')
+      expect(tiles(0)[0]).toEqual('S, revealed')
+    })
+
+    // A LEGACY PAYLOAD PINS NOTHING. Every board stored before this grammar existed is four drafts
+    // and no field, and it comes back drawing exactly what the pack scrambled -- no migration, no
+    // version byte, no transitional shape.
+    it('pins nothing on a board stored before the ladder existed', () => {
+      setup(showPuzzle, 'S\n\n\n')
+
+      expect(runs()[0]).toEqual('OSWH')
+      expect(boxNamed(1)).toHaveValue('S')
+    })
+
+    // A MALFORMED LADDER COSTS THE LADDER AND NOTHING ELSE. The drafts beside it are still this
+    // player's work, so the four boxes come back and only the pinning is gone.
+    it('keeps the drafts when the ladder field is malformed', () => {
+      setup(showPuzzle, 'S\n\n\n|9|I0')
+
+      expect(runs()[0]).toEqual('OSWH')
+      expect(boxNamed(1)).toHaveValue('S')
+    })
+
+    // THE BOARD IS NEVER THE SECOND WRITER. Its `encode` writes the four drafts and nothing else, and
+    // the tail is re-attached by the shell through the adapter's `merge` -- so this is the assertion
+    // that the board cannot clobber a rung the player paid for on its very next keystroke.
+    it('writes only its own portion when the player types beside it', async () => {
+      const { user } = setup(showPuzzle, INITIAL)
+
+      await user.type(boxNamed(1), 'S')
+
+      expect(onProgress).toHaveBeenLastCalledWith('S\n\n\n')
+    })
+
+    // THE PURCHASE APPEARS AT ONCE, WITH NO REMOUNT, and that is what reading the live prop buys.
+    // `rerender` keeps the same component instance -- the drafts and the shuffle position both
+    // survive it -- which is exactly what the shell does when it commits a rung: it writes the string
+    // and re-renders the board it already had. A board that read its pinning off mount-time state
+    // would sell the rung, charge for it, and show nothing until a reload.
+    it('shows a rung bought under it without being mounted again', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = render(
+        <ThemedAnagramsBoard
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={null}
+          puzzle={showPuzzle}
+        />,
+      )
+
+      await user.type(boxNamed(1), 'SH')
+      // The second render is the SAME tree with a new `progress`, which is a prop change and not a
+      // remount: React reconciles the board in place and every piece of its state survives.
+      rerender(
+        <ThemedAnagramsBoard
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={`SH\n\n\n${INITIAL}`}
+          puzzle={showPuzzle}
+        />,
+      )
+
+      expect(runs()[0]).toEqual('SOWH')
+      expect(boxNamed(1)).toHaveValue('SH')
+    })
+
+    // THE INPUT BOX IS UNTOUCHED -- no prefill, no locking. What a rung buys here is knowing WHICH
+    // letter is true, and typing it into the box for the player would be buying the answer instead.
+    it('leaves the box empty and editable', () => {
+      setup(showPuzzle, BOOKENDS)
+
+      expect(boxNamed(1)).toHaveValue('')
+      expect(boxNamed(1)).not.toHaveAttribute('readonly')
+    })
+
+    // The rows the fixture actually ships, with all three kinds spent at once, so the pool
+    // arithmetic is exercised on a run with repeated letters and on a three-letter prefix rather
+    // than only on the four-letter worked example.
+    it('pins all three kinds across three rows of the shipped fixture', () => {
+      setup(themedAnagramsPuzzle, '|3|I1,B2,P3')
+
+      expect(runs()).toEqual(['ELKTET', 'SUNAAPCE', 'SLKEILT', 'SPATLAU'])
+    })
+
+    // A row whose answer never arrived still RENDERS -- `isEntry` deliberately does not check it, so
+    // that the guards which stop a blank answer winning the game have something to be tested against
+    // -- and `pinnedDisplay` would spread that answer and throw during render. The row draws its
+    // scramble untouched instead.
+    it('draws a row whose answer never arrived rather than throwing', () => {
+      setup(unusableAnswerThemedAnagrams, '|1|I0')
+
+      expect(runs()[0]).toEqual('ELKTET')
+    })
+
+    // The same guard from the other side: a blank answer IS a string and sails past a typeof check,
+    // and `pinnedDisplay` returns a run of the ANSWER'S length -- so without the length comparison
+    // this row would draw no letters at all.
+    it('draws a row whose answer is blank rather than emptying it', () => {
+      setup(blankAnswerThemedAnagrams, '|1|I0')
+
+      expect(runs()[0]).toEqual('ELKTET')
     })
   })
 })

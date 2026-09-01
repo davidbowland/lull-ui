@@ -35,7 +35,7 @@ describe('CryptogramBoard', () => {
   // good fixture and a useless one for this.
   const singleUsePuzzle: Puzzle<CryptogramData> = {
     ...cryptogramPuzzle,
-    data: { ...cryptogramPuzzle.data, answer: 'Ate ate teas', ciphertext: 'VZE VZE ZEVQ' },
+    data: { ...cryptogramPuzzle.data, answer: 'Ate ate teas', ciphertext: 'VZQ VZQ ZQVW' },
   }
 
   // One word longer than a line holds at the 24px floor. Words never break, so the squares shrink
@@ -83,13 +83,13 @@ describe('CryptogramBoard', () => {
   // one on the bench, and the component hands it the message.
   const ribbon = (): HTMLElement => screen.getByRole('status')
 
-  // 'EEVAZT' is { E: E, V: A, Z: T } encoded -- sorted cipher-plain pairs. Under it VZE VZE ZEV
+  // 'QEVAZT' is { Q: E, V: A, Z: T } encoded -- sorted cipher-plain pairs. Under it VZQ VZQ ZQV
   // spells ATE ATE TEA, which is the fixture's answer.
-  const SOLVED = 'EEVAZT'
+  const SOLVED = 'QEVAZT'
   // Every square full and the phrase wrong -- V is B where the answer wants A, so the board reads
   // BTE BTE TEB. The endgame state: no square is empty, so every advance the caret makes lands it
   // on a letter the player did not put it on, and every stray tap has something to lose.
-  const FULL_AND_WRONG = 'EEVBZT'
+  const FULL_AND_WRONG = 'QEVBZT'
 
   describe('the phrase', () => {
     it('gives every ciphertext letter its own square', () => {
@@ -151,8 +151,8 @@ describe('CryptogramBoard', () => {
     it('groups the squares into words', () => {
       setup()
 
-      expect(screen.getByRole('group', { name: 'Word 1 of 3, V Z E' })).toBeInTheDocument()
-      expect(screen.getByRole('group', { name: 'Word 3 of 3, Z E V' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Word 1 of 3, V Z Q' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Word 3 of 3, Z Q V' })).toBeInTheDocument()
     })
 
     // The sign over the working surface, not a heading and a tally: the category is a fact about
@@ -313,11 +313,11 @@ describe('CryptogramBoard', () => {
       await user.click(key('T, not used yet'))
       await user.click(square('Cipher Z, letter 2 of 9, empty'))
       await user.click(key('A, not used yet'))
-      await user.click(square('Cipher E, letter 3 of 9, empty'))
+      await user.click(square('Cipher Q, letter 3 of 9, empty'))
       await user.click(key('E, not used yet'))
 
       expect(ribbon()).toHaveTextContent(
-        'Every E is E now — 3 squares. Every square is full. Check the ones you’re least sure of.',
+        'Every Q is E now — 3 squares. Every square is full. Check the ones you’re least sure of.',
       )
     })
 
@@ -334,7 +334,7 @@ describe('CryptogramBoard', () => {
       await user.click(key('T, not used yet'))
       await user.click(square('Cipher Z, letter 2 of 9, empty'))
       await user.click(key('A, not used yet'))
-      await user.click(square('Cipher E, letter 3 of 9, empty'))
+      await user.click(square('Cipher Q, letter 3 of 9, empty'))
       await user.click(key('E, not used yet'))
       // The board is full and wrong. Swap V's T for a letter nothing else holds: V still has a
       // letter, so the board is still full, and T has gone back to the pile.
@@ -351,10 +351,10 @@ describe('CryptogramBoard', () => {
     it('counts one square as a square', async () => {
       const user = setup(singleUsePuzzle)
 
-      await user.click(square('Cipher Q, letter 10 of 10, empty'))
+      await user.click(square('Cipher W, letter 10 of 10, empty'))
       await user.click(key('A, not used yet'))
 
-      expect(ribbon()).toHaveTextContent('Every Q is A now — 1 square.')
+      expect(ribbon()).toHaveTextContent('Every W is A now — 1 square.')
     })
 
     // The same fill, spelled right. A solved board is never told it is full and wrong -- the solve
@@ -366,7 +366,7 @@ describe('CryptogramBoard', () => {
       await user.click(key('A, not used yet'))
       await user.click(square('Cipher Z, letter 2 of 9, empty'))
       await user.click(key('T, not used yet'))
-      await user.click(square('Cipher E, letter 3 of 9, empty'))
+      await user.click(square('Cipher Q, letter 3 of 9, empty'))
       await user.click(key('E, not used yet'))
 
       expect(ribbon()).toHaveTextContent('Solved. The answer is ATE ATE TEA.')
@@ -607,7 +607,7 @@ describe('CryptogramBoard', () => {
       await user.click(square('Cipher Z, letter 2 of 9, empty'))
       await user.keyboard('at')
 
-      expect(ribbon()).toHaveTextContent('Every E is T now')
+      expect(ribbon()).toHaveTextContent('Every Q is T now')
     })
 
     // The rule itself, on the phrase it was decided by. Typing E on the first R fills BOTH R squares
@@ -723,7 +723,7 @@ describe('CryptogramBoard', () => {
       await user.keyboard('ate')
 
       expect(ribbon()).toHaveTextContent('Solved. The answer is ATE ATE TEA.')
-      expect(square('Cipher E, letter 3 of 9, holds E')).toHaveAttribute('tabindex', '0')
+      expect(square('Cipher Q, letter 3 of 9, holds E')).toHaveAttribute('tabindex', '0')
     })
   })
 
@@ -803,10 +803,10 @@ describe('CryptogramBoard', () => {
     it('stops at the last word rather than wrapping', async () => {
       const user = setup()
 
-      await user.click(square('Cipher E, letter 8 of 9, empty'))
+      await user.click(square('Cipher Q, letter 8 of 9, empty'))
       await user.keyboard('{ArrowDown}')
 
-      expect(square('Cipher E, letter 8 of 9, empty')).toHaveFocus()
+      expect(square('Cipher Q, letter 8 of 9, empty')).toHaveFocus()
       expect(ribbon()).toHaveTextContent('No word that way.')
     })
 
@@ -1522,7 +1522,7 @@ describe('CryptogramBoard', () => {
       await user.click(key('Undo'))
       await user.click(key('Undo'))
 
-      expect(screen.getAllByRole('button', { name: /^Cipher [VZE], .*empty$/ })).toHaveLength(9)
+      expect(screen.getAllByRole('button', { name: /^Cipher [VZQ], .*empty$/ })).toHaveLength(9)
       expect(onProgress).toHaveBeenLastCalledWith('')
     })
 
@@ -1811,7 +1811,7 @@ describe('CryptogramBoard', () => {
     // keeps neither its ciphertext nor its id. A board in a state its own buttons could not reach
     // is worse than an empty one.
     it('comes up empty on progress it cannot trust', () => {
-      setup(cryptogramPuzzle, 'VAQB')
+      setup(cryptogramPuzzle, 'VAXB')
 
       expect(screen.getByText('0 of 9 squares filled')).toBeInTheDocument()
     })
@@ -1929,7 +1929,225 @@ describe('CryptogramBoard', () => {
 
       await solve(user)
 
-      expect(square('Cipher E, letter 3 of 9, holds E')).toHaveFocus()
+      expect(square('Cipher Q, letter 3 of 9, holds E')).toHaveFocus()
+    })
+  })
+
+  // WHAT A RUNG HANDED OVER, read off the LIVE progress prop rather than off the state this board
+  // read at mount. The board never learns that hints exist and has no name for the thing that
+  // settled these squares -- it finds some letters already down and refuses to let anything take
+  // them away, which is exactly what CLAUDE.md says a board on this seam would find.
+  describe('a square a hint revealed', () => {
+    // The letter rung for E, frozen into the board's own progress string: `<pairs>|<opened>|<spent>`.
+    // Written out rather than built through the adapter, because these rows are about what the BOARD
+    // does with a stored string and an adapter in the arrangement would be a second thing that could
+    // be wrong.
+    const ONE_RUNG = 'QE|1|LQ'
+    // The word rung, which locks every distinct cipher letter of word 1 -- V, Z and E -- and so
+    // fills the whole of this nine-square fixture.
+    const WORD_RUNG = 'QEVAZT|1|W0'
+
+    it('stands its letter in every square that shows the cipher letter', () => {
+      setup(cryptogramPuzzle, ONE_RUNG)
+
+      expect(screen.getAllByRole('button', { name: /^Cipher Q, .*holds E, revealed by a hint$/ })).toHaveLength(3)
+    })
+
+    // THE ACCESSIBILITY TREE CARRIES THE LOCK, and it carries it twice: the square's own NAME says
+    // what happened, and aria-disabled says the tap will not land. Neither is a color, which is the
+    // WCAG 1.4.1 requirement and the reason `SQUARE_LOCKED` is written in weight and ground.
+    it('says in its own name that a hint revealed it', () => {
+      setup(cryptogramPuzzle, ONE_RUNG)
+
+      expect(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint')).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    // The other twenty-something squares say nothing about hints at all. An explicit "not revealed"
+    // on every square would put the word in a reader's mouth once per square for the one square it
+    // is not about, which is the same call aria-current already makes here.
+    it('leaves every other square’s name alone', () => {
+      setup(cryptogramPuzzle, ONE_RUNG)
+
+      expect(square('Cipher V, letter 1 of 9, empty')).not.toHaveAttribute('aria-disabled')
+    })
+
+    // ROW 7. A locked square takes no assignment, and the refusal is asserted through the tree
+    // rather than through a class: the square still answers to the name it had.
+    it('refuses to be reassigned', async () => {
+      const user = setup(cryptogramPuzzle, ONE_RUNG)
+
+      await user.click(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint'))
+      await user.keyboard('x')
+
+      expect(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint')).toBeInTheDocument()
+      expect(ribbon()).toHaveTextContent('Cipher Q is E. A hint revealed it.')
+    })
+
+    // The eraser reaches `apply` with the letter the square already holds, so a lock that only
+    // guarded overwrites would leave Backspace as a way to empty a square the player paid for.
+    it('refuses to be emptied by the eraser', async () => {
+      const user = setup(cryptogramPuzzle, ONE_RUNG)
+
+      await user.click(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint'))
+      await user.keyboard('{Backspace}')
+
+      expect(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint')).toBeInTheDocument()
+    })
+
+    // ROW 8, and the half that is easy to forget: the tap is on a DIFFERENT square, and without the
+    // refusal it would quietly empty a revealed square three letters along -- off screen on a real
+    // phrase. The sentence names the square that refused, because that is the one the player cannot
+    // see.
+    it('refuses to have its letter stolen by another square', async () => {
+      const user = setup(cryptogramPuzzle, ONE_RUNG)
+
+      await user.click(square('Cipher V, letter 1 of 9, empty'))
+      await user.keyboard('e')
+
+      expect(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint')).toBeInTheDocument()
+      expect(square('Cipher V, letter 1 of 9, empty')).toBeInTheDocument()
+      expect(ribbon()).toHaveTextContent('E is on cipher Q, which a hint revealed. It can’t move.')
+    })
+
+    // A REFUSED TAP IS NOT A MOVE, so nothing is written and nothing is put on the undo stack. An
+    // Undo that undoes nothing is the one thing a history must never contain.
+    it('writes no progress for a tap it turned away', async () => {
+      const user = setup(cryptogramPuzzle, ONE_RUNG)
+
+      await user.click(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint'))
+      await user.keyboard('x')
+
+      expect(onProgress).not.toHaveBeenCalled()
+    })
+
+    // Typing the letter a revealed square already shows asks for nothing, so it takes the FREE
+    // keystroke rather than the refusal -- otherwise the caret would stop dead in the middle of a
+    // word the player was spelling out.
+    it('lets the caret walk through it on the letter it already holds', async () => {
+      const user = setup(cryptogramPuzzle, ONE_RUNG)
+
+      await user.click(square('Cipher Q, letter 3 of 9, holds E, revealed by a hint'))
+      await user.keyboard('e')
+
+      expect(ribbon()).toHaveTextContent('Cipher Q is already E.')
+    })
+
+    // THE BOARD IS NEVER THE SECOND WRITER. Its `encode` writes the pairs and nothing else, and the
+    // tail is re-attached by the shell through the adapter's `merge` -- so this is the assertion
+    // that the board cannot clobber a rung the player paid for on its very next tap.
+    it('writes only its own portion when the player types beside it', async () => {
+      const user = setup(cryptogramPuzzle, ONE_RUNG)
+
+      await user.click(square('Cipher V, letter 1 of 9, empty'))
+      await user.keyboard('a')
+
+      expect(onProgress).toHaveBeenLastCalledWith('QEVA')
+    })
+
+    // A LEGACY PAYLOAD READS AS NOTHING BOUGHT. Every board stored before this grammar existed is a
+    // bare pairs string, and it comes back with its letters and no locks -- no migration, no version
+    // byte, no transitional shape.
+    it('locks nothing on a board stored before the ladder existed', () => {
+      setup(cryptogramPuzzle, 'QE')
+
+      expect(square('Cipher Q, letter 3 of 9, holds E')).not.toHaveAttribute('aria-disabled')
+    })
+
+    // A MALFORMED LADDER COSTS THE LADDER AND NOTHING ELSE. The pairs beside it are still this
+    // player's work, so the letters come back and only the locks are gone -- the asymmetry argued at
+    // `hintTail` in mapping.ts.
+    it('keeps the board when the ladder field is malformed', () => {
+      setup(cryptogramPuzzle, 'QE|9|LQ')
+
+      expect(square('Cipher Q, letter 3 of 9, holds E')).toBeInTheDocument()
+    })
+
+    // THE PURCHASE APPEARS AT ONCE, WITH NO REMOUNT, and that is what reading the live prop buys.
+    // `rerender` keeps the same component instance -- the caret, the undo history and the square the
+    // player picked all survive it -- which is exactly what the shell does when it commits a rung:
+    // it writes the string and re-renders the board it already had. A board that read its locks off
+    // mount-time state would sell the rung, charge for it, and show nothing until a reload.
+    it('shows a rung bought under it without being mounted again', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = renderBoard(cryptogramPuzzle, 'VA')
+
+      await user.click(square('Cipher V, letter 1 of 9, holds A'))
+      // The second render is the SAME tree with a new `progress`, which is a prop change and not a
+      // remount: React reconciles the board in place and every piece of its state survives. It is
+      // what the shell does when it commits a rung -- it writes the string and re-renders the board
+      // it already had.
+      rerender(
+        <CryptogramBoard
+          onProgress={onProgress}
+          onSolved={onSolved}
+          progress="QEVA|2|LQ,LZ"
+          puzzle={cryptogramPuzzle}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'Cipher Q, letter 3 of 9, holds E, revealed by a hint' })).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Cipher Z, letter 2 of 9, holds T, revealed by a hint' })).toBeVisible()
+      // The letter the player typed before the purchase is still on the board, and the caret is
+      // still standing where they left it.
+      expect(square('Cipher V, letter 1 of 9, holds A')).toHaveAttribute('aria-current', 'true')
+    })
+
+    // WHAT A PURCHASE TAKES OFF THE BOARD, said out loud. `withRevealed` steals exactly as `apply`
+    // does -- a plain letter stands on one cipher letter or on none -- so a rung revealing A on
+    // cipher V empties the square where the player had wrongly put A. Every ORDINARY tap announces
+    // that through `stolenFrom` and `released`; this press was made in the SHELL's hint bar, never
+    // reached `assign`, and used to empty a filled square in total silence.
+    //
+    // The board starts holding a WRONG A on cipher Z -- Z is really T -- and the rung is the letter
+    // rung for V, which is really A.
+    it('says which square a bought rung emptied', () => {
+      const { rerender } = renderBoard(cryptogramPuzzle, 'ZA')
+
+      rerender(
+        <CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress="VA|1|LV" puzzle={cryptogramPuzzle} />,
+      )
+
+      expect(ribbon()).toHaveTextContent('Cipher Z is empty now — a hint put A on cipher V.')
+    })
+
+    it('leaves the square it emptied empty', () => {
+      const { rerender } = renderBoard(cryptogramPuzzle, 'ZA')
+
+      rerender(
+        <CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress="VA|1|LV" puzzle={cryptogramPuzzle} />,
+      )
+
+      expect(square('Cipher Z, letter 2 of 9, empty')).toBeInTheDocument()
+    })
+
+    // A RUNG THAT TAKES NOTHING SAYS NOTHING. The board below holds a correct T on Z, and the rung
+    // fills a square that was empty -- so there is no loss to report and a ribbon that spoke anyway
+    // would be narrating the hint bar rather than the board.
+    it('says nothing when a bought rung emptied no square', () => {
+      const { rerender } = renderBoard(cryptogramPuzzle, 'ZT')
+
+      rerender(
+        <CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress="VAZT|1|LV" puzzle={cryptogramPuzzle} />,
+      )
+
+      expect(ribbon()).not.toHaveTextContent('is empty now')
+    })
+
+    // NOT ON ARRIVAL. A returning player's stored string already carries the rungs they bought, and
+    // the ref is seeded with that count -- so the board does not open by narrating a purchase they
+    // made yesterday.
+    it('says nothing about a rung that was already bought when it mounted', () => {
+      renderBoard(cryptogramPuzzle, 'VA|1|LV')
+
+      expect(ribbon()).not.toHaveTextContent('is empty now')
+    })
+
+    // The word rung fills the whole of this fixture, so the board is solved by the purchase alone --
+    // which is the case where "shows it at once" and "reports it at once" are the same press.
+    it('reports a solve a rung completed', () => {
+      setup(cryptogramPuzzle, WORD_RUNG)
+
+      expect(screen.getByText('You solved this one')).toBeInTheDocument()
     })
   })
 })

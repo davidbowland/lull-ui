@@ -239,9 +239,12 @@ describe('HintBar', () => {
     // The case `hintsOf` newly admits, and the one goFigure hands the bar in controlled mode: a
     // ladder whose rungs carry `metadata`. The bar must not notice. It is asserted VERBATIM and in
     // arrival order rather than by any property of the metadata, because that is the whole contract
-    // -- lull-api decides what a rung gives away and in what order the ladder reveals it, and this
-    // component decides only when. The fixture's rung order is 1, 0, 2, so a bar that quietly sorted
-    // by slot would come out left to right here and fail.
+    // -- the ladder's AUTHOR decides what a rung gives away and in what order the ladder reveals it,
+    // and this component decides only when. For this fixture the author is lull-api, which is where
+    // goFigure's ladder comes from; on the three benches that compute their own it is the type's
+    // registry adapter, and the contract this bar keeps is the same either way. The fixture's rung
+    // order is 1, 0, 2, so a bar that quietly sorted by slot would come out left to right here and
+    // fail.
     it('renders a ladder whose rungs carry metadata exactly as it arrived', async () => {
       const user = userEvent.setup({ delay: null })
       render(<HintBar hints={goFigureHints} puzzleId={puzzleId} />)
@@ -255,6 +258,39 @@ describe('HintBar', () => {
         'The 1st operator from the left is "+".',
         'The 3rd operator from the left is "×".',
       ])
+    })
+
+    // THE <li> KEY, ASSERTED THROUGH THE ONE THING IT CAN CHANGE. A repeated rung text used to be
+    // impossible by WARRANT rather than by construction: lull-api refuses a phrase whose three hints
+    // collapse to fewer than three distinct strings, and every ladder in the app came from lull-api.
+    // Half the catalog no longer does -- Cryptogram, Phrazle and Themed Anagrams build theirs on the
+    // device -- and nothing there re-checks it, so the key is the array index, which cannot collide
+    // on a list that only grows and never reorders.
+    //
+    // IT PASSES UNDER THE OLD KEY TOO, AND THAT IS THE POINT RATHER THAN A WEAKNESS IN IT -- measured,
+    // because the temptation was to write "the second rung never reaches the screen" and it is not
+    // true. React answers two children under one key with a console warning whose own wording is
+    // "Non-unique keys may cause children to be duplicated and/or omitted": it renders all three here
+    // today, on this reconciliation path, in this version. What a text key buys is undefined behavior
+    // and a warning, and what this row pins is the behavior the ladder is entitled to whatever React
+    // does with a duplicate. A test that fails only on the key would be a test of React.
+    //
+    // THE REPEAT IS AT BOTH ENDS, so one assertion carries both properties: every rung comes out, and
+    // they come out in arrival order -- an omitted or duplicated child fails on either count.
+    it('renders every rung of a ladder that says one thing twice, in arrival order', async () => {
+      const user = userEvent.setup({ delay: null })
+      const repeated: HintLadder = [
+        { text: 'The phrase has no D.' },
+        { text: 'The phrase contains K.' },
+        { text: 'The phrase has no D.' },
+      ]
+      render(<HintBar hints={repeated} puzzleId={puzzleId} />)
+
+      await press(user, 'Open hint 1 of 3')
+      await press(user, 'Open hint 2 of 3')
+      await press(user, 'Open hint 3 of 3')
+
+      expect(openRungs()).toEqual(['The phrase has no D.', 'The phrase contains K.', 'The phrase has no D.'])
     })
   })
 
@@ -482,9 +518,12 @@ describe('HintBar', () => {
     })
   })
 
-  // The bar is handed its count instead of reading one, which is what lets the goFigure bench render
-  // it inside the board's own subtree without that subtree touching storage. The shell keeps owning
-  // persistence; the bench only owns the number.
+  // The bar is handed its count instead of reading one, so the count can live wherever the ladder
+  // does. Four callers take the mode and they take it for two different reasons: the goFigure BOARD
+  // renders this bar inside its own subtree, which must not touch storage, and PuzzleFrame drives it
+  // for the three types whose rungs are computed on the device, whose count already rides in the
+  // board's progress string beside the rungs it bought. The shell keeps owning persistence; a
+  // controlled owner only owns the number.
   describe('controlled mode', () => {
     it('reports the reveal as one past the ladder and writes nothing', async () => {
       const user = userEvent.setup({ delay: null })
@@ -505,10 +544,12 @@ describe('HintBar', () => {
       expect(writeHints).not.toHaveBeenCalled()
     })
 
-    // Storage is not merely ignored, it is NOT REACHED. That is the whole reason the mode exists:
-    // the goFigure bench renders this bar inside the board's own subtree, and `CLAUDE.md` names a
-    // puzzle component's distance from storage as what makes the display-only rule structural
-    // rather than aspirational. An assertion on the count alone would still pass a bar that read
+    // Storage is not merely ignored, it is NOT REACHED, and that property is load-bearing for both
+    // kinds of controlled caller. The goFigure bench renders this bar inside the board's own subtree,
+    // and `CLAUDE.md` names a puzzle component's distance from storage as what makes the display-only
+    // rule structural rather than aspirational. The three adapter benches keep their count in the
+    // board's progress string, where a `lull:hints:` read would be a second store for one number and
+    // the two could disagree. An assertion on the count alone would still pass a bar that read
     // storage and threw the answer away, so the spy is the test.
     //
     // `Show 2 hints` rather than `Open hint 3 of 3`: the sheet is shut at mount in both modes, and a
@@ -845,6 +886,95 @@ describe('HintBar', () => {
     })
   })
 
+  // A CONTROLLED BAR'S LADDER IS RECOMPUTED FROM THE BOARD, so its LENGTH moves while the bar is
+  // mounted. Nothing here can see why; what it can see is that the offer it is painting changed from
+  // a rung to the answer without a press, on a button the player may be standing on.
+  describe('a ladder that shortens under a standing offer', () => {
+    const solution = 'The answer is NOTHING GOLD CAN STAY.'
+    const shortened: HintLadder = [hints[0], hints[1]]
+
+    const renderFolding = (ladder: HintLadder, opened: number): ReturnType<typeof render> =>
+      render(<HintBar control={{ onOpen: noop, opened }} hints={ladder} puzzleId={puzzleId} solution={solution} />)
+
+    const refoldTo = (rerender: (ui: React.ReactElement) => void, ladder: HintLadder, opened: number): void => {
+      rerender(<HintBar control={{ onOpen: noop, opened }} hints={ladder} puzzleId={puzzleId} solution={solution} />)
+    }
+
+    const NOTICE = 'No hints are left. This button now shows the answer.'
+
+    // THE SHEET IS OPENED FIRST IN EVERY ROW, because shut, the control reads "Show 2 hints" on both
+    // sides of the fold and there is nothing silent to catch. The regression lives on an OPEN sheet,
+    // where the control is the ladder's pager.
+    const withSheetOpen = async (user: UserEvent, opened: number): Promise<ReturnType<typeof render>> => {
+      const rendered = renderFolding(hints, opened)
+      await press(user, `Show ${opened} hint${opened === 1 ? '' : 's'}`)
+      return rendered
+    }
+
+    // THE PRESS THAT CHANGED WHAT IT DOES. Two rungs bought against a ladder of three, then the
+    // player solves the entries the third rung was aimed at: the adapter folds 3 to 2, `opened` is
+    // still 2, and `controlLabel` swaps "Open hint 3 of 3" for "Show answer". Screen readers do not
+    // re-read a focused element when its label changes -- the fact the reset announcement below
+    // exists for -- so without this the next press hands over the whole answer to a player who was
+    // told they were buying a hint.
+    it('says the button now shows the answer', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 2)
+
+      refoldTo(rerender, shortened, 2)
+
+      expect(screen.getByRole('status')).toHaveTextContent(NOTICE)
+    })
+
+    // THE OTHER HALF OF THE SAME FACT, and the row that makes the one above an assertion rather than
+    // a sentence: the control really has become the reveal, so the announcement is describing a
+    // change that happened rather than warning about one that did not.
+    it('changes the control to the reveal', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 2)
+
+      refoldTo(rerender, shortened, 2)
+
+      expect(screen.getByRole('button', { name: 'Show answer' })).toBeInTheDocument()
+    })
+
+    // A LADDER THAT SHORTENS ABOVE THE COUNT STILL OFFERS A RUNG, so nothing has changed for the
+    // player and nothing is said. Announcing here would be a live region talking about the shell's
+    // arithmetic rather than about what this control does.
+    it('says nothing when a rung is still on offer', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 1)
+
+      refoldTo(rerender, shortened, 1)
+
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+
+    // THE PURCHASE IS EXCLUDED BY THE COUNT MOVING, and it has to be: a bought rung routinely
+    // shortens the speculative tail in the same render it raises `opened`, and a bar that announced
+    // there would talk over the rung the player just paid for.
+    it('says nothing when the count moved with it', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = await withSheetOpen(user, 1)
+
+      refoldTo(rerender, shortened, 2)
+
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+
+    // NOTHING IS TAKEN AWAY WITHOUT AN ANSWER TO TAKE. With no `solution` the control becomes "Hide
+    // hints", which is the sheet's toggle and not a more destructive press.
+    it('says nothing on a bench with no answer to give', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = render(<HintBar control={{ onOpen: noop, opened: 2 }} hints={hints} puzzleId={puzzleId} />)
+      await press(user, 'Show 2 hints')
+
+      rerender(<HintBar control={{ onOpen: noop, opened: 2 }} hints={shortened} puzzleId={puzzleId} />)
+
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+  })
+
   // The shell raises a count when the player starts the puzzle over. It is a prop and an effect
   // rather than a changed `key` on this component, and every test here is about something the
   // remount destroyed: the focused control, the live region, and the second reset.
@@ -979,9 +1109,13 @@ describe('HintBar', () => {
       expect(document.activeElement).toBe(elsewhere)
     })
 
-    // The default, and what keeps every other caller unaffected. A bar with no shell behind it --
-    // the controlled `bare` bar on the goFigure bench, whose owner moves `control.opened` itself --
+    // The default, and what keeps a caller with nothing to report unaffected: a bar handed no signal
     // never enters the effect at all, so nothing it holds is disturbed and nothing is announced.
+    //
+    // IT IS NOT THE CONTROLLED BAR. goFigure passes `control` and `resetSignal` together -- zeroing
+    // its count leaves the sheet standing, and the signal is the only thing that shuts it from out
+    // there -- and PuzzleFrame passes both too, adapter type or not. So the state under test is a bar
+    // whose caller declined the prop, which in this app today is a test.
     it('does nothing at all without a signal', async () => {
       const user = userEvent.setup({ delay: null })
       const { rerender } = renderBar()

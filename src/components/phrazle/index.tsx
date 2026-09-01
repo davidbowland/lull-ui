@@ -1,3 +1,4 @@
+import type { PhrazleSpentRung } from '@rules/hint-phrazle'
 import { everyWordInDictionary, isValidGuess, splitPhrase } from '@rules/is-valid-guess'
 import { markGuess, TileState } from '@rules/mark-guess'
 import React, { useEffect, useRef, useState } from 'react'
@@ -65,6 +66,11 @@ const PHRASE: Record<TileState, string> = {
 // any guess it appears in, and a letter that IS gray everywhere is a letter the phrase does not
 // have. The tile's claim is about one position and is false; the key's is about the whole record
 // and is a theorem.
+//
+// A BOUGHT RUNG IS THE SECOND SOURCE, and it needs no theorem at all. `choosePhrazleRung` draws its
+// absent letters from the ones the phrase does not contain and its other two kinds from the ones it
+// does, both read straight off the answer -- so a rung states what the argument above has to prove.
+// The two sources therefore cannot disagree, and both spell their verdict with these two phrases.
 const KEY_PHRASE = { absent: 'not in the phrase', present: 'in the phrase' } as const
 
 type KeyStatus = keyof typeof KEY_PHRASE | 'untried'
@@ -262,17 +268,46 @@ const GuessRule = (): React.ReactNode => (
   <span aria-hidden="true" className="h-px w-full shrink-0 bg-[var(--lull-rule)]" data-guess-rule="" />
 )
 
-// THE ONE FACT EVERY KEY IS DRAWN FROM, folded out of the markings the grid is already showing
-// rather than recomputed from the answer. No new rule is authored: markGuess decides the tiles, and
-// this walks the tiles it decided.
+// THE TWO FACTS EVERY KEY IS DRAWN FROM: the rungs the player has BOUGHT, and the markings the grid
+// is already showing. No new rule is authored on either side -- choosePhrazleRung decides the rungs
+// and markGuess decides the tiles, and this walks what they decided.
+//
+// A RUNG IS A VERDICT LIKE ANY OTHER, and that is the whole reason this function grew two arguments.
+// Every rung this game sells is a statement about the alphabet -- which letters are wasted, which are
+// in play -- so a bar that says "The phrase has no B, no G, and no P." while the pad goes on offering
+// all three is telling the player something and then hiding it from the one place they are looking.
+// The three tones are unchanged and there is no fourth: a rung-derived key is indistinguishable from
+// a guess-derived one, because the key only ever promised "worth pressing again" and that is equally
+// true from both sources.
+//
+// EVERY RUNG IS TRUE OF THE ANSWER, which is what makes the two sources safe to merge at all. The
+// absent rung draws from letters the phrase does not contain and the other two from letters it does,
+// so no rung can ever contradict a marking and the order these are folded in cannot change a verdict.
+// They are seeded FIRST anyway, so the precedence below is the only precedence in the function.
+//
+// A WORD RUNG SAYS `in the phrase` AND NEVER `in place`. It alphabetizes its letters precisely so no
+// position can be read off it, and a key has no position to claim in the first place -- see
+// KEY_PHRASE. `?? ''` guards an index past the end of the phrase: `decode` refuses such a rung
+// through `withinAnswer`, so nothing can reach here, and a throw during render is the one failure
+// this board latches on.
 //
 // PRESENT WINS AND NEVER LOSES. A letter is gray in one guess and green in another all the time --
 // type H twice when the phrase has one H and the second H is gray on the very board that proves the
 // letter is in the phrase -- so `absent` is written only where nothing has claimed the letter yet,
 // and any non-gray marking anywhere overwrites it for good. Reading the guesses in order with the
 // two branches the other way round would report a live letter as ruled out.
-const keyStatuses = (guesses: string[], marked: TileState[][][]): Record<string, KeyStatus> => {
+const keyStatuses = (
+  guesses: string[],
+  marked: TileState[][][],
+  hints: PhrazleSpentRung[],
+  answerWords: string[],
+): Record<string, KeyStatus> => {
   const statuses: Record<string, KeyStatus> = {}
+  hints.forEach((rung) => {
+    const letters = rung.kind === 'word' ? (answerWords[rung.index] ?? '') : rung.letters
+    const status: KeyStatus = rung.kind === 'absent' ? 'absent' : 'present'
+    for (const letter of letters) statuses[letter] = status
+  })
   marked.forEach((words, index) => {
     // The guess's letters in the same order the marks come out in, which is what lets one flat walk
     // line them up. Both sides come from the same stored string, so they cannot fall out of step.
@@ -327,6 +362,21 @@ export const PhrazleBoard = ({
   const wordList = dictionary ?? EMPTY
 
   const [guesses, setGuesses] = useState<string[]>(() => decode(progress, phrase).guesses)
+  // THE LADDER IS READ OFF THE LIVE PROP AND THE GUESSES ARE NOT, and the split is the same one
+  // cryptogram and Themed Anagrams make. The board's own portion is mount-time state because the
+  // board is its writer -- re-reading it would fight the player's keystrokes -- and the hint tail has
+  // exactly one writer, which is the adapter, out in the shell. So a rung bought mid-composition
+  // reaches the pad on the very next render without a remount and without discarding the half-typed
+  // row underneath it.
+  //
+  // ONLY THE RUNGS THE PLAYER BOUGHT. `decode` reads the stored `hints`, which `open` commits one at
+  // a time; the adapter's speculative tail is folded from live state, is never stored, and is never
+  // seen here. A pad drawn from that fold would hand out three letters for free on every render.
+  //
+  // `decode` RATHER THAN `decodeHints`, for the reason hints.ts gives at its own call: only `decode`
+  // applies `withinAnswer`, so a stored word rung naming a word this phrase does not have is refused
+  // before it can index past the end of `answerWords`.
+  const { hints = [] } = decode(progress, phrase)
   const [typed, setTyped] = useState('')
   // `detail` is the half of an announcement that is never drawn -- see FloorBar's prop. Only the
   // marking of a committed guess ever fills it; every other message on this bench is one short
@@ -550,8 +600,22 @@ export const PhrazleBoard = ({
     hush()
     // A LIFECYCLE SIGNAL, not game state: onReset says "the player started this puzzle over" and
     // takes no argument and names no destination, so deleting lull:hints:<puzzleId> and resetting
-    // the hint bar stay entirely the shell's business. It is needed because an empty progress string
-    // cannot carry that meaning on its own.
+    // the hint bar stay entirely the shell's business.
+    //
+    // THE '' BELOW DOES NOT CLEAR THE LADDER, and the line after it is what does. The rungs live in
+    // the progress string, and the adapter's `merge` re-attaches them to every board write including
+    // this one -- because '' is what an emptied board writes on the sibling writing bench, where an
+    // adapter reading it as "start over" charged the player their rungs for a backspace. So the
+    // signal is the reset: PuzzleFrame answers it by storing '' over the whole record, and
+    // `removeHints` beside it is a no-op on a key nothing wrote. The signal also does the half an
+    // erasure never covers -- it tells the MOUNTED hint bar to shut its sheet and stop announcing
+    // yesterday's rungs.
+    //
+    // ON THIS BENCH THE '' WOULD HAVE BEEN UNAMBIGUOUS, and it is worth saying that nothing relies on
+    // it. `encode` here always writes a JSON object, so this line is the only thing in the component
+    // that can produce '' -- but three adapters saying the same sentence in the same words has to
+    // mean the same thing in all three, and the bench that reaches an ambiguous '' on every keystroke
+    // is the one that sets the rule.
     onProgress('')
     onReset?.()
   }
@@ -667,7 +731,7 @@ export const PhrazleBoard = ({
   const letter = Math.round(tile * 0.58)
   const bar = Math.round(tile * 0.6)
 
-  const statuses = keyStatuses(guesses, marked)
+  const statuses = keyStatuses(guesses, marked, hints, answerWords)
   // COMPUTED ONCE, not once per key. This used to be called twice inside every one of the 26 letter
   // buttons -- 52 walks of the word lengths per render -- for a value that cannot vary between them:
   // the note is about the caret, and there is one caret.

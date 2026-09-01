@@ -1,6 +1,21 @@
 import { Hint, HintLadder, Puzzle } from '@types'
 
-const HINT_COUNT = 3
+// ONE TO THREE, and the range is the wire contract rather than a tolerance. `HintLadder` has been a
+// one-to-three tuple since 2026-08-24; this file kept asking for exactly three for a year of commits
+// after that, and the two disagreed silently because a refused ladder is `null` and `null` is also
+// what a MALFORMED ladder returns.
+//
+// What that cost was the bench with the best reason to offer a hint. Cryptic Clue drops a rung
+// whenever the clue's own indicator already announces the device -- see `tellingIndicators` in
+// lull-api -- so a ladder of two is the correct output of a working rule, not a short pack. Every one
+// of those puzzles came back null here, the frame read null as "malformed, draw nothing", and the
+// hint bar disappeared from the board a player was most likely to want it on.
+//
+// The floor is 1 and not 0. An empty array is a well-formed array and still has to be refused: the
+// bar it would draw counts rungs out in its own label and opens a sheet with nothing in it, which
+// spends a press to say nothing. Same refusal a blank rung gets, for the same reason.
+const MIN_HINT_COUNT = 1
+const MAX_HINT_COUNT = 3
 
 /**
  * The ladder a puzzle carries, or null.
@@ -10,9 +25,19 @@ const HINT_COUNT = 3
  * shell depends on would be exempt from the coverage gate.
  *
  * Structural, not exhaustive, in the same spirit as isValidPuzzle: it checks what the shell
- * dereferences, not what a puzzle type means. EVERY puzzle type carries a ladder now -- goFigure's
- * rungs place an operator where a phrase puzzle's describe a meaning -- so null no longer means "this
- * game has no hints". It means the shape is malformed, and nothing downstream should touch it.
+ * dereferences, not what a puzzle type means.
+ *
+ * NULL MEANS TWO THINGS AND THIS FUNCTION CANNOT TELL THEM APART: a malformed ladder, and a type
+ * that ships no `hints` key at all. Half the catalog is the second case -- cryptogram, phrazle and
+ * themedanagrams compute their rungs on the device -- and that is exactly why PuzzleFrame asks the
+ * REGISTRY first: an entry carrying a `hints` adapter never reaches this function, so it never has
+ * to distinguish them. For the three types that DO come here, a ladder is on the wire and null still
+ * means malformed, so nothing downstream should touch it.
+ *
+ * A SHORT LADDER IS NOT MALFORMED. See MIN_HINT_COUNT above: one to three rungs is what the wire
+ * promises and what a bench that drops a redundant rung actually sends. Everything downstream reads
+ * the array's own length -- HintBar draws one marker per rung and counts them out in its label -- so
+ * there is nothing here that needs the count to be a literal 3.
  */
 export const hintsOf = (puzzle: Puzzle<unknown>): HintLadder | null => {
   const data = puzzle.data as Record<string, unknown> | null
@@ -36,7 +61,8 @@ export const hintsOf = (puzzle: Puzzle<unknown>): HintLadder | null => {
     (hint as Hint).text.trim() !== ''
 
   const hints = data.hints
-  const isLadder = Array.isArray(hints) && hints.length === HINT_COUNT && hints.every(isRung)
+  const isLadder =
+    Array.isArray(hints) && hints.length >= MIN_HINT_COUNT && hints.length <= MAX_HINT_COUNT && hints.every(isRung)
 
   return isLadder ? (hints as HintLadder) : null
 }

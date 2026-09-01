@@ -1,11 +1,57 @@
+import type { PhrazleSpentRung } from '@rules/hint-phrazle'
 import { splitPhrase } from '@rules/is-valid-guess'
 
 import { PhrazleProgress } from '@types'
 
+/**
+ * The ladder half of the stored record: which rungs were bought, and how many steps were paid for.
+ *
+ * `opened` IS STORED AND NOT DERIVED FROM `hints`, and the reason is not that the two could drift.
+ * HintBar reaches "Show answer" only when `opened` exceeds the ladder's length -- see `controlLabel`
+ * -- so a bar has to be able to sell one step PAST the last rung, and a count read off a three-rung
+ * list can never express four. Derived, the answer reveal is unreachable. So the invariant this
+ * codec enforces is the loose one the design actually has: `opened` is the number of rungs bought,
+ * or one more than that when the answer has been revealed. Anything else was not written by this
+ * app.
+ */
+export interface PhrazleHintTail {
+  hints: PhrazleSpentRung[]
+  opened: number
+}
+
+/**
+ * What a stored Phrazle string decodes to: the guesses, and -- only when the player has bought
+ * something -- the ladder.
+ *
+ * IT EXTENDS `PhrazleProgress` HERE RATHER THAN WIDENING IT IN types.ts, and that is a decision. That
+ * file is a copy-verbatim mirror of lull-api's, and lull-api neither reads nor writes this string;
+ * widening it there would put a `@rules/hint-phrazle` import into a file whose whole claim is that it
+ * has no imports and no runtime exports, to declare fields the mirrored repo has no reader for.
+ *
+ * BOTH FIELDS ARE OPTIONAL AND BOTH ARE OMITTED WHEN NOTHING IS BOUGHT. An untouched board therefore
+ * writes and reads back exactly the string it did before this existed, which is what makes every
+ * board stored before this change a legacy payload that needs no migration: it has neither field, and
+ * neither field is a state.
+ */
+export interface PhrazleBoardProgress extends PhrazleProgress {
+  hints?: PhrazleSpentRung[]
+  opened?: number
+}
+
 // A FUNCTION, not a shared constant. Every refusal hands its caller an object nobody else holds a
 // reference to; one shared value would let a board that restored an empty puzzle write through it
 // into every later restore in the same session.
-const empty = (): PhrazleProgress => ({ guesses: [] })
+const empty = (): PhrazleBoardProgress => ({ guesses: [] })
+
+// Same rule, and it matters more here: the array inside is handed to the adapter, which spreads it
+// to build the next purchase. A shared `[]` would be one array every board in the session extends.
+const noHints = (): PhrazleHintTail => ({ hints: [], opened: 0 })
+
+// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in
+// hint-phrazle.ts, and a test that imported the bound this checks against would assert the cap
+// against itself and pass at any value. If the rule ever sells four, this refuses the fourth and the
+// suite says so.
+const MAX_SPENT = 3
 
 // The per-word lengths as one comparable string. Comparing shapes rather than walking two arrays in
 // step keeps the word count and the per-word lengths in ONE comparison, which is exactly the pair
@@ -56,12 +102,123 @@ const MAX_STORED = 25
  * because '' is what the shell reads as "no progress" -- `wasSolvedBefore` and the shelf's
  * started-state both key off it. The grammar is total anyway, and `decode(encode([]))` is asserted,
  * because a codec that needed a special case for its own writer's empty would be the wrong shape.
+ *
+ * IT WRITES `guesses` AND NOTHING ELSE, and its signature does not change now that the string can
+ * carry a ladder. The board is the only caller and the board knows nothing about hints; the tail is
+ * re-attached by `attachHints` below, through the adapter's `merge`, so the hint fields have exactly
+ * one writer. A board that wrote them would be the second, and the second writer is what destroys a
+ * rung the player paid for -- see HintAdapter in the registry.
  */
 export const encode = (guesses: string[]): string =>
   JSON.stringify({ guesses: guesses.slice(-MAX_STORED).map((guess) => splitPhrase(guess).join(' ')) })
 
+// `null` or '' is nothing stored, a value that is not JSON is nothing stored and says so, and
+// anything that is not a plain object -- a JSON null, a string, an array -- describes no board.
+//
+// Shared by the two readers below so a single string is parsed once per read rather than once per
+// field, and so the two can never disagree about what a well-formed record even is.
+const parse = (progress: string | null): Record<string, unknown> | null => {
+  if (progress === null || progress === '') return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(progress)
+  } catch (error: unknown) {
+    console.error('discarding a malformed stored Phrazle board', { error })
+    return null
+  }
+
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null
+}
+
+// The guesses, truncated at the first one that no longer fits the answer's shape, then windowed. See
+// the decode docblock below: every claim about steps 3 to 5 is about this function.
+const storedGuesses = (parsed: Record<string, unknown>, answer: string): string[] => {
+  const stored: unknown = parsed.guesses
+  if (!Array.isArray(stored) || stored.some((guess) => typeof guess !== 'string')) return []
+
+  const shape = shapeOf(splitPhrase(answer))
+  const kept: string[] = []
+  for (const guess of stored as string[]) {
+    const words = splitPhrase(guess)
+    // `words.length === 0` is not covered by the shape comparison and needs saying: an answer that
+    // did not arrive splits to [] and so does an empty guess, so their shapes are both '' and would
+    // match. A board with no answer has nothing to mark against, so it has no history either.
+    if (words.length === 0 || shapeOf(words) !== shape) break
+    kept.push(words.join(' '))
+  }
+
+  // A NEGATIVE SLICE ARGUMENT, WHICH IS THE POINT rather than a hazard. `slice(-25)` takes the last
+  // 25 and, on a shorter list, takes all of it -- so there is no length check to get wrong and no
+  // Math.max guarding a corrupt number, because MAX_STORED is a constant in this file rather than a
+  // value off the pack. The old cut was `slice(0, Math.max(0, maxGuesses))` and every bit of that
+  // arithmetic existed to survive `maxGuesses` arriving negative or NaN over the wire.
+  return kept.slice(-MAX_STORED)
+}
+
+// ONE ROW OF THE RULE'S OWN UNION, checked field by field, because the record came out of a text box
+// a player can type into and `phrazleHintFor` reads it without checking anything. `letters` is A-Z
+// and non-empty -- an empty run would compose "The phrase has ." -- and a word index is a
+// non-negative integer here, with the answer-relative bound applied by `withinAnswer` below, which is
+// the only part of this that needs a phrase to check against.
+//
+// The two letter kinds are tested together and `word` is the fallthrough, so an unknown `kind` is
+// refused by the last `return` rather than by a clause that has to be remembered.
+const isSpentRung = (value: unknown): value is PhrazleSpentRung => {
+  if (typeof value !== 'object' || value === null) return false
+
+  const rung = value as { index?: unknown; kind?: unknown; letters?: unknown }
+  if (rung.kind === 'absent' || rung.kind === 'present')
+    return typeof rung.letters === 'string' && /^[A-Z]+$/.test(rung.letters)
+
+  return rung.kind === 'word' && Number.isInteger(rung.index) && (rung.index as number) >= 0
+}
+
+// The ladder, validated as its OWN step and dropped ON ITS OWN, which is the whole difference between
+// this and the guesses above. The two are separable: a rung is a sentence the shell prints and a
+// guess is a row the player typed, and a malformed rung must never cost them rows. So the guesses
+// truncate on a bad entry and keep what came before, while a bad ladder is dropped whole -- there is
+// no "keep what came before" for three records whose ORDER is the ladder and whose count is the price
+// the player paid.
+//
+// NEITHER FIELD IS A LEGACY PAYLOAD. Every board written before this existed has neither, and that is
+// the first clause: no fields, nothing bought, nothing dropped and nothing logged.
+//
+// BOTH OR NEITHER after that, because `attachHints` writes both or neither. One without the other is
+// not a shape this app can produce, so it is a fault like any other.
+const hintTail = (parsed: Record<string, unknown> | null): PhrazleHintTail => {
+  if (parsed === null) return noHints()
+
+  const { hints, opened } = parsed
+  if (hints === undefined && opened === undefined) return noHints()
+  if (!Array.isArray(hints) || hints.length > MAX_SPENT || !hints.every(isSpentRung)) return noHints()
+  // `opened` is the rung count, or one past it once the answer has been revealed. Below the count is
+  // a record claiming rungs nobody paid for; further above it is a reveal on a ladder that never
+  // reached its end.
+  //
+  // AND THE REVEAL NEEDS A LADDER TO BE PAST. A flat `hints.length + 1` admitted `{"hints":[],
+  // "opened":1}` -- one step paid on a ladder of zero -- which `open` cannot produce from any board:
+  // the first press either appends a rung or declines. The bar then drew a free speculative rung,
+  // because HintBar shows `slice(0, opened)` over a ladder whose tail this type's adapter folds
+  // forward from live state. The ceiling is therefore the rung count, plus one only when there is a
+  // rung to be past.
+  const ceiling = hints.length + (hints.length > 0 ? 1 : 0)
+  if (!Number.isInteger(opened) || (opened as number) < hints.length || (opened as number) > ceiling) return noHints()
+
+  return { hints: hints as PhrazleSpentRung[], opened: opened as number }
+}
+
+// The one check that needs the phrase. A word rung naming word 8 of a two-word phrase renders as
+// "Word 8 uses these letters, alphabetized: ." -- `phrazleHintFor` reads the word with `?? ''` and
+// composes the sentence anyway -- so the rung is refused here rather than printed.
+const withinAnswer = (tail: PhrazleHintTail, wordCount: number): PhrazleHintTail =>
+  tail.hints.every((rung) => rung.kind !== 'word' || rung.index < wordCount) ? tail : noHints()
+
 /**
- * The guesses a stored string carries, truncated at the first one that no longer fits the answer.
+ * The guesses a stored string carries, truncated at the first one that no longer fits the answer, and
+ * the ladder the player has bought.
  *
  * THIS IS THE GUARD THAT MAKES markGuess'S THROW UNREACHABLE, and it is the whole reason this
  * function takes an answer at all. `markGuess` throws by contract when the word counts differ or the
@@ -78,6 +235,26 @@ export const encode = (guesses: string[]): string =>
  *   3. an object whose `guesses` is an array of strings, or nothing.
  *   4. walk the guesses IN ORDER and stop at the first one that does not fit the answer's shape.
  *   5. keep the LAST MAX_STORED of what survived.
+ *
+ * A SIXTH STEP READS THE LADDER, AND IT IS SEPARATE ON PURPOSE. Steps 3 to 5 answer for `guesses`
+ * and step 6 answers for `opened` and `hints`, so neither can cost the other anything: a malformed
+ * rung leaves the player's rows exactly where they were, and a guess the answer no longer fits
+ * leaves the rungs they paid for exactly where they were. That asymmetry -- truncate the guesses,
+ * drop the ladder whole -- is argued at `hintTail` above, and it comes down to the guesses being a
+ * history whose prefix is still true while a ladder is three records whose order IS the ladder.
+ *
+ * THE BOARD READS BOTH HALVES, AND ON DIFFERENT SCHEDULES. `guesses` is its own portion, read once in
+ * a mount-time initializer because the board is what writes it -- re-reading would fight the player's
+ * keystrokes. `hints` belongs to the adapter, so the board reads it off the LIVE progress prop on
+ * every render, and a rung bought mid-composition reaches the pad without a remount.
+ *
+ * THE GRID IS THE SAME EITHER WAY. No rung moves a tile, a color or a row; what a bought rung moves
+ * is the KEYBOARD -- every rung this game sells is a statement about the alphabet, so the letters it
+ * rules out are struck and the letters it names are filled.
+ *
+ * WHICH IS WHY THAT READ COMES THROUGH HERE AND NOT THROUGH `decodeHints`. Only this function applies
+ * `withinAnswer`, so a stored word rung naming a word the phrase does not have is refused before the
+ * board can index past the end of its own answer.
  *
  * STEP 5 CUTS FROM THE FRONT AND STEP 4 CUTS FROM THE BACK, and running them in this order is what
  * makes the pair safe. Step 4 stops at the first guess that no longer fits, so everything it keeps
@@ -101,36 +278,60 @@ export const encode = (guesses: string[]): string =>
  * reading `.guesses` off it cannot reach a prototype, and nothing here spreads or assigns the parsed
  * value into anything.
  */
-export const decode = (progress: string | null, answer: string): PhrazleProgress => {
-  if (progress === null || progress === '') return empty()
+export const decode = (progress: string | null, answer: string): PhrazleBoardProgress => {
+  const parsed = parse(progress)
+  if (parsed === null) return empty()
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(progress)
-  } catch (error: unknown) {
-    console.error('discarding a malformed stored Phrazle board', { error })
-    return empty()
-  }
+  const guesses = storedGuesses(parsed, answer)
+  const tail = withinAnswer(hintTail(parsed), splitPhrase(answer).length)
 
-  if (typeof parsed !== 'object' || parsed === null) return empty()
-  const stored: unknown = (parsed as { guesses?: unknown }).guesses
-  if (!Array.isArray(stored) || stored.some((guess) => typeof guess !== 'string')) return empty()
+  // ONE CHECK AND NOT TWO, because `hintTail` has already refused any record where `opened` is below
+  // the rung count -- so a count of zero is a ladder of zero, and there is no third state where one
+  // field is empty and the other is not.
+  return tail.opened === 0 ? { guesses } : { guesses, hints: tail.hints, opened: tail.opened }
+}
 
-  const shape = shapeOf(splitPhrase(answer))
-  const kept: string[] = []
-  for (const guess of stored as string[]) {
-    const words = splitPhrase(guess)
-    // `words.length === 0` is not covered by the shape comparison and needs saying: an answer that
-    // did not arrive splits to [] and so does an empty guess, so their shapes are both '' and would
-    // match. A board with no answer has nothing to mark against, so it has no history either.
-    if (words.length === 0 || shapeOf(words) !== shape) break
-    kept.push(words.join(' '))
-  }
+/**
+ * The ladder half of a stored string, read WITHOUT the answer.
+ *
+ * IT TAKES NO ANSWER BECAUSE `merge` HAS NONE. `HintAdapter.merge(boardWrite, current)` is handed two
+ * strings and no puzzle -- deliberately, since its whole job is to say which field belongs to whom
+ * and it has no business reading either side's meaning -- so the read behind it cannot ask whether a
+ * word rung names a word this phrase has. `decode` does ask, because it is holding the answer.
+ *
+ * THE TWO THEREFORE DISAGREE ON EXACTLY ONE INPUT, and it is worth naming rather than leaving to be
+ * found: a stored word rung whose index is past the end of the phrase. `decode` drops the tail and
+ * this keeps it, so the bar draws a ladder of speculative rungs while `opened` still counts the
+ * bought ones -- one rung shown a step early. No code in this app writes that string, the next
+ * purchase overwrites it, and the alternative is either an `opened` that takes a puzzle it has no
+ * other use for or a rendered sentence reading "Word 8 uses these letters, alphabetized: ."
+ */
+export const decodeHints = (progress: string | null): PhrazleHintTail => hintTail(parse(progress))
 
-  // A NEGATIVE SLICE ARGUMENT, WHICH IS THE POINT rather than a hazard. `slice(-25)` takes the last
-  // 25 and, on a shorter list, takes all of it -- so there is no length check to get wrong and no
-  // Math.max guarding a corrupt number, because MAX_STORED is a constant in this file rather than a
-  // value off the pack. The old cut was `slice(0, Math.max(0, maxGuesses))` and every bit of that
-  // arithmetic existed to survive `maxGuesses` arriving negative or NaN over the wire.
-  return { guesses: kept.slice(-MAX_STORED) }
+/**
+ * A board write with the stored ladder re-attached: the codec half of the one-writer rule.
+ *
+ * The board wrote its own portion and knows nothing of the two hint fields, so its `encode` output
+ * carries `guesses` and nothing else. This puts the tail back, and it is the ONLY writer of those
+ * fields -- see HintAdapter in the registry for why a second one is unrepresentable rather than
+ * merely discouraged.
+ *
+ * AN EMPTY TAIL RETURNS `boardWrite` UNTOUCHED, byte for byte, which is what keeps an untouched board
+ * writing the shortest payload it always did. It is also why a board stored before this change reads
+ * back unchanged and gets re-written unchanged: no ladder, no fields, no migration.
+ *
+ * IT DOES NOT SPECIAL-CASE AN EMPTY `boardWrite`, and nothing above it does either any more. This
+ * bench reaches '' only through Play again -- `encode([])` is `{"guesses":[]}` -- but reading '' as a
+ * reset is the guess that cost the sibling writing bench a purchase on a backspace, so all three
+ * adapters extend it and leave the reset to `onReset`. `open` also attaches a tail to '' legitimately,
+ * when a player buys a rung before typing.
+ */
+export const attachHints = (boardWrite: string, tail: PhrazleHintTail): string => {
+  if (tail.opened === 0) return boardWrite
+
+  const stored = parse(boardWrite)?.guesses
+  const guesses =
+    Array.isArray(stored) && stored.every((guess) => typeof guess === 'string') ? (stored as string[]) : []
+  // Key order is the grammar the spec's table writes: guesses, then opened, then hints.
+  return JSON.stringify({ guesses, opened: tail.opened, hints: tail.hints })
 }

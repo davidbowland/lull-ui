@@ -25,10 +25,17 @@ export interface BoardState {
   // open ladder and no locks, and that state has to be representable.
   locked: OperatorSlot[]
   // How many rungs the player has paid for. It lives here, in the progress string the board already
-  // owns, rather than in `lull:hints:<puzzleId>` with the phrase benches. Split across two stores
-  // with different prune rules and different self-healing, the count and the locks can disagree,
-  // and a board showing locked cells while offering "Open hint 1 of 3" is a state no test would
-  // think to write. Co-locating makes it unrepresentable.
+  // owns, rather than in `lull:hints:<puzzleId>`. Split across two stores with different prune rules
+  // and different self-healing, the count and the locks can disagree, and a board showing locked
+  // cells while offering "Open hint 1 of 3" is a state no test would think to write. Co-locating
+  // makes it unrepresentable.
+  //
+  // THIS BENCH WAS THE ONLY ONE ARRANGED THIS WAY AND IT IS NOW THE MAJORITY. Since 2026-08-31
+  // Cryptogram, Phrazle and Themed Anagrams keep their ladders in their own progress strings too, for
+  // this reason, through their registry hint adapters -- so the argument above is quoted in the
+  // registry's `HintAdapter` rather than restated. Only Missing Vowels and Cryptic Clue still count
+  // their rungs in `lull:hints:`, which is right for them: their rungs are sentences off the pack and
+  // touch nothing on the board, so there is nothing for a count to disagree with.
   opened: number
   operators: (Operator | null)[]
 }

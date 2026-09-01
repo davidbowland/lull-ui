@@ -36,7 +36,7 @@ describe('hintsOf', () => {
     ['data is not an object', 'hints'],
     ['data is null', null],
     ['hints is not an array', { hints: 'one, two, three' }],
-    ['there are two hints', { hints: [{ text: 'one' }, { text: 'two' }] }],
+    ['there are no hints', { hints: [] }],
     ['there are four hints', { hints: [{ text: 'one' }, { text: 'two' }, { text: 'three' }, { text: 'four' }] }],
     ['a hint is blank', { hints: [{ text: 'one' }, { text: '   ' }, { text: 'three' }] }],
     ['a hint text is not a string', { hints: [{ text: 'one' }, { text: 2 }, { text: 'three' }] }],
@@ -45,6 +45,51 @@ describe('hintsOf', () => {
     ['a rung is not an object', { hints: [{ text: 'one' }, 2, { text: 'three' }] }],
   ])('returns null when %s', (_description, data) => {
     expect(hintsOf(withData(data))).toBeNull()
+  })
+})
+
+// THE ARRAY IS THE CONTRACT AND THE COUNT IS NOT. The wire has said one to three rungs since
+// 2026-08-24, and crypticclue really ships two whenever its conditional rungs drop -- a ladder whose
+// rung would have named the device the clue's own indicator announces is a rung worth dropping, so
+// that bench legitimately arrives short. Under the old exact-three check `hintsOf` answered null on
+// exactly those puzzles, and null is what the frame reads as "malformed, draw nothing": the bar
+// vanished from the bench that had the most reason to offer one.
+//
+// Its own describe rather than rows on the table above, because these are the accepting cases and
+// that table is the refusing one.
+describe('hintsOf with a short ladder', () => {
+  const withData = (data: unknown): Puzzle<unknown> => ({ ...missingVowelsPuzzle, data }) as Puzzle<unknown>
+
+  it('accepts a two-rung ladder, which crypticclue really ships', () => {
+    expect(hintsOf(withData({ hints: [{ text: 'One.' }, { text: 'Two.' }] }))).toHaveLength(2)
+  })
+
+  it('accepts a one-rung ladder', () => {
+    expect(hintsOf(withData({ hints: [{ text: 'Only.' }] }))).toHaveLength(1)
+  })
+
+  // The floor and the ceiling, pinned from the accepting side as well as the refusing one. The table
+  // above reddens a widened bound; these two redden a bound that was widened and then narrowed back.
+  it('still accepts a three-rung ladder', () => {
+    expect(hintsOf(withData({ hints: [{ text: 'One.' }, { text: 'Two.' }, { text: 'Three.' }] }))).toHaveLength(3)
+  })
+
+  it('refuses an empty ladder, which promises a bar with nothing behind it', () => {
+    expect(hintsOf(withData({ hints: [] }))).toBeNull()
+  })
+
+  it('refuses more than three rungs', () => {
+    expect(hintsOf(withData({ hints: [{ text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd' }] }))).toBeNull()
+  })
+
+  // A SHORT LADDER IS NOT A LICENSE FOR A BLANK RUNG. Widening the count is the only thing that
+  // changed: one rung with nothing in it is still a bar that spends a press to print nothing.
+  it('refuses a lone rung with no text', () => {
+    expect(hintsOf(withData({ hints: [{ text: '' }] }))).toBeNull()
+  })
+
+  it('refuses a two-rung ladder whose second rung is blank', () => {
+    expect(hintsOf(withData({ hints: [{ text: 'One.' }, { text: '   ' }] }))).toBeNull()
   })
 })
 

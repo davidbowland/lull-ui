@@ -4,7 +4,7 @@ import React from 'react'
 
 import { PuzzleFrame } from './index'
 import { DictionaryContext, DictionaryState } from '@components/dictionary-provider'
-import { entryFor, REGISTRY, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
+import { entryFor, HintAdapter, REGISTRY, RegistryEntry, UNKNOWN_TYPE_MESSAGE } from '@registry'
 import { fetchPack } from '@services/lull'
 import { markSolved, readMeta, readProgress, writePack, writeProgress } from '@services/storage'
 import {
@@ -12,6 +12,7 @@ import {
   crypticCluePuzzleId,
   cryptogramPack,
   cryptogramPuzzleId,
+  cryptogramStalePackLadder,
   goFigurePuzzle,
   missingVowelsPuzzleId,
   pack,
@@ -21,12 +22,17 @@ import {
   phrazlePack,
   phrazlePuzzle,
   phrazlePuzzleId,
+  phrazleStalePackLadder,
   puzzleId,
   quickPuzzleId,
+  stalePackCryptogramPack,
+  stalePackPhrazlePack,
+  stalePackThemedAnagramsPack,
   themedAnagramsPack,
   themedAnagramsPuzzleId,
+  themedAnagramsStalePackLadder,
 } from '@test/__mocks__'
-import { Pack, PuzzleComponent, PuzzleComponentProps } from '@types'
+import { HintLadder, Pack, PuzzleComponent, PuzzleComponentProps } from '@types'
 
 // jsdom reports navigator.onLine === true, so an unmocked frame fires a real axios request
 // against a 35-second timeout for every deep link in this file.
@@ -54,6 +60,14 @@ describe('PuzzleFrame', () => {
         <button onClick={() => onProgress('kept')} type="button">
           Record progress
         </button>
+        {/* The OTHER half of a real board's Play again, and it is a second button rather than part
+            of Start over below so the two can be driven independently. Every board spells "there is
+            nothing on this board" as `onProgress('')` -- goFigure, cryptogram's cleared mapping,
+            Phrazle's Again -- and for an adapter type that empty string is also what takes the
+            ladder with it, so it has to be reachable on its own. */}
+        <button onClick={() => onProgress('')} type="button">
+          Clear progress
+        </button>
         <button onClick={onSolved} type="button">
           Record a win
         </button>
@@ -70,10 +84,26 @@ describe('PuzzleFrame', () => {
 
   const lastProps = (): PuzzleComponentProps => Board.mock.calls[Board.mock.calls.length - 1][0]
 
+  // The adapter the mocked registry hands back, and it is a mutable binding rather than a
+  // `mockImplementationOnce` because `entryFor` is called on EVERY render of the frame -- a "once"
+  // would be spent on the first paint and the rest of the mount would see the shipped entry.
+  //
+  // `setup()` puts it back to undefined, which is the shipped state of all six entries today. Every
+  // test in this file calls `setup()` or `setupPack()`, so no test can inherit a previous test's
+  // adapter, and a test that means to use one says so on its own line.
+  let stubbedAdapter: HintAdapter | undefined
+
   beforeAll(() => {
     mockEntryFor.mockImplementation((type: string) =>
       Object.hasOwn(REGISTRY, type)
-        ? { ...(REGISTRY as Record<string, RegistryEntry>)[type], Component: Board as unknown as PuzzleComponent }
+        ? {
+            ...(REGISTRY as Record<string, RegistryEntry>)[type],
+            Component: Board as unknown as PuzzleComponent,
+            // Written unconditionally, `undefined` and all: `hints?: HintAdapter` reads the same
+            // absent either way, and a spread that appears only sometimes is a second statement of
+            // which mode the entry is in.
+            hints: stubbedAdapter,
+          }
         : undefined,
     )
     // Cache-first, exactly as the real one: the shell re-reads storage afterwards rather than
@@ -85,9 +115,10 @@ describe('PuzzleFrame', () => {
   })
 
   // Every test that touches localStorage clears it first, or one test's pack and progress
-  // answer the next test's reads.
+  // answer the next test's reads. The adapter goes with them for the same reason.
   const setup = (): void => {
     window.localStorage.clear()
+    stubbedAdapter = undefined
   }
 
   // The shared fetch mock writes the goFigure pack over whatever date it is asked for, and the
@@ -430,8 +461,15 @@ describe('PuzzleFrame', () => {
     // Cipher and writing get the docked hint bar; the tile bench spends its 60px on the goal plate
     // and its worked example instead. Read off the bench, so a second type on the same surface
     // inherits the decision rather than repeating it.
+    //
+    // THE SHIPPED ADAPTER IS NAMED, because `entryFor` is mocked here and writes `hints:
+    // stubbedAdapter` over whatever the registry holds -- so leaving it unset would take a real
+    // entry's adapter away and test a configuration that no longer exists. This type's ladder comes
+    // off the device now and its pack ships no `hints` at all, so an unset adapter means no bar and
+    // the row would be asserting the wrong absence.
     it('gives the cipher bench a hint bar', async () => {
       setupPack(cryptogramPack)
+      stubbedAdapter = REGISTRY.cryptogram.hints
 
       renderFrame(cryptogramPuzzleId)
 
@@ -479,6 +517,7 @@ describe('PuzzleFrame', () => {
     // `entry.bench !== 'tile'`, so this type inherits the docked bar the way Cryptic Clue did.
     it('gives the third writing-bench type the same hint bar', async () => {
       setupPack(themedAnagramsPack)
+      stubbedAdapter = REGISTRY.themedanagrams.hints
 
       renderFrame(themedAnagramsPuzzleId)
 
@@ -497,6 +536,7 @@ describe('PuzzleFrame', () => {
     it('closes the themed anagrams ladder with all four answers', async () => {
       const user = userEvent.setup({ delay: null })
       setupPack(themedAnagramsPack)
+      stubbedAdapter = REGISTRY.themedanagrams.hints
       renderFrame(themedAnagramsPuzzleId)
       await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
       await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
@@ -574,6 +614,7 @@ describe('PuzzleFrame', () => {
     // frame renders it after both -- which is exactly what the `order` rules then undo.
     it('renders the hint bar after the component that owns the two bands around it', async () => {
       setupPack(cryptogramPack)
+      stubbedAdapter = REGISTRY.cryptogram.hints
 
       renderFrame(cryptogramPuzzleId)
       const board = await screen.findByRole('region', { name: 'Board' })
@@ -681,6 +722,565 @@ describe('PuzzleFrame', () => {
       await user.click(screen.getByRole('button', { name: 'Record progress' }))
 
       expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
+    })
+  })
+
+  // THE SEAM, AND ONLY THE SEAM. Three types compute their rungs at play time from the board the
+  // player has built, because a rung that cannot see the board cannot know what is still worth
+  // saying -- "every Q is an E" is worth nothing to a player who already has Q. Every test below
+  // drives a STUB registered against a real type, and it goes on doing so now that one of the three
+  // ships for real: an adapter's own suite is where its grammar is proved.
+  //
+  // A stub is the right instrument here rather than a shortcut around a missing one. What this
+  // describe is for is the claim that the frame reads NO grammar: it asks the registry for an
+  // adapter, hands it the puzzle and the progress string, and renders whatever comes back. A test
+  // that used cryptogram's real codec would prove that cryptogram's codec works and say nothing
+  // about the seam.
+  describe('a bench whose type carries a hint adapter', () => {
+    // The cheapest grammar that can carry BOTH halves of a progress string: whatever the board
+    // wrote, then one '#' per step bought. It has to carry both, because the field the shell writes
+    // and the field the board writes living in one string is the whole thing `merge` is about -- a
+    // stub whose progress was only a count could not tell a merge that worked from one that threw
+    // the board's portion away.
+    //
+    // No board writes anything like this, which is the point.
+    const openedOf = (progress: string): number => progress.replace(/[^#]/g, '').length
+
+    // `open` sells one step PAST the last rung, because that step is the answer -- see HintBar's
+    // `controlLabel`, where `opened > hints.length` is the reveal. goFigure's controlled owner does
+    // the same thing, and an adapter that stopped at its own last rung would take the reveal away
+    // from the three benches that use this seam.
+    //
+    // `merge` EXTENDS EVERY BOARD WRITE, '' INCLUDED, which is what all three shipped adapters do.
+    // '' is not a reset: four boards write it when their last box, square or draft is emptied, and an
+    // adapter that read it as one would charge a player their rungs for a backspace. The reset is
+    // `onReset`, and answering it is the SHELL's job -- see the pair of rows below, which are the two
+    // presses this stub exists to keep apart.
+    const stubAdapter = (rungs: string[]): HintAdapter => ({
+      ladder: () => rungs.map((text) => ({ text })) as HintLadder,
+      merge: (boardWrite, current) => `${boardWrite}${'#'.repeat(openedOf(current))}`,
+      open: (_puzzle, progress) => (openedOf(progress) > rungs.length ? null : `${progress}#`),
+      opened: openedOf,
+    })
+
+    const THREE_RUNGS = ['From the adapter, first.', 'From the adapter, second.', 'From the adapter, third.']
+
+    // A FIXTURE THAT STILL SHIPS A PACK LADDER, and that is what makes the first test an assertion
+    // rather than a tautology. Both ladders are live; only the branch decides which one is drawn.
+    //
+    // It has to be the STALE-PACK fixture now. `cryptogramPuzzle` models the post-transition wire and
+    // carries no `hints` at all, so this row against it would leave nothing for the adapter to win
+    // over: `queryByText(PACK_RUNG)` finds nothing however the branch is wired, and a frame that had
+    // lost the adapter branch entirely would still pass its negative half.
+    const PACK_RUNG = 'A saying about a meal'
+
+    it('draws the rungs the adapter reports rather than the ones the pack shipped', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(stalePackCryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(screen.getByText('From the adapter, first.')).toBeInTheDocument()
+      expect(screen.queryByText(PACK_RUNG)).not.toBeInTheDocument()
+    })
+
+    // The purchase, and it goes through the callback the board is handed rather than through a
+    // second writer of its own. `onProgress` is the shell's one path to the progress key, so an
+    // adapter that sold a rung any other way would be a second store to keep in step.
+    it('writes the progress string the adapter returns when a rung is bought', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('#')
+    })
+
+    // THE ONE-WRITER RULE, AND THE REGRESSION TEST FOR THE BUG THAT PUT `merge` ON THE INTERFACE.
+    //
+    // Every board reads `progress` once, in a lazy initializer, and owns its state from then on. So
+    // the write below is composed from a board that has never heard of the '#' the adapter just
+    // stored -- and stored verbatim it would erase a rung the player paid for, silently, with no
+    // board at fault for it. The frame routes it through `merge` instead, and the tail comes back.
+    //
+    // Asserted at BOTH ends on purpose. The stored string is what survives a reload; the control's
+    // label is what the player sees, and it is the half that would still read "Open hint 1 of 3" if
+    // the count had been thrown away.
+    it('keeps a bought rung when the board writes its own portion afterwards', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Record progress' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('kept#')
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
+      expect(screen.getByText('From the adapter, first.')).toBeInTheDocument()
+    })
+
+    // THE BOARD'S PORTION SURVIVES TOO, which is the other half of "each field has exactly one
+    // writer" and the half a merge that simply refused board writes would fail. The adapter is
+    // handed what the board wrote and re-attaches the tail to it; it never invents the board's side.
+    it('keeps what the board wrote when a rung is bought afterwards', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Record progress' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('kept#')
+    })
+
+    // AN EMPTIED BOARD IS NOT A RESET, and this is the row the whole repair turns on. Every board
+    // spells "there is nothing on this board" as `onProgress('')`, and on Themed Anagrams that is
+    // what `encode` returns on the keystroke that clears the last draft -- so a frame that read this
+    // write as Play again would take two purchased rungs away for a backspace. The ladder survives
+    // it, and the control still counts what was paid for.
+    it('keeps a bought rung when the board empties itself', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Clear progress' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('#')
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toBeInTheDocument()
+    })
+
+    // AND `onReset` IS. The board raises a signal and names no key, no route and no field; the shell
+    // answers it by storing '' over the whole record, ladder included. That split is what lets an
+    // adapter extend an empty board write without a Play again becoming a press that gives the
+    // player their rungs back.
+    //
+    // Both presses in the order a real Play again makes them -- `onProgress('')` then `onReset()` --
+    // because the second has to win, and it is written second in every board that has one.
+    it('drops the ladder when the board says the player started over', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Clear progress' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('')
+      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+    })
+
+    // A TYPE WITH NO ADAPTER KEEPS ITS OWN PROGRESS THROUGH A RESET, which is the other side of the
+    // gate above it. goFigure owns its ladder inside its progress string and is not reached through
+    // the registry at all, so a shell that cleared progress on every `onReset` would be overwriting a
+    // board it does not read. The count in `lull:hints:` is what goes.
+    it('leaves progress alone on a reset when the type has no adapter', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Record progress' }))
+      await user.click(screen.getByRole('button', { name: 'Start over' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toEqual('kept')
+    })
+
+    // THE REVEAL IS REACHABLE, and it is the reason `opened` is stored rather than derived from the
+    // spent rungs: a bar reaches "Show answer" only when `opened` exceeds the ladder's length, and a
+    // count read off a three-rung list can never express four. This walks all three rungs and then
+    // the fourth step, which is the one a derived count cannot sell.
+    it('sells the step past the last rung, which is the answer', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answer is Ate ate tea.')).toBeInTheDocument()
+      expect(readProgress(cryptogramPuzzleId)).toEqual('####')
+    })
+
+    // WHERE THE RUNG IS NOT. `lull:hints:<puzzleId>` is the uncontrolled bar's own store, and an
+    // adapter type must not touch it: the count and whatever the rung did to the board would then be
+    // two records with different lifetimes, able to disagree in a state no test would think to
+    // write. This is goFigure's argument, and the reason a board's Play again already clears an
+    // adapter's ladder for free -- it writes `''` through the same callback.
+    //
+    // The key is written out rather than built from storage.ts's private prefix, exactly as the
+    // reset test above writes it out: a test that built the key from the same constant the code
+    // builds it from would pass whatever that constant became.
+    it('keeps the count out of the hint store, because the rung lives in the board’s own progress', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(window.localStorage.getItem(`lull:hints:${cryptogramPuzzleId}`)).toBeNull()
+    })
+
+    // A RETURNING PLAYER, and the case that proves the count is the ADAPTER's reading of progress
+    // rather than anything the frame counts for itself. Two rungs are already in the progress
+    // string, so the control opens on "Show 2 hints" and the press is free -- it re-shows what was
+    // paid for instead of charging for it again.
+    it('counts the rungs the adapter says are already bought', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, '##')
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Show 2 hints' }))
+
+      expect(screen.getByText('From the adapter, second.')).toBeInTheDocument()
+      expect(screen.queryByText('From the adapter, third.')).not.toBeInTheDocument()
+      expect(readProgress(cryptogramPuzzleId)).toEqual('##')
+    })
+
+    // ONE TO THREE, AND A SHORT LADDER IS NOT AN ERROR. An adapter returns null from `chooseNext`
+    // when the player has already established everything a rung could say, so a one-rung ladder is
+    // the correct output of a working rule. The bar reads `hints.length` everywhere, so this needs
+    // no arithmetic in the frame -- but nothing said so until this row.
+    it('draws a one-rung adapter ladder rather than refusing it', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(['The only rung worth selling.'])
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 1' }))
+
+      expect(screen.getByText('The only rung worth selling.')).toBeInTheDocument()
+    })
+
+    it('draws a two-rung adapter ladder rather than refusing it', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(['Adapter rung one.', 'Adapter rung two.'])
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 2' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 2' }))
+
+      expect(screen.getByText('Adapter rung one.')).toBeInTheDocument()
+      expect(screen.getByText('Adapter rung two.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Open hint/ })).not.toBeInTheDocument()
+    })
+
+    // The end of a SHORT ladder is still the end of the ladder, and the answer still closes it. The
+    // sentence is `answerOf`'s -- the frame composes nothing and the bar renders what it is handed
+    // -- so what this pins is that the reveal survives a ladder that is not three rungs long.
+    it('closes a short adapter ladder with the answer the pack shipped', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, '##')
+      stubbedAdapter = stubAdapter(['Adapter rung one.', 'Adapter rung two.'])
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Show 2 hints' }))
+      await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+      expect(screen.getByText('The answer is Ate ate tea.')).toBeInTheDocument()
+      expect(readProgress(cryptogramPuzzleId)).toEqual('###')
+    })
+
+    // A DECLINE, which is the adapter answering null while the ladder still looks unspent. Nothing
+    // is bought: no progress is written and the count does not move, which is exactly what HintBar
+    // documents for a controlled owner that says no.
+    //
+    // The sheet opens anyway -- the bar has no way to ask for a shut one -- so the assertion that
+    // matters for a player is the last one: the sheet it opened carries its own way out. Without it
+    // a decline is a panel over the board with Escape as its only exit, and a touch device has none.
+    it('buys nothing when the adapter declines the press', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      stubbedAdapter = { ...stubAdapter(THREE_RUNGS), open: () => null }
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(readProgress(cryptogramPuzzleId)).toBeNull()
+      expect(screen.queryByText('From the adapter, first.')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument()
+    })
+
+    // `ladder` MAY ANSWER NULL, and the frame reads that the way it reads a malformed pack ladder:
+    // no bar at all. It is the same `hints !== null` gate the pack path has always used, which is
+    // why the adapter branch needed no second guard -- and why this row exists to say the gate
+    // really does cover both.
+    it('draws no bar when the adapter has no ladder to give', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = { ...stubAdapter(THREE_RUNGS), ladder: () => null }
+
+      renderFrame(cryptogramPuzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(screen.queryByRole('button', { name: /hint/i })).not.toBeInTheDocument()
+    })
+
+    // The board's side of the seam, and the whole reason the adapter hangs off the REGISTRY rather
+    // than off the board. The shell asks the registry its own question -- the same standing
+    // `needsDictionary` has -- so the board is handed its six props and learns nothing.
+    it('still tells the board nothing about hints', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(Object.keys(lastProps()).toSorted()).toEqual([
+        'dictionary',
+        'onProgress',
+        'onReset',
+        'onSolved',
+        'progress',
+        'puzzle',
+      ])
+    })
+
+    // The relationship a role query cannot defend on its own. `aria-controls` contributes nothing to
+    // an accessible name, so it can rot in total silence while every other assertion here keeps
+    // passing -- and the adapter path is a new caller of the same bar, so both ends are resolved
+    // here as well as in the bar's own suite.
+    it('points the adapter bar’s control at the sheet it opens', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = stubAdapter(THREE_RUNGS)
+
+      renderFrame(cryptogramPuzzleId)
+      const control = await screen.findByRole('button', { name: 'Open hint 1 of 3' })
+
+      expect(control).toHaveAttribute('aria-expanded', 'false')
+      expect(document.getElementById(control.getAttribute('aria-controls') ?? '')).toBeInTheDocument()
+    })
+
+    // THE OTHER SIDE OF THE BRANCH, and it is asserted on the same fixture as the first test so the
+    // only difference between the two is the adapter. Three of the six types compute nothing and
+    // read their ladder off the pack, which is why `hints` is optional -- and their bar keeps its
+    // count in `lull:hints:` and writes no progress, which is the mirror image of the rows above.
+    it('leaves a type with no adapter reading the ladder off the pack', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(stalePackCryptogramPack)
+
+      renderFrame(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(screen.getByText(PACK_RUNG)).toBeInTheDocument()
+      expect(window.localStorage.getItem(`lull:hints:${cryptogramPuzzleId}`)).toEqual('1')
+      expect(readProgress(cryptogramPuzzleId)).toBeNull()
+    })
+
+    // A PACK THAT SHIPPED NO LADDER AT ALL, which is the wire this app is being written against and
+    // the state every pack reaches once lull-api's deploy follows this one. No adapter and no
+    // `hints` is the one combination that has to draw NOTHING -- `hintsOf` answers null on a missing
+    // field exactly as it does on a malformed one -- and without this row the fixtures could have
+    // lost their ladders while a bar drawn from stale bytes went on passing everything above.
+    it('draws no bar when the pack ships no ladder and the type has no adapter', async () => {
+      setupPack(cryptogramPack)
+
+      renderFrame(cryptogramPuzzleId)
+      await screen.findByRole('region', { name: 'Board' })
+
+      expect(screen.queryByRole('button', { name: /hint/i })).not.toBeInTheDocument()
+    })
+  })
+
+  // THE DEPLOY WINDOW, AND IT IS OPEN RIGHT NOW rather than a shape out of the archive. This app
+  // ships BEFORE lull-api stops sending `hints` -- clause (b) of that repo's rebuild runbook makes
+  // the order mandatory, because a pack that dropped the field first would leave three of six benches
+  // with no hint bar at all -- so for the whole gap between the two deploys every pack that arrives
+  // carries a ladder the adapters have already replaced. It outlives the gap on any device holding a
+  // pack cached inside it, for as long as that pack is kept.
+  //
+  // THE SHIPPED ADAPTERS, NOT THE STUB ABOVE, and that is the difference between this describe and
+  // the one before it. That one proves the frame reads no grammar and a stub is the right instrument
+  // for it. This one proves that on a pack carrying BOTH ladders the sentences a player reads are the
+  // ones computed from their own board -- a claim about which of two real ladders wins, which a stub
+  // whose rungs are invented strings cannot make.
+  //
+  // EVERY RUNG IS OPENED, so the negative half is a real negative. With one rung bought the bar draws
+  // one sentence whichever ladder it read, and a `queryByText` over the other two would pass on a
+  // frame that had chosen wrong.
+  describe('a stale pack ladder arriving beside a live adapter', () => {
+    // PHRAZLE IS GATED ON THE WORD LIST and the other two are not, so every row here renders inside a
+    // ready DictionaryContext rather than only the row that needs one. A frame that cannot see a word
+    // list refuses a Phrazle deep link outright and draws no bar to read either ladder off -- which
+    // would fail this row for a reason that has nothing to do with precedence. The value is a literal
+    // rather than a provider, so no network, no timers and no Cache API are involved; the gate itself
+    // is asserted in its own describe further down.
+    const renderReady = (id: string): ReturnType<typeof render> =>
+      render(
+        <DictionaryContext.Provider value={{ status: 'ready', words: phrazleDictionary }}>
+          <PuzzleFrame locale="en-US" now={noonOnPackDate} puzzleId={id} />
+        </DictionaryContext.Provider>,
+      )
+
+    const openWholeLadder = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+      await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+    }
+
+    // The adapter rungs are WRITTEN OUT rather than folded from the adapter here, for the reason each
+    // adapter's own suite gives: an expectation built by re-running the rule agrees with whatever the
+    // rule became. These are what the shipped builders produce for these fixtures on a board nobody
+    // has touched, and they are the same strings those suites pin.
+    //
+    // The table is ANNOTATED rather than inferred, because a bare literal widens every column to the
+    // union of its six cells and the adapter stops being assignable to anything.
+    const benches: [string, Pack, string, HintAdapter | undefined, string[], string[]][] = [
+      [
+        'cryptogram',
+        stalePackCryptogramPack,
+        cryptogramPuzzleId,
+        REGISTRY.cryptogram.hints,
+        ['Every Q is an E.', 'Every Z is a T.', 'One of the words is ATE.'],
+        cryptogramStalePackLadder.map((hint) => hint.text),
+      ],
+      [
+        'phrazle',
+        stalePackPhrazlePack,
+        phrazlePuzzleId,
+        REGISTRY.phrazle.hints,
+        [
+          'The phrase has no A, no G, and no S.',
+          'The phrase contains D, H, and L.',
+          'Word 2 uses these letters, alphabetized: D, H, L, and O.',
+        ],
+        phrazleStalePackLadder.map((hint) => hint.text),
+      ],
+      [
+        'themedanagrams',
+        stalePackThemedAnagramsPack,
+        themedAnagramsPuzzleId,
+        REGISTRY.themedanagrams.hints,
+        [
+          'The 2nd answer starts with S.',
+          'The 3rd answer starts with S and ends with T.',
+          'The 4th answer starts with SPA.',
+        ],
+        themedAnagramsStalePackLadder.map((hint) => hint.text),
+      ],
+    ]
+
+    it.each(benches)(
+      'shows %s the rungs its adapter computed and none the stale pack carried',
+      async (_type, stalePack, id, adapter, computed, shipped) => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(stalePack)
+        stubbedAdapter = adapter
+
+        renderReady(id)
+        await openWholeLadder(user)
+
+        expect(computed.map((text) => screen.getByText(text))).toHaveLength(3)
+        expect(shipped.flatMap((text) => screen.queryAllByText(text))).toEqual([])
+      },
+    )
+
+    // THE FRAME PASSES THE LIVE BOARD, AND THIS IS THE ONLY PLACE THAT CAN BE PINNED. "These types
+    // compute their rungs against the board the player actually built" is the whole feature, and the
+    // frame is the seam it crosses: `adapter.ladder(puzzle, boardState)`. Mutating that second
+    // argument to `''` left all eighty-four tests in this file green.
+    //
+    // WHY EVERY EXISTING ROW MISSED IT, because the hole is specific rather than general. The stub
+    // adapter above ignores both of its arguments by construction -- `ladder: () => rungs` -- so no
+    // row that uses it can see which progress it was handed. The stale-pack rows below use the real
+    // adapters but only ever on an UNTOUCHED board, where the live ladder and the fresh one are the
+    // same three sentences. And the won-board rows assert "Open hint 1 of 3", which the `''` fallback
+    // produces too. `opened`, `open` and `merge` each kill five or six rows under the same mutation;
+    // `ladder`'s second argument killed none.
+    //
+    // So both rows below stand on a board with progress on it, and both assert something that is
+    // DIFFERENT from what a fresh board would have been offered.
+    //
+    // 'QE' is cipher Q mapped correctly to E. Two cipher letters are left, so the ladder folds to two
+    // rungs -- a letter each, and then no word left to open -- where an untouched board is offered
+    // three. The COUNT is the assertion here and it costs no press.
+    it('counts the cryptogram ladder against the board the player has built', async () => {
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, 'QE')
+      stubbedAdapter = REGISTRY.cryptogram.hints
+
+      renderReady(cryptogramPuzzleId)
+
+      expect(await screen.findByRole('button', { name: 'Open hint 1 of 2' })).toBeInTheDocument()
+    })
+
+    // AND THE RUNG ITSELF, which is the half a count cannot cover. On an untouched board rung 1 is
+    // "Every Q is an E."; with Q already correct the chooser skips it and takes V. A frame handing
+    // the adapter '' buys the right rung -- `open` reads the live board -- and then RENDERS the
+    // fresh one, so the sentence on screen is about a square the player solved before they pressed.
+    it('draws the cryptogram rung the live board earned rather than the one a fresh board would', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(cryptogramPack)
+      writeProgress(cryptogramPuzzleId, 'QE')
+      stubbedAdapter = REGISTRY.cryptogram.hints
+
+      renderReady(cryptogramPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 2' }))
+
+      expect(screen.getByText('Every V is an A.')).toBeInTheDocument()
+      expect(screen.queryByText('Every Q is an E.')).not.toBeInTheDocument()
+    })
+
+    // THE SECOND BENCH, and it moves the rung's SUBJECT rather than the ladder's length. With
+    // SAUCEPAN solved the longest unsolved entry is the third row, so rung 1 aims there; on an
+    // untouched board it aims at the second. Two adapters rather than one, because a frame that
+    // passed '' would be wrong on all three and a single bench cannot say whether the seam or the
+    // adapter is the thing under test.
+    it('draws the themed anagrams rung the live board earned', async () => {
+      const user = userEvent.setup({ delay: null })
+      setupPack(themedAnagramsPack)
+      writeProgress(themedAnagramsPuzzleId, '\nSAUCEPAN\n\n')
+      stubbedAdapter = REGISTRY.themedanagrams.hints
+
+      renderReady(themedAnagramsPuzzleId)
+      await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+
+      expect(screen.getByText('The 3rd answer starts with S.')).toBeInTheDocument()
+      expect(screen.queryByText('The 2nd answer starts with C.')).not.toBeInTheDocument()
+    })
+
+    // THE BAR DOES NOT VANISH ON THE WINNING KEYSTROKE, and this is asserted at the FRAME because
+    // nothing else can see it. Two adapters had nothing left to CHOOSE on a won board -- every rung
+    // aims at a square or a row the player has not got -- so `ladder` answered null, the frame's
+    // `hints !== null` gate dropped the bar, and a 60px `shrink-0` band unmounted at the instant of
+    // the solve with the board re-laying itself out underneath. On cryptogram it flickered, because
+    // an unlocked square can still be cleared. The adapters' own null-ladder rows passed the whole
+    // time: they asserted the null and nothing followed them up to here.
+    //
+    // The progress strings are the SOLVED shape in each type's own grammar, written straight to
+    // storage, because the point is the state a returning player arrives in as much as the keystroke
+    // that reaches it.
+    it.each<[string, Pack, string, HintAdapter | undefined, string]>([
+      ['cryptogram', cryptogramPack, cryptogramPuzzleId, REGISTRY.cryptogram.hints, 'QEVAZT'],
+      [
+        'themedanagrams',
+        themedAnagramsPack,
+        themedAnagramsPuzzleId,
+        REGISTRY.themedanagrams.hints,
+        'KETTLE\nSAUCEPAN\nSKILLET\nSPATULA',
+      ],
+    ])('keeps the %s hint bar standing on a board that is already won', async (_type, loaded, id, adapter, solved) => {
+      setupPack(loaded)
+      writeProgress(id, solved)
+      stubbedAdapter = adapter
+
+      renderReady(id)
+
+      expect(await screen.findByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
     })
   })
 
@@ -847,10 +1447,16 @@ describe('PuzzleFrame', () => {
   // The gate. A context value is supplied directly rather than a provider, so no network, no timers
   // and no Cache API are involved and the state under test is one literal.
   describe('a puzzle whose type needs a word list', () => {
+    // `now` IS PASSED HERE TOO, and its absence was a live `Date.now` reaching the component in the
+    // eight rows below -- the one thing the comment on `noonOnPackDate` says this file must not do.
+    // The trail reads the clock: the day crumb's href is `/` for today and `/?d=<date>` for any other
+    // day, and the year crumb spells a year for a day outside the reader's current one. Nothing in
+    // this describe asserts on the trail, so the omission cost nothing today and would have cost a
+    // failing suite on a date certain, with no commit in between to blame.
     const renderGated = (state: DictionaryState, id: string = phrazlePuzzleId): ReturnType<typeof render> =>
       render(
         <DictionaryContext.Provider value={state}>
-          <PuzzleFrame locale="en-US" puzzleId={id} />
+          <PuzzleFrame locale="en-US" now={noonOnPackDate} puzzleId={id} />
         </DictionaryContext.Provider>,
       )
 

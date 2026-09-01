@@ -10,9 +10,21 @@ export interface HintBarProps {
   // count it does not hold. Two independent optionals make that a comment; one object makes it a
   // type error.
   //
-  // It exists for the goFigure bench, whose rungs do something to the board rather than only saying
-  // something about it, so the count has to live where the board's state lives. Handing the count
-  // down is what keeps that subtree free of storage -- see the derived `opened` below.
+  // IT WAS BUILT FOR THE goFigure BENCH and it now serves four callers, which is the test that the
+  // seam was in the right place rather than a widening of it: PuzzleFrame builds a `control` for
+  // every type carrying a registry hint adapter -- Cryptogram, Phrazle and Themed Anagrams -- and
+  // HintBar needed no contract change to be told.
+  //
+  // What every controlled caller has in common is where the COUNT lives: in the board's own progress
+  // string, beside whatever the rungs did, rather than in `lull:hints:<puzzleId>`. goFigure owns that
+  // string itself, so handing the count down is also what keeps that subtree free of storage -- see
+  // the derived `opened` below. The other three keep it there through PuzzleFrame and their adapter,
+  // and the board is never told.
+  //
+  // "ITS RUNGS DO SOMETHING TO THE BOARD" IS NOT THE CONDITION, and Phrazle is the case that says so:
+  // its rungs are sentences that touch no tile, no color and no row, and it is controlled anyway,
+  // because its ladder is stored where its guesses are. Controlled means the count is somebody
+  // else's. It says nothing about what a rung touches.
   control?: { onOpen: (nextOpened: number) => void; opened: number }
   hints: HintLadder
   puzzleId: string
@@ -26,9 +38,13 @@ export interface HintBarProps {
   // second, so the second reset would hand this component a prop it already holds, the effect below
   // would not run, and the ladder would sit where the player had just left it.
   //
-  // Optional and 0 by default, so a bar with no shell behind it -- the controlled `bare` bar on the
-  // goFigure bench, whose owner resets the ladder by moving `control.opened` -- never enters the
-  // effect at all.
+  // Optional and 0 by default, so a bar whose caller has no reset to report never enters the effect
+  // at all. THAT IS NOT THE SAME AS "NO SHELL BEHIND IT", and the controlled bar is the case that
+  // proves it: goFigure passes `control` AND this together, because moving `control.opened` back to
+  // zero leaves the SHEET standing -- an empty list drawn over a fresh board, with a keyboard that
+  // declines every key -- and this signal is the only thing that shuts it from out there. PuzzleFrame
+  // passes both as well, for the three adapter types and for the pack ones alike. Every caller in the
+  // app is signaled; what the default covers is a caller with nothing to say.
   resetSignal?: number
   // The answer, composed by the CALLER and rendered verbatim -- the same contract `hint.text` has,
   // for the same reason. A phrase bench's answer is its phrase and goFigure's is an expression drawn
@@ -270,12 +286,36 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
 /**
  * The ladder, rendered by the SHELL and never by a game component.
  *
- * Missing Vowels, Cryptogram and Phrazle are one phrase in three costumes, so a hint about what the
- * phrase MEANS serves all three -- and a board that never learns hints exist cannot leak one.
+ * IT DOES NOT KNOW WHERE A RUNG CAME FROM, and since 2026-08-31 half the catalog answers that
+ * differently. Missing Vowels, Cryptic Clue and goFigure carry a ladder on the pack. Cryptogram,
+ * Phrazle and Themed Anagrams compute theirs on the device, from vendored rules, against what the
+ * player has already established -- because their rungs are about LETTERS rather than about what a
+ * phrase MEANS, and a letter is worth nothing to a player who already holds it. That is precisely
+ * why the first two changed: they used to take the shared phrase ladder, which is a hint aimed at a
+ * different game. Missing Vowels is the one bench where that ladder was always the right one, and it
+ * still gets it. This bar is handed an array either way and decides only WHEN a rung is shown.
+ *
+ * A BOARD NEVER WRITES THE HINT FIELD, AND ALL THREE ADAPTER BOARDS READ IT. That is the rule
+ * `registry/index.ts` and `puzzle-frame/index.tsx` both state, said here so this file agrees rather
+ * than inventing a third phrasing: the shell is the only writer, and a board reads hint state exactly
+ * when a hint changes what it DRAWS. Cryptogram locks a revealed letter into its grid, Themed
+ * Anagrams pins letters into position, and Phrazle strikes and fills keys on its pad -- its rungs
+ * move no tile, but they are statements about the alphabet, and a keyboard is an alphabet. "A board
+ * that never learns hints exist cannot leak one" was the older and prettier promise, and it is not
+ * the one this bar's callers keep.
  *
  * No time gate, no penalty, no cost. Rungs open in order because a ladder is only meaningful in
  * order. On a solved puzzle it renders exactly as it always does: the answer is already on screen,
  * so there is nothing left to protect.
+ *
+ * THAT SENTENCE IS THE CALLER'S TO KEEP AND IT WAS BRIEFLY UNTRUE. A pack ladder is fixed, so a
+ * solved puzzle draws the same bar it always did; a COMPUTED one is folded against live state, and
+ * two of the three adapters had nothing left to choose once every square or every row was right --
+ * so they answered null, PuzzleFrame drew no bar, and this 60px `shrink-0` band unmounted on the
+ * winning keystroke, re-laying out the board underneath it. Worse on cryptogram, where an unlocked
+ * square can still be cleared: the band flickered as a player toggled the last letter. Both adapters
+ * now fall back to the ladder a fresh board would have shown, so this file's promise holds on all six
+ * benches and null means only "this pack has no ladder at all".
  *
  * Opened rungs are drawn in a sheet that OVERLAYS the board rather than in a panel that shares the
  * column with it. The instrument sits `--lull-seam` up from the bottom edge on every bench, in
@@ -294,10 +334,13 @@ export const HintBar = ({
   // different component rather than a prop change, and re-reading storage on every render would
   // hand this component back its own writes.
   //
-  // NOT READ AT ALL when controlled, which is the ternary's whole job and not a micro-optimization.
-  // The controlled caller is the goFigure board, and `CLAUDE.md` says a puzzle component gets no
-  // storage -- a bar that read the count and then discarded it would satisfy the behavior and
-  // quietly break the rule, so a test spies on `readHints` rather than on the count.
+  // NOT READ AT ALL when controlled, which is the ternary's whole job and not a micro-optimization,
+  // and it now has two reasons rather than one. One controlled caller is the goFigure BOARD, and
+  // `CLAUDE.md` says a puzzle component gets no storage -- a bar that read the count and then
+  // discarded it would satisfy the behavior and quietly break the rule, so a test spies on
+  // `readHints` rather than on the count. The other three are PuzzleFrame with an adapter in hand,
+  // where the count is already in the board's progress string: a read here would be a second store
+  // for one number, and the two can disagree.
   //
   // WHICH MODE A BAR IS IN IS FIXED FOR ITS LIFETIME, and nothing here enforces that. The
   // initializer closes over the first render's `control`, so a bar mounted controlled and then
@@ -315,8 +358,11 @@ export const HintBar = ({
   // there is not, which is the only arrangement under which both modes are actually correct.
   const opened = control?.opened ?? storedOpened
 
-  // Open state is a VIEW concern and is never persisted: `lull:hints:<puzzleId>` stays the opened
-  // count and only the opened count, so a closed sheet is not an unopened rung.
+  // Open state is a VIEW concern and is never persisted at all: what is stored is the opened count
+  // and only the opened count, so a closed sheet is not an unopened rung. WHERE that count is stored
+  // is the caller's business and not this component's -- `lull:hints:<puzzleId>` when the bar is
+  // uncontrolled, the board's own progress string when an owner holds it, in which case this file
+  // writes no key of any kind.
   //
   // ALWAYS SHUT, and never derived from the count. Deriving it looked like generosity -- a returning
   // player got their rungs back for free -- but the count cannot tell the two cases apart: a player
@@ -346,10 +392,17 @@ export const HintBar = ({
   const isSpent = opened >= hints.length
 
   // The reveal has ITS OWN COUNT rather than a boolean beside the ladder's, and that is what makes
-  // starting over work without a line of code: the shell deletes `lull:hints:<puzzleId>` and the
-  // board writes '', so one number carries the rungs and the answer and one erasure takes both.
-  // A separate `revealed` flag would need its own store, its own reset and its own validation, and
-  // could disagree with the count in a state no test would think to write.
+  // starting over work without a line of code: one number carries the rungs and the answer, so one
+  // erasure takes both. A separate `revealed` flag would need its own store, its own reset and its
+  // own validation, and could disagree with the count in a state no test would think to write.
+  //
+  // WHICH ERASURE depends on where the number lives, and both benches get the property for free. On
+  // an uncontrolled bar the shell deletes `lull:hints:<puzzleId>` and the board writes ''. On a
+  // controlled one the count is in the board's own progress string, and the board's `onReset()` is
+  // what takes the rungs and the reveal together: PuzzleFrame answers that signal by writing '' over
+  // the whole record, and `removeHints` is a no-op on a key nothing wrote. NOT the board's
+  // `onProgress('')` beside it -- an adapter's `merge` extends every board write including that one,
+  // because '' is also what an emptied last box produces and a backspace must not cost a purchase.
   const hasSolution = solution !== undefined
   const isRevealed = hasSolution && opened > hints.length
 
@@ -417,6 +470,39 @@ export const HintBar = ({
     setStoredOpened(0)
     setAnnouncement('Hints reset.')
   }, [resetSignal])
+
+  // THE DENOMINATOR MOVES UNDER THE PLAYER, and when it does this control changes what pressing it
+  // DOES while telling nobody. Buy rungs 1 and 2 on a Themed Anagrams board of four five-letter
+  // answers, then solve the other three entries: the adapter's ladder folds from three rungs to two,
+  // `opened` is still 2, and `controlLabel` flips "Open hint 3 of 3" to "Show answer" on a button
+  // that may be the one the player is standing on. Screen readers do not re-read a focused element
+  // when its label changes -- the same fact the reset announcement above exists for -- so a keyboard
+  // or reader player presses what they were told was another hint and is handed the whole answer.
+  //
+  // FOUR CONDITIONS, AND EACH ONE EXCLUDES A CASE THIS MUST NOT FIRE ON. The sheet has to be OPEN,
+  // because that is the only state in which the flip is silent: shut, the control reads "Show 2
+  // hints" on both sides of the fold and nothing about it has changed. The ladder has to have
+  // SHRUNK, so growing a speculative tail says nothing. `opened` has to be UNCHANGED, which is what
+  // separates a fold happening underneath the player from the press that spends a rung -- a purchase
+  // moves the count in the same render the tail shortens, and announcing there would talk over the
+  // rung the player just bought. And the offer has to have crossed from a rung to the ANSWER: a
+  // ladder that shortens above the count still offers a rung, and one with no `solution` beside it
+  // becomes "Hide hints", which takes nothing away.
+  //
+  // ANNOUNCING IS THE FLOOR RATHER THAN THE FIX, and the stronger version was considered and not
+  // taken here: refusing the next press, or making the reveal need a second one, is a rule about
+  // what a control OFFERS and it would have to hold for goFigure's bar and the pack benches too.
+  // This is the one thing that can be done inside a component that is handed a ladder and a count
+  // and told nothing about where either came from.
+  const offered = useRef({ length: hints.length, opened })
+  useEffect(() => {
+    const was = offered.current
+    offered.current = { length: hints.length, opened }
+
+    if (!isOpen || hints.length >= was.length || opened !== was.opened) return
+    if (opened < hints.length || was.opened >= was.length || !hasSolution) return
+    setAnnouncement('No hints are left. This button now shows the answer.')
+  }, [hasSolution, hints.length, isOpen, opened])
 
   const press = (): void => {
     // The reset has been read by now, so it stops being said. Left standing it would sit in the
@@ -511,17 +597,21 @@ export const HintBar = ({
             -- which is the whole difference between an announcement and a node inserted into a
             region nobody subscribed to.
 
-            KEYED ON THE SIGNAL, which is what makes a second reset audible. The text is the same
-            every time, so re-rendering the same node with the same string is not a change and
-            announces nothing; a new key makes React remove the node and insert a fresh one, and an
-            inserted node is exactly what aria-atomic="false" reads out. It is a piece of state
-            rather than markup gated on `resetSignal` directly so that the next press can take it
-            back down -- see `press`.
+            KEYED ON THE SIGNAL AND THE SENTENCE, which is what makes a second reset audible and a
+            second KIND of announcement audible after it. The reset's text is the same every time, so
+            re-rendering the same node with the same string is not a change and announces nothing; a
+            new key makes React remove the node and insert a fresh one, and an inserted node is
+            exactly what aria-atomic="false" reads out. The sentence joined the key when a second
+            announcement arrived -- the ladder folding under a standing offer, see `offered` above --
+            because two different strings under one key are a text change inside a node a reader is
+            already watching, which is the weaker of the two things this region can do. It is a piece
+            of state rather than markup gated on `resetSignal` directly so that the next press can
+            take it back down -- see `press`.
 
             sr-only rather than visible: the bar is a 60px band with a name, three rung markers and
             a control in it, and there is no room for a sentence that is only true for one press. */}
         {announcement !== '' && (
-          <p className="sr-only" key={resetSignal}>
+          <p className="sr-only" key={`${resetSignal}:${announcement}`}>
             {announcement}
           </p>
         )}
@@ -579,14 +669,54 @@ export const HintBar = ({
               </div>
             )}
             {/* `hint.text` is rendered VERBATIM and nothing here derives a word of it. A rung is
-                authored by lull-api, which is also the only place that knows what a rung is allowed
-                to give away -- this bar decides when a rung is shown, never what it says.
+                authored by whoever built the ladder, which is also the only place that knows what a
+                rung is allowed to give away -- lull-api for the three types that carry one on the
+                pack, and the type's own registry adapter over a vendored rule for the three that
+                compute theirs on the device. This bar decides when a rung is shown, never what it
+                says, and it cannot tell the two authors apart.
 
-                Keyed on the text rather than on the index, and the guarantee that makes that safe
-                lives UPSTREAM rather than here. lull-api rejects any phrase whose three hints
-                collapse to fewer than three distinct strings, and builds each goFigure rung off a
-                distinct ordinal over a permutation of slots 0 1 2 -- so a duplicate rung is a bug in
-                the pack, not a state this list has to survive. Nothing in this repo re-checks it.
+                THE SLICE SHOWS ONLY WHAT WAS BOUGHT, AND THAT IS THE CALLER'S GUARANTEE RATHER THAN
+                THIS FILE'S. `opened` is the count of steps paid for, and on an adapter bench it is
+                legitimately one PAST the ladder -- that last step is the answer reveal, which has no
+                rung. So a caller whose ladder grew after the reveal was bought would have this slice
+                reach one rung into the speculative tail: a hint nobody paid for, drawn free. Each
+                adapter closes its ladder at the bought rungs once the reveal is out, which is what
+                makes "the tail is never shown" true here. This bar cannot check it -- it is handed an
+                array and a number and can tell neither where they came from.
+
+                KEYED BY INDEX, which is correct here for the reason index keys are usually wrong
+                elsewhere. A key has to be stable for the thing it identifies, and the failure mode
+                of an index is a list that is reordered, inserted into or filtered, where position i
+                stops naming the same item and React reuses the wrong node. This list can do none of
+                those: it is `hints.slice(0, opened)` over a fixed array, `opened` only ever climbs,
+                and a rung's position in the ladder IS its identity -- the decimal marker beside it
+                says so. Position i names rung i for the life of the mount, so an index is not a
+                stand-in for identity here, it is the identity.
+
+                IT USED TO BE KEYED ON THE TEXT, and that rested on a guarantee that has stopped
+                covering the catalog. lull-api rejects any phrase whose three hints collapse to fewer
+                than three distinct strings and builds each goFigure rung off a distinct ordinal over
+                a permutation of slots 0 1 2 -- so a duplicate rung was a bug in the pack, not a state
+                this list had to survive, and nothing in this repo re-checked it. Since 2026-08-31
+                three of the six types never send their rungs through lull-api at all: Cryptogram,
+                Phrazle and Themed Anagrams compute theirs on the device, so that warrant covers half
+                the benches and nothing on-device replaces it.
+
+                The three builders cannot produce a duplicate today -- each ladder draws at most one
+                rung of each kind and each kind composes its own sentence frame, and the two cipher
+                letters a cryptogram ladder can name are drawn from a pool the first has already left
+                -- but no decoder rejects one. A hand-edited progress string naming the same kind
+                twice reaches this list, because a stored ladder is untrusted input everywhere else in
+                this file's neighborhood and is treated as such. So the key stops resting on anybody's
+                promise about the text and rests on the shape of the list instead.
+
+                WHAT A DUPLICATE KEY WOULD HAVE COST IS NOT A CRASH, which is worth saying because it
+                is what made the old key survivable for so long: React answers two children under one
+                key with a console warning saying non-unique keys may cause children to be duplicated
+                and/or omitted, and on this path it happens to render both. Undefined behavior behind
+                a warning nobody reads is a worse thing to ship than a visible break, and it is the
+                reason the row that pins this asserts the LADDER -- see "says one thing twice" in the
+                suite -- rather than asserting anything about the key.
 
                 GATED ON THE SHEET BEING OPEN, like the header above, and this gate is about the
                 live region rather than about the sheet. `hidden` does not empty a subtree: it takes
@@ -610,16 +740,18 @@ export const HintBar = ({
                 filling is two changes where the player asked for one. */}
             {isOpen && (
               <ol className={LIST}>
-                {hints.slice(0, opened).map((hint) => (
-                  <li key={hint.text}>{hint.text}</li>
+                {hints.slice(0, opened).map((hint, index) => (
+                  <li key={index}>{hint.text}</li>
                 ))}
               </ol>
             )}
             {/* OUTSIDE the list, and that is a statement about what this is rather than a layout
-                choice. The <ol> is the ladder -- lull-api orders those rungs by how much each
-                reveals, and the decimal markers beside them are that order made visible. An answer
-                appended as a fourth <li> would be numbered "4." by the marker and read as the next
-                rung in a ladder that has three.
+                choice. The <ol> is the ladder -- whoever builds one orders its rungs by how much each
+                reveals, lull-api on the pack benches and the type's own builder on the three that
+                compute theirs, and the decimal markers beside them are that order made visible. An
+                answer appended as a fourth <li> would be numbered "4." by the marker and read as the
+                next rung in a ladder that has three -- or in one that has two, which the adapter
+                benches and Cryptic Clue both legitimately ship.
 
                 It carries the same VERBATIM contract as a rung: the caller composed the sentence,
                 including whether it hedges. goFigure's must, because its ladder pins an operator
@@ -658,11 +790,11 @@ export const HintBar = ({
           {/* Scenery. The control's own label counts the rungs out in words, so nothing here is the
               only carrier of anything.
 
-              Keyed by INDEX, unlike the sheet's list above, because these markers carry no identity
-              -- they are three positions that fill in, not three rungs. Keying them on rung text
-              would hand React duplicate keys on a list it reconciles every time `opened` changes,
-              and the failure mode there is a stale or missing marker rather than a console
-              warning. */}
+              Keyed by INDEX, the same as the sheet's list above and for a stronger version of the
+              same reason: these markers carry no identity at all -- they are three positions that
+              fill in, not three rungs. Keying them on rung text would hand React duplicate keys on a
+              list it reconciles every time `opened` changes, and the failure mode there is a stale or
+              missing marker rather than a console warning. */}
           <span aria-hidden="true" className="flex gap-[3px]">
             {hints.map((_hint, index) => (
               <span
