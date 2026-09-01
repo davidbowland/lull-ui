@@ -295,13 +295,14 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
  * different game. Missing Vowels is the one bench where that ladder was always the right one, and it
  * still gets it. This bar is handed an array either way and decides only WHEN a rung is shown.
  *
- * A BOARD NEVER WRITES THE HINT FIELD, AND TWO BOARDS READ IT. That is the rule `registry/index.ts`
- * and `puzzle-frame/index.tsx` both state, said here so this file agrees rather than inventing a
- * third phrasing: the shell is the only writer, and a board reads hint state exactly when a hint
- * changes what it DRAWS. Cryptogram locks a revealed letter into its grid and Themed Anagrams pins
- * letters into position, so both must; Phrazle's rungs move no tile and its board is handed no way
- * to. "A board that never learns hints exist cannot leak one" was the older and prettier promise,
- * and it is not the one this bar's callers keep.
+ * A BOARD NEVER WRITES THE HINT FIELD, AND ALL THREE ADAPTER BOARDS READ IT. That is the rule
+ * `registry/index.ts` and `puzzle-frame/index.tsx` both state, said here so this file agrees rather
+ * than inventing a third phrasing: the shell is the only writer, and a board reads hint state exactly
+ * when a hint changes what it DRAWS. Cryptogram locks a revealed letter into its grid, Themed
+ * Anagrams pins letters into position, and Phrazle strikes and fills keys on its pad -- its rungs
+ * move no tile, but they are statements about the alphabet, and a keyboard is an alphabet. "A board
+ * that never learns hints exist cannot leak one" was the older and prettier promise, and it is not
+ * the one this bar's callers keep.
  *
  * No time gate, no penalty, no cost. Rungs open in order because a ladder is only meaningful in
  * order. On a solved puzzle it renders exactly as it always does: the answer is already on screen,

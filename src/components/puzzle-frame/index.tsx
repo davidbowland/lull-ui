@@ -147,11 +147,12 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
   // move, `opened` stays where it was, and the press opens a sheet with nothing in it. The bar would
   // offer "Open hint 1 of 3" forever.
   //
-  // TWO BOARDS ALSO RE-READ IT, AND ONLY FOR THE HINT TAIL. Cryptogram and Themed Anagrams draw what
-  // a rung revealed, so they decode the SPENT LIST off this live prop on every render -- never their
-  // own portion, which stays mount-time state. A bought rung therefore lands without a remount and
-  // without discarding anything the player typed. Phrazle's rungs move no tile, so its board never
-  // reads hint state and is handed no way to.
+  // ALL THREE ADAPTER BOARDS ALSO RE-READ IT, AND ONLY FOR THE HINT TAIL. Cryptogram and Themed
+  // Anagrams draw what a rung revealed, so they decode the SPENT LIST off this live prop on every
+  // render -- never their own portion, which stays mount-time state. A bought rung therefore lands
+  // without a remount and without discarding anything the player typed. Phrazle joined them: its
+  // rungs still move no tile, but they strike and fill keys on its pad, because a rung about the
+  // alphabet belongs on the keyboard.
   //
   // ONE READING AND NOT TWO. Keeping a frozen `progress` for the board beside a live one for the
   // shell was the other candidate, and it is the arrangement gofigure/board.ts argues against: two

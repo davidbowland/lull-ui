@@ -9,12 +9,22 @@ import { HintLadder, PhrazleData, Puzzle, PuzzleProgress } from '@types'
 // join, and it is the only file that imports both. The shell reaches it through the registry and
 // learns no grammar, and the board is handed nothing at all.
 //
-// THE BOARD DOES NOT CHANGE AND IS NOT TOLD. Phrazle's rungs are sentences in the shell's hint bar --
-// "The phrase has no D, no G, and no P." -- and they change no tile, no color and no row. A board
-// reads hint state exactly when a hint changes what it draws, so cryptogram (which locks a letter
-// into its grid) and Themed Anagrams (which pins letters into place) read theirs, and this one is
-// handed no way to. That is a rule rather than an exception list, and this bench is the side of it
-// that costs nothing.
+// THE BOARD READS WHAT THIS SELLS, and it did not always. Phrazle's rungs are sentences in the
+// shell's hint bar -- "The phrase has no D, no G, and no P." -- and they still move no tile, no color
+// and no row. What they move is the PAD: every rung here is a statement about the ALPHABET, which is
+// the thing a keyboard is, so the ruled-out letters are struck and the named ones are filled. A bar
+// that crossed off three letters while the pad went on offering all three was telling a player
+// something and then hiding it from the one place they were looking.
+//
+// A BOARD READS HINT STATE EXACTLY WHEN A HINT CHANGES WHAT IT DRAWS. The rule is unchanged; what
+// changed is that all three adapter benches now sit on the same side of it -- cryptogram locks a
+// revealed letter into its grid, Themed Anagrams pins letters into place, and this one marks keys. So
+// it is still a rule rather than an exception list, and the list is now empty.
+//
+// NOTHING WAS HANDED TO THE BOARD TO MAKE THAT POSSIBLE, which is the part worth checking before
+// reading it as a widened contract. The rungs are already in the board's own progress string, put
+// there by `merge` below; the board decodes them off the live prop exactly as the other two do, and
+// its six props are what they were.
 
 // The ladder's ceiling, and a bound on a loop that feeds itself. `choosePhrazleRung` already refuses
 // a fourth rung -- `RUNG_COUNT` is 3 in the rule -- so this is belt and braces on a `while` whose

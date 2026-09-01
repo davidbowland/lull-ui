@@ -252,15 +252,17 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     glyph:
       'M0.7 1.7h6v5.4h-6zM8 1.7h6v5.4h-6zM15.3 1.7h6v5.4h-6zM0.7 8.9h6v5.4h-6zM8 8.9h6v5.4h-6z' +
       'M15.3 8.9h6v5.4h-6zM3.7 4.4h.01M11 4.4h.01',
-    // THE ONLY ONE OF THE THREE THAT LEAVES ITS BOARD ALONE. Phrazle's rungs are about the letter
-    // economy of the phrase -- which
-    // common letters are absent, which uncommon ones are present, which letters make up one word --
-    // and every one of those depends on what the player's guesses have already established. A pack
-    // ladder cannot know that, which is why this type stopped shipping one.
+    // Phrazle's rungs are about the letter economy of the phrase -- which common letters are absent,
+    // which uncommon ones are present, which letters make up one word -- and every one of those
+    // depends on what the player's guesses have already established. A pack ladder cannot know that,
+    // which is why this type stopped shipping one.
     //
-    // It changes nothing about the BOARD, and that is the seam working rather than a coincidence:
-    // these rungs are sentences in the shell's docked bar and they move no tile, so the board never
-    // reads hint state and is handed no way to.
+    // IT MOVES NO TILE AND IT DOES MOVE THE BOARD, and this entry used to claim the second half was
+    // free. The rungs are sentences in the shell's docked bar, and they are sentences about the
+    // ALPHABET -- so the pad strikes the letters one rules out and fills the letters one names, which
+    // is the only place on this bench where the alphabet is drawn. The seam is unchanged: the rung
+    // goes into the board's own progress string through `merge`, and the board decodes it off the
+    // live prop with no new prop and no name for what sold it.
     hints: phrazleHints,
     // A row divided into three cells above one undivided box. The divided row is a VERDICT --
     // marked cell by cell, which is the only thing that ever happens to a committed row. The

@@ -243,11 +243,18 @@ const withinAnswer = (tail: PhrazleHintTail, wordCount: number): PhrazleHintTail
  * drop the ladder whole -- is argued at `hintTail` above, and it comes down to the guesses being a
  * history whose prefix is still true while a ladder is three records whose order IS the ladder.
  *
- * THE BOARD NEVER READS THE LADDER AND IS NOT MEANT TO. Phrazle's rungs are sentences in the shell's
- * hint bar -- "The phrase has no D, no G, and no P." -- and they change no tile, no color and no row,
- * so the board draws the same grid whether three rungs are bought or none. It reads `guesses` off
- * this and nothing else, and it is handed no way to reach the rest. A board reads hint state exactly
- * when a hint changes what it draws, which for this bench is never.
+ * THE BOARD READS BOTH HALVES, AND ON DIFFERENT SCHEDULES. `guesses` is its own portion, read once in
+ * a mount-time initializer because the board is what writes it -- re-reading would fight the player's
+ * keystrokes. `hints` belongs to the adapter, so the board reads it off the LIVE progress prop on
+ * every render, and a rung bought mid-composition reaches the pad without a remount.
+ *
+ * THE GRID IS THE SAME EITHER WAY. No rung moves a tile, a color or a row; what a bought rung moves
+ * is the KEYBOARD -- every rung this game sells is a statement about the alphabet, so the letters it
+ * rules out are struck and the letters it names are filled.
+ *
+ * WHICH IS WHY THAT READ COMES THROUGH HERE AND NOT THROUGH `decodeHints`. Only this function applies
+ * `withinAnswer`, so a stored word rung naming a word the phrase does not have is refused before the
+ * board can index past the end of its own answer.
  *
  * STEP 5 CUTS FROM THE FRONT AND STEP 4 CUTS FROM THE BACK, and running them in this order is what
  * makes the pair safe. Step 4 stops at the first guess that no longer fits, so everything it keeps
