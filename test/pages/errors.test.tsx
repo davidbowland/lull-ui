@@ -4,6 +4,15 @@ import React from 'react'
 import NotFound from '@pages/404'
 import ServerError from '@pages/500'
 
+// Same reasoning as `app.test.tsx`: next/head defers its children to a head manager that only
+// exists inside a running Next app, so under jsdom the real component renders nothing and there
+// would be nothing to assert. Rendered inline instead, which puts the robots tag where a query
+// can reach it -- delete the meta and the tests below fail.
+jest.mock('next/head', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
+
 describe('error pages', () => {
   describe('404', () => {
     it('says the page does not exist', () => {
@@ -27,6 +36,14 @@ describe('error pages', () => {
       expect(screen.getByRole('main')).toBeInTheDocument()
       expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Not found')
     })
+
+    // An error message is not a search result, and this same build serves lull.bowland.link, so a
+    // crawlable copy of it exists on two hosts. `follow` keeps the way out crawlable.
+    it('keeps the page out of an index', () => {
+      render(<NotFound />)
+
+      expect(document.querySelector('meta[name="robots"]')?.getAttribute('content')).toEqual('noindex, follow')
+    })
   })
 
   describe('500', () => {
@@ -42,6 +59,12 @@ describe('error pages', () => {
       render(<ServerError />)
 
       expect(screen.getByRole('link', { name: 'Back to today’s puzzles' })).toHaveAttribute('href', '/')
+    })
+
+    it('keeps the page out of an index', () => {
+      render(<ServerError />)
+
+      expect(document.querySelector('meta[name="robots"]')?.getAttribute('content')).toEqual('noindex, follow')
     })
 
     it('says where you are, inside the page landmark', () => {

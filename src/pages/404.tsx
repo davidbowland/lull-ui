@@ -16,6 +16,13 @@ const NotFound = (): React.ReactNode => (
     <Head>
       <title>Lull | Not found</title>
       <meta content="That page doesn’t exist. Head back to today’s puzzles." name="description" />
+      {/*
+        An error message is not a search result. `next-sitemap.config.js` already excludes this
+        route on the assumption this tag is here -- but a sitemap only withdraws an invitation,
+        and the tag is what actually keeps the page out of an index. `follow`, not `nofollow`:
+        the way out of here is worth crawling.
+      */}
+      <meta content="noindex, follow" name="robots" />
     </Head>
     <main className="mx-auto flex min-h-dvh w-full max-w-[720px] flex-col">
       <Spine trail={[{ href: '/', label: 'Lull' }, { label: 'Not found' }]} />

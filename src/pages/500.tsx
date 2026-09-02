@@ -11,6 +11,8 @@ const ServerError = (): React.ReactNode => (
     <Head>
       <title>Lull | Something went wrong</title>
       <meta content="Something went wrong at our end. Try again in a moment." name="description" />
+      {/* See the note in `404.tsx`. */}
+      <meta content="noindex, follow" name="robots" />
     </Head>
     <main className="mx-auto flex min-h-dvh w-full max-w-[720px] flex-col">
       <Spine trail={[{ href: '/', label: 'Lull' }, { label: 'Something went wrong' }]} />
