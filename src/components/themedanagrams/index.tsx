@@ -1,5 +1,4 @@
 import { pinnedDisplay, pinnedIndices } from '@rules/hint-themed-anagrams'
-import { normalizeAnswer } from '@rules/normalize-answer'
 import React, { useEffect, useId, useRef, useState } from 'react'
 
 import { isRight } from './answers'
@@ -123,9 +122,12 @@ const REFRESH_GLYPH = 'M18.52 15.04A8 8 0 1 1 16.66 6.64L19.49 9.47M19.49 4.47v5
 // watching, which would cost this bench every announcement it makes.
 const INSTRUCTION = 'The letters in each row spell one word, and all four fit the theme.'
 
-// 128px is sized for "Play again", which is what the slot has to hold rather than "Check": the two
-// share one position and a slot sized to the shorter would move the control's edge at the exact
-// instant the player wins. THE MEASUREMENT IS IN missingvowels/index.tsx and is not repeated here --
+// 128px is sized for "Play again", which is now the ONLY thing this slot ever holds. It used to
+// share the position with "Check" and the number was the longer of the two, so that the control's
+// edge did not move at the exact instant the player won; Check is gone -- the rows lock themselves
+// on the keystroke that makes them right, so there was never anything to press it for -- and what
+// the width is for now is simply that the one control on this floor is not a 70px button floating at
+// the end of an empty row. THE MEASUREMENT IS IN missingvowels/index.tsx and is not repeated here --
 // one number derived in two places disagrees the first time either is re-measured. This is a
 // cross-reference, which fails loudly because a reader follows it, rather than a copy, which fails
 // silently.
@@ -134,7 +136,10 @@ const CONTROL_SLOT = 'min-w-[128px] shrink-0 justify-center'
 // Appended to a repeated message so a live region has something to announce. `say` with an
 // identical string is an Object.is bail-out: the DOM text never changes, and role="status" is keyed
 // to a change rather than to a write. It matters here for exactly one case and that case is real --
-// a player who presses Check twice out of doubt. Written as the escape rather than as
+// a player who presses Shuffle letters twice, which says `Letters shuffled.` both times and is the
+// only sentence on this bench that can follow itself. It used to be a second press of Check, which
+// is gone: the rows lock themselves on the keystroke that makes them right, so there was never
+// anything to press it for. Written as the escape rather than as
 // the character: a literal zero-width space is invisible in source, so an editor, a formatter or a
 // careless selection can delete it and leave a constant that is the empty string and a mechanism
 // that does nothing. Alternated on the low bit of a counter rather than accumulated, so the mark
@@ -381,6 +386,17 @@ export const ThemedAnagramsBoard = ({
   // thing twice is a different job from saying it once. The counter is what the DOM sees change.
   const say = (text: string): void => setMessage((previous) => ({ nonce: previous.nonce + 1, text }))
 
+  // WHERE FOCUS GOES WHEN `Play again` REMOVES ITSELF. The press comes from the control, so the
+  // control is the focused element at the moment it stops being rendered, and focus falls to <body>
+  // -- from which the next Tab restarts at the top of the page. There used to be nothing to do here:
+  // `Check` stood at the same position under the same element type, so React kept the node and focus
+  // simply stayed on it. Check is gone, so the board has to say where the caret lands, and the first
+  // box is the answer a player who just asked to start over is walking to anyway.
+  //
+  // The FIRST box only. A ref per row would be four refs to serve one press, and there is no second
+  // place on this bench that moves focus.
+  const firstBox = useRef<HTMLInputElement>(null)
+
   // ONE useId FOR THE WHOLE BOARD, composed with the row index. React guarantees uniqueness per
   // component instance, so four rows cannot collide and neither can two boards -- which is the case
   // CLAUDE.md names as the day duplicate ids become real. puzzle.id would also work today and does
@@ -474,41 +490,17 @@ export const ThemedAnagramsBoard = ({
   // mount, and a mark in there would make it non-empty and cost the first announcement.
   const announced = message.text === '' ? '' : `${message.text}${REPEAT_MARK.repeat(message.nonce % 2)}`
 
-  // ONE CONTROL FOR THE WHOLE BOARD, and it adjudicates nothing -- the rows already lock themselves
-  // on the keystroke that makes them right. What it does is say a sentence, because a wrong word
-  // deserves one: until the first row locks, silence and "broken" look identical.
-  //
-  // THE SOLVED ARM IS REACHABLE, and it is reachable exactly one way. The floor's control is
-  // `Play again` on a solved board, but every box is readOnly rather than disabled and a readOnly
-  // input still delivers keydown -- so the player who just won and pressed their keyboard's action
-  // key lands here. Without this arm they are told `Type an answer first.`, which is the one
-  // sentence that is never true on a board holding four right answers.
-  //
-  // ONLY THE ROWS STILL IN PLAY are asked about. Three rows won and one empty is a board that owes
-  // one answer, so the question is about the row the player still owes rather than about the three
-  // they finished -- otherwise a board whose only typing is already right is answered `Not yet.`
-  //
-  // normalizeAnswer decides what "typed something" means, exactly as it decides what "right" means,
-  // so three spaces is an empty box rather than a wrong attempt.
-  const check = (): void => {
-    if (solved) {
-      say(SOLVED)
-      return
-    }
-
-    const pending = guesses.filter((_guess, index) => !rights[index])
-
-    say(
-      pending.every((guess) => normalizeAnswer(guess) === '')
-        ? // The sibling bench's `Type your answer first.` with the possessive dropped, because with
-          // four boxes "your answer" names none of them.
-          'Type an answer first.'
-        : // `Not yet.`, never `Not it.`: three rows can be right while one is not, and "Not it"
-          // passes judgment on the whole board. The second half points at the real trick -- the
-          // letters are all there and every one of them is used.
-          'Not yet. Each answer uses every letter in its row, once each.',
-    )
-  }
+  // THERE IS NO VERDICT CONTROL ON THIS BENCH, and its absence is the design rather than an
+  // omission. A `Check` button stood here and adjudicated NOTHING -- the rows already lock
+  // themselves on the keystroke that makes them right, and `change` says the sentence -- so every
+  // press it could receive was a press on a board that had already answered. What it added was a
+  // second thing to do: a player who had typed a right answer, watched the chip appear and the tally
+  // move, was still shown a button asking to be pressed, and pressing it said `Not yet.` about the
+  // OTHER rows. The two sentences it owned are gone with it (`Type an answer first.` and `Not yet.
+  // Each answer uses every letter in its row, once each.`). The rule the second of them pointed at
+  // is the standing INSTRUCTION in the floor -- the letters in each row spell one word -- which is
+  // on screen the whole time rather than only after a press, and the first was only ever true of a
+  // player who had pressed a button without typing.
 
   // The whole reset as far as the BOARD is concerned, because everything on it is derived: `rights`,
   // `right` and `solved` all come out of `guesses`, so four empty strings drop the four chips, put
@@ -555,6 +547,11 @@ export const ThemedAnagramsBoard = ({
     setGuesses(cleared)
     onProgress(encode(cleared))
     setMessage((previous) => ({ nonce: previous.nonce, text: '' }))
+    // Before the re-render rather than after, and it works because the node is the same one either
+    // way: the box is on screen now (readOnly, which is focusable) and is still on screen after,
+    // editable. Optional-called for the same reason `onReset` is -- a board whose rows were refused
+    // has no box to focus, and this press is reachable on one.
+    firstBox.current?.focus()
     onReset?.()
   }
 
@@ -727,11 +724,13 @@ export const ThemedAnagramsBoard = ({
                   data-1p-ignore
                   data-form-type="other"
                   data-lpignore="true"
-                  // Where the shell's keyboard mitigations do not land, the OS keyboard covers the
-                  // floor and its own action key is the only control the player can reach. The
-                  // handler below is what makes that key run Check; this is what names it, so the
-                  // key reads "Go" rather than "Return".
-                  enterKeyHint="go"
+                  // NO enterKeyHint AND NO onKeyDown, and the two came out together because they
+                  // were one thing. The hint named the OS keyboard's action key "Go" and the handler
+                  // made that key run Check; with Check gone there is nothing for the key to run, and
+                  // a key labeled "Go" that goes nowhere is worse than the plain Return the browser
+                  // gives an input that is in no form. There is nothing for it to do: the row locks
+                  // itself on the keystroke that makes it right, so submitting is not a step in this
+                  // game.
                   id={boxId(index)}
                   // The cap decode already enforces, said at the writer as well: a paste longer than
                   // this would otherwise be stored and then refused on the next load, and the
@@ -740,16 +739,14 @@ export const ThemedAnagramsBoard = ({
                   // NO `name`. A named input is half of what a form autofill heuristic looks for, and
                   // nothing here submits anything.
                   onChange={(event) => change(index, event.target.value)}
-                  // The composition guard is not defensive noise: an IME commit and an Android
-                  // glide-typing commit both deliver Enter at a word boundary, so a handler reading
-                  // only `event.key` checks the board in the middle of a word the player is still
-                  // writing. The sibling bench has this deferred as its own commit; new code should
-                  // not ship a defect that is already written down.
-                  onKeyDown={(event) => !event.nativeEvent.isComposing && event.key === 'Enter' && check()}
                   // readOnly, NOT disabled. A solved row takes no more keystrokes, but a disabled
                   // input is dropped from the tab order and skipped by a screen reader's forms mode,
                   // so the word the player just won with would become unreachable and unreadable.
                   readOnly={rights[index]}
+                  // On the first row and undefined on the other three, never a ref that every row
+                  // writes: React calls a cleanup with null for each row on every render, so a
+                  // shared ref would end up holding whichever row rendered last. See `firstBox`.
+                  ref={index === 0 ? firstBox : undefined}
                   spellCheck={false}
                   type="text"
                   value={guesses[index]}
@@ -781,11 +778,10 @@ export const ThemedAnagramsBoard = ({
               that edge: the boxes these controls are about are on the board, which is the whole
               trade this bench makes. */}
           <div className="flex shrink-0 items-center justify-end gap-[var(--lull-s3)] pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
-            {/* THE SHUFFLE, and it is a `{cond && ...}` slot rather than a third arm of the ternary
-                below on purpose. JSX children are positional, so `false` occupies this slot when the
-                board is solved and the verdict control keeps the index it has always had -- which is
-                what the paragraph below is protecting, and what a control spliced into the list
-                instead of blanked in place would quietly break.
+            {/* THE SHUFFLE, and it is a `{cond && ...}` slot rather than an arm of the one below.
+                JSX children are positional, so `false` occupies this slot when the board is solved
+                and `Play again` keeps the index it has always had -- a control spliced into the list
+                instead of blanked in place would quietly move it.
 
                 OFFERED ONLY WHEN THERE IS SOMEWHERE TO GO -- see `canReshuffle`, which asks the one
                 question the other three conditions were approximations of. A solved board, a board
@@ -798,14 +794,15 @@ export const ThemedAnagramsBoard = ({
 
                 AN ICON WITH A NAME, never a bare glyph. WCAG 2.5.3 wants the name to be the words a
                 speaking player would use, and "Shuffle letters" is what they would say; the path is
-                aria-hidden decoration, exactly like the Right chip's tick on the board. Icon-only is
-                what keeps the second control from reading as a second offer of equal weight beside
-                Check -- the argument the button primitive's `quiet` variant makes, made with size
-                here because the color it makes it with is not available on this band.
+                aria-hidden decoration, exactly like the Right chip's tick on the board. It stays
+                icon-only now that it is the only control an unsolved board offers: the argument used
+                to be that a worded button beside `Check` reads as a second offer of equal weight,
+                and what holds it up now is that this press changes how the letters are ARRANGED and
+                nothing else -- a full-width word for it would make a view control look like the way
+                you answer.
 
-                keepsFocusOnPress for the reason Check has it: the player presses this while typing,
-                and a press that collapsed the software keyboard would take the four rows they are
-                reading with it. */}
+                keepsFocusOnPress: the player presses this while typing, and a press that collapsed
+                the software keyboard would take the four rows they are reading with it. */}
             {canReshuffle && (
               <Button aria-label="Shuffle letters" className="shrink-0" keepsFocusOnPress onClick={reshuffle}>
                 <svg
@@ -828,28 +825,21 @@ export const ThemedAnagramsBoard = ({
                 the selected cipher square, one primary action -- and this screen already spends it
                 on the hint bar's spent rungs, which paint --lull-accent directly above this floor.
 
-                keepsFocusOnPress: the composer contract exists so a press does not collapse the
-                software keyboard over the field being typed in, and that is this bench's press even
-                though the field is in the other band.
-
-                TWO BUTTONS RATHER THAN ONE THAT CHANGES ITS MIND, because they do not do the same
-                thing to the board -- but they are ONE ternary at ONE position, not two sibling
-                conditionals. React keeps a stable element type at a stable position, so the node
-                survives the swap and focus stays on the control the player just pressed; rebuilt
-                instead, focus would drop to <body> and the next Tab would restart at the top of the
-                page. The four BOXES are not swapped with them either: they hold the winning words,
-                and one of them is the focused element at the moment of an in-session win.
+                THE ONLY CONTROL AN UNSOLVED BOARD HAS IS THE SHUFFLE, and this one appears beside it
+                only at the win. It used to be the second arm of a ternary whose first arm was
+                `Check`, and that shape was doing real work: React keeps a stable element type at a
+                stable position, so the node survived the swap and focus stayed on the control the
+                player had just pressed. There is no swap left to survive -- nothing stands here
+                before the win, so nothing here can be holding focus when it arrives. The focused
+                element at the moment of an in-session win is one of the four BOXES, which are not
+                conditional and are not moved.
 
                 Play again takes no keepsFocusOnPress. The composer contract exists to hold a
                 software keyboard open over a field being typed in; a solved board's four boxes are
                 readOnly and there is nothing left to type. */}
-            {solved ? (
+            {solved && (
               <Button className={CONTROL_SLOT} onClick={playAgain}>
                 Play again
-              </Button>
-            ) : (
-              <Button className={CONTROL_SLOT} keepsFocusOnPress onClick={check}>
-                Check
               </Button>
             )}
           </div>

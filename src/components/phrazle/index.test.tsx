@@ -1686,7 +1686,7 @@ describe('PhrazleBoard', () => {
     })
 
     // The dense case at the board level. The assertable half of "no horizontal scroll at any width"
-    // is tileSize flooring at MIN_TILE and lives in layout.test.ts; what is assertable HERE is that
+    // is tileSize sizing a line to the longest WORD and lives in layout.test.ts; what is assertable HERE is that
     // the row is three separate word groups rather than one run of 21 tiles -- words never break,
     // because word shape is a solving cue and a broken word reads as two words, so the row wraps
     // BETWEEN words and the grid gets taller and scrolls.

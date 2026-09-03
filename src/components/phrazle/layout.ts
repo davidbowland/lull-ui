@@ -45,35 +45,52 @@ export const MAX_TILE = 40
 export const DEFAULT_WIDTH = 358
 
 /**
- * One tile size for the whole grid, large enough that the phrase sits on one line.
+ * One tile size for the whole grid, large enough that the LONGEST WORD sits on one line.
+ *
+ * THE LONGEST WORD, NOT THE PHRASE, and that is the whole of what this function decides. Sizing the
+ * phrase to one line made the tile a function of how much the pack happened to ship: `TOE HOLD` drew
+ * at the 40px ceiling and `PLAIN SPOKEN TRUTH` drew at 19px, on the same device, in the same
+ * session, minutes apart. So the size of a tile carried no meaning -- it measured the phrase rather
+ * than the board -- and the dense phrases, the ones whose marks are hardest to read, were the ones
+ * drawn smallest. The cipher bench has always sized to its longest word for exactly this reason, and
+ * a player moving between the two benches met two different sizes of the same square.
+ *
+ * WHAT PAYS FOR IT IS THE WRAP, which this board already draws and already has a gap for. A guess
+ * whose words do not fit the width breaks BETWEEN words -- words never break, because word shape is
+ * a solving cue and a broken word reads as two words -- at WRAP_GAP, with GUESS_GAP and a hairline
+ * still separating one guess from the next. So a long phrase costs height, which .lull-board is
+ * built to spend (index.css gives it `flex: 1 1 0%` and `overflow-y: auto`), instead of costing
+ * legibility, which nothing gives back. WORD_GAP is therefore not in the arithmetic below: it is
+ * spent between words on a line the browser decides, and a size computed against gaps that may not
+ * be drawn would shrink the tile to pay for them anyway.
  *
  * WIDTH ONLY, and the height that used to sit beside it is gone rather than defaulted. This function
  * took the band's height and a row count and returned `min(widthFit, heightFit)`, which kept a fixed
  * six-row grid whole on screen -- the right answer for a board that could never grow a seventh row.
  * There is no guess limit now: the grid adds a row whenever the player needs one, so a height budget
  * divided by the row count would shrink every tile on every guess and hit the 18px floor at around
- * guess fifteen, on a board with no last guess. Tiles hold their size and .lull-board scrolls, which
- * it is already built to do -- index.css gives it `flex: 1 1 0%` and `overflow-y: auto`.
+ * guess fifteen, on a board with no last guess.
  *
  * Pure and DOM-free on purpose: the measurement is the grid box's CONTENT width, handed in by the
  * board, never derived from the viewport. A viewport-derived size is wrong inside any container that
  * is not the full width, and this one sits inside two levels of horizontal padding.
  *
- * When the width cannot hold the phrase at the floor, the row's word groups wrap BETWEEN words --
- * words never break, because word shape is a solving cue and a broken word reads as two words -- and
- * the grid gets taller and scrolls. That is deterministic and it degrades rather than clipping.
+ * THE FLOOR IS NOW ALL BUT UNREACHABLE from the corpus, and it stays anyway. The densest phrase the
+ * corpus can hold is three seven-letter words, which needs 7 tiles on a line rather than 21 -- 39px
+ * at a 320 viewport. It takes a fifteen-letter word to reach 18 there, and a word that long is a
+ * malformed pack rather than a puzzle. A guard that only fires on bad data is still a guard.
  */
 export const tileSize = (availableWidth: number, wordLengths: number[]): number => {
-  const letters = wordLengths.reduce((total, length) => total + length, 0)
-  const insideWords = LETTER_GAP * (letters - wordLengths.length)
-  const betweenWords = WORD_GAP * (wordLengths.length - 1)
-  const widthFit = (availableWidth - insideWords - betweenWords) / letters
+  // `reduce` rather than `Math.max(...wordLengths)`, so an empty phrase yields 0 and divides by zero
+  // -- the arm the guard below already catches -- instead of -Infinity, which makes the numerator
+  // Infinity and the quotient a NaN that says nothing about which input was wrong.
+  const longest = wordLengths.reduce((most, length) => Math.max(most, length), 0)
+  const widthFit = (availableWidth - LETTER_GAP * (longest - 1)) / longest
 
-  // STILL GUARDED, and the guard did not get simpler by losing an operand -- it got NARROWER, and
-  // both arms it still has to catch are live. A phrase with no words divides by zero and yields
-  // Infinity, which Math.min(40, Infinity) returns as a perfectly ordinary 40 for a grid with
-  // nothing in it. A NaN measurement is not rescued by the clamp either -- Math.max(18, NaN) is NaN
-  // and so is Math.min(40, NaN) -- and the board writes this number straight into a px width.
+  // STILL GUARDED, and both arms it has to catch are live. A phrase with no words divides by zero
+  // and yields Infinity, which Math.min(40, Infinity) returns as a perfectly ordinary 40 for a grid
+  // with nothing in it. A NaN measurement is not rescued by the clamp either -- Math.max(18, NaN) is
+  // NaN and so is Math.min(40, NaN) -- and the board writes this number straight into a px width.
   if (!Number.isFinite(widthFit)) return MIN_TILE
 
   return Math.min(MAX_TILE, Math.max(MIN_TILE, Math.floor(widthFit)))

@@ -53,18 +53,22 @@ describe('the sizes themselves', () => {
 })
 
 describe('tileSize', () => {
-  // TOE HOLD at 390: seven tiles, five interior gaps and one word gap leave 336px over seven, which
-  // is 48 -- so the ceiling is what answers. Asserted rather than assumed, because "the short phrase
+  // TOE HOLD at 390: the longest word is four tiles with three interior gaps, which leaves 88px a
+  // tile -- so the ceiling is what answers. Asserted rather than assumed, because "the short phrase
   // gets the biggest tile" is the claim the ceiling exists to keep true.
   it('gives the design phrase the whole ceiling at a 390 viewport', () => {
     expect(tileSize(AT_390, [3, 4])).toEqual(MAX_TILE)
   })
 
-  // THE WIDTH FIT BINDING, which is the case the whole function is for: sixteen letters in three
-  // words leave 308px over sixteen, so the phrase sits on one line at 19px rather than at the
-  // ceiling. A 390 board is not always a 40px board.
-  it('sizes a long phrase to one line rather than to the ceiling', () => {
-    expect(tileSize(AT_390, [5, 6, 5])).toEqual(19)
+  // THE REGRESSION THIS FILE EXISTS TO REFUSE, and it is stated as an equality rather than as a
+  // number so that it survives every future move of the ceiling, the floor and the gaps. A phrase
+  // used to be sized to fit ON ONE LINE, so `PLAIN SPOKEN TRUTH` drew at 19px while `TOE HOLD` drew
+  // at 40 -- the tile measured the pack rather than the board, and the phrases whose marks are
+  // hardest to read were the ones drawn smallest. Three seven-letter words and one seven-letter word
+  // now size identically, because seven tiles is what a line has to hold either way; the extra words
+  // wrap.
+  it('sizes a phrase to its longest word rather than to the whole phrase', () => {
+    expect(tileSize(AT_320, [7, 7, 7])).toEqual(tileSize(AT_320, [7]))
   })
 
   // THE HEIGHT IS GONE, AND THESE THREE NUMBERS ARE WHAT SAYS SO. The band used to divide its
@@ -79,10 +83,14 @@ describe('tileSize', () => {
   // arithmetic that replaced it. All three sit on ONE width and land on three different answers --
   // the ceiling, a width-bound middle, and the floor -- so a height divisor smuggled back in moves
   // at least one of them.
+  //
+  // THE LAST TWO ARE MALFORMED PACKS RATHER THAN PUZZLES, and that is the honest reading of what
+  // sizing to the longest word bought: a twelve-letter word is longer than anything the corpus
+  // ships, and it still draws at 28. Every real phrase now sits at the ceiling on this width.
   it.each<[string, number[], number]>([
-    ['the ceiling for the design phrase', [3, 4], MAX_TILE],
-    ['a width-bound size for a long phrase', [5, 6, 5], 19],
-    ['the floor for the densest phrase the corpus can hold', [7, 7, 7], MIN_TILE],
+    ['the ceiling for the densest phrase the corpus can hold', [7, 7, 7], MAX_TILE],
+    ['a width-bound size for a word longer than the corpus ships', [12], 28],
+    ['the floor for a word no pack should contain', [20], MIN_TILE],
   ])('sizes from the width alone, giving %s', (_description, wordLengths, expected) => {
     expect(tileSize(AT_390, wordLengths)).toEqual(expected)
   })
@@ -91,12 +99,13 @@ describe('tileSize', () => {
     expect(tileSize(1000, [2])).toEqual(MAX_TILE)
   })
 
-  // §8.11's dense case, and the ONE assertable half of "no horizontal scroll at any width": three
-  // seven-letter words is 21 tiles, which needs ~470px and has 288. The floor is what decides
-  // whether the grid CAN fit, and a floor that silently moved is the realistic way that promise
-  // breaks. Whether the browser then draws it inside the box is layout, and jsdom has none.
-  it('floors twenty-one tiles at a 320 viewport', () => {
-    expect(tileSize(AT_320, [7, 7, 7])).toEqual(MIN_TILE)
+  // §8.11's dense case at the narrowest supported width, and the ONE assertable half of "no
+  // horizontal scroll at any width": a line has to hold seven tiles and six interior gaps in 288px,
+  // which is 39 and comfortably above the floor. The other two words wrap onto their own lines. It
+  // is pinned as a literal because it is the SMALLEST tile the corpus can produce on the smallest
+  // device -- the number the whole change is judged on -- and 18 is what it used to be.
+  it('holds a readable tile for the densest phrase at a 320 viewport', () => {
+    expect(tileSize(AT_320, [7, 7, 7])).toEqual(39)
   })
 
   // A box that has not been laid out yet reports zero, and honoring that would size every tile to

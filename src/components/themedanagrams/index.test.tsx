@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 
@@ -37,8 +37,6 @@ describe('ThemedAnagramsBoard', () => {
   const SOLVED_PROGRESS = 'KETTLE\nSAUCEPAN\nSKILLET\nSPATULA'
 
   const INSTRUCTION = 'The letters in each row spell one word, and all four fit the theme.'
-  const TYPE_FIRST = 'Type an answer first.'
-  const NOT_YET = 'Not yet. Each answer uses every letter in its row, once each.'
   // The board's own REPEAT_MARK, spelled the same way and for the same reason: written as the escape
   // rather than as the character, because a literal zero-width space in a test file is invisible and
   // an editor or a careless selection deletes it without leaving a diff a reader can see.
@@ -295,10 +293,12 @@ describe('ThemedAnagramsBoard', () => {
       expect(box).toHaveAttribute('data-1p-ignore')
       expect(box).toHaveAttribute('data-lpignore', 'true')
       expect(box).toHaveAttribute('data-form-type', 'other')
-      // Not a manager opt-out, but the same kind of promise and equally undefended without this
-      // line: under an open keyboard on an engine that reads no interactive-widget key, the action
-      // key is the only control the player can reach, and this is what makes it read "Go".
-      expect(box).toHaveAttribute('enterkeyhint', 'go')
+      // Not a manager opt-out, but the same kind of promise, and it is asserted as an ABSENCE for
+      // once. The box used to carry `enterKeyHint="go"` so that the OS keyboard's action key read
+      // "Go" and ran Check. Check is gone -- a row locks itself on the keystroke that makes it
+      // right -- so a key labeled "Go" would now go nowhere, which is worse than the plain Return
+      // the browser gives an input that is in no form.
+      expect(box).not.toHaveAttribute('enterkeyhint')
       expect(box).not.toHaveAttribute('name')
     })
 
@@ -667,21 +667,20 @@ describe('ThemedAnagramsBoard', () => {
     // is a value the type admits -- and a pack is JSON off the network, where the type system
     // describes what lull-api promises rather than what arrives.
     //
-    // ONE press each, because the assertion is about what typing CANNOT achieve here.
+    // THE BOARD IS THE WHOLE ASSERTION now that there is no verdict control to press. This used to
+    // click Check first, on the reasoning that a press is what a player would do; the press proved
+    // nothing the mount does not -- a refused pack draws no box, offers no win, and reports none.
     it.each<[string, unknown[]]>([
       ['three', themedAnagramsPuzzle.data.entries.slice(0, 3)],
       ['five', [...themedAnagramsPuzzle.data.entries, { answer: 'LADLE', scramble: 'ADLEL' }]],
-    ])('refuses a pack of %s entries rather than drawing a board nobody can finish', async (_count, entries) => {
-      const { user } = setup({
+    ])('refuses a pack of %s entries rather than drawing a board nobody can finish', (_count, entries) => {
+      setup({
         ...themedAnagramsPuzzle,
         data: { ...themedAnagramsPuzzle.data, entries } as unknown as ThemedAnagramsData,
       })
 
       expect(screen.getByText('Kitchen tools')).toBeInTheDocument()
       expect(screen.queryAllByRole('textbox')).toHaveLength(0)
-
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
       expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull()
       expect(screen.queryByText(SOLVED)).toBeNull()
       expect(onSolved).not.toHaveBeenCalled()
@@ -690,71 +689,56 @@ describe('ThemedAnagramsBoard', () => {
     // A ROWLESS PACK IS NOT A WIN, and the assertion that matters is the control rather than the
     // sentence. `right === entries.length` alone is `0 === 0` here, which used to stand `Solved. You
     // got all four.` over a board with no rows -- wrong, and only wrong. Once the floor's control
-    // became a ternary the same expression offered `Play again`, and one press reaches the shell's
+    // became conditional the same expression offered `Play again`, and one press reaches the shell's
     // removeHints and deletes the rungs the player spent: the hints come off `puzzle.hints`, not off
     // `entries`, so a malformed `entries` beside an intact ladder is exactly the shape that loses
     // something real.
     //
-    // NOT `onSolved`, which is never called here either way -- the mount-seeded ref sees no
-    // transition, so asserting it would pin the ref rather than this guard.
+    // NO CONTROL AT ALL is the whole floor here, and that is asserted as a count rather than as one
+    // absence. The shuffle asks `canReshuffle`, which no row can answer, and `Play again` asks
+    // `solved`, which the `rows.length > 0` guard is what keeps false. A press that could reach the
+    // shell is exactly what this pack must not be able to make.
     it('offers a rowless pack no win to play again from', () => {
       setup({
         ...themedAnagramsPuzzle,
         data: { ...themedAnagramsPuzzle.data, entries: [] } as unknown as ThemedAnagramsData,
       })
 
-      expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull()
+      expect(screen.queryAllByRole('button')).toHaveLength(0)
       expect(screen.queryByText(SOLVED)).toBeNull()
     })
   })
 
   describe('the floor', () => {
-    // ONE VERDICT CONTROL for the whole board, beside one shuffle. Four Checks would each answer a
-    // question the row already answers by locking, and they would add four names to a tab order that
-    // already carries four boxes. The count is asserted rather than the presence, because "there is
-    // a Check" is also true of a board that drew four of them.
+    // ONE CONTROL ON AN UNSOLVED BOARD, and it is the shuffle. There is no verdict control: a
+    // `Check` used to stand here and it adjudicated nothing, because a row locks itself on the
+    // keystroke that makes it right and `change` says the sentence. The COUNT is what says so --
+    // "there is a shuffle" is equally true of a floor that also drew a button asking to be pressed.
     it('puts the controls in the instrument band', () => {
       const { container } = setup()
 
       expect(container.querySelector('.lull-instrument')).toContainElement(
-        screen.getByRole('button', { name: 'Check' }),
-      )
-      expect(container.querySelector('.lull-instrument')).toContainElement(
         screen.getByRole('button', { name: 'Shuffle letters' }),
       )
-      expect(screen.getAllByRole('button')).toHaveLength(2)
+      expect(screen.getAllByRole('button')).toHaveLength(1)
     })
 
     // TABBED INTO, never out of, which is the only walk that can fail for the reason this name
     // gives: a control dropped from the tab order is simply skipped, so a walk that merely passes
-    // over it lands somewhere plausible either way. Arriving at each control is what a missing tab
+    // over it lands somewhere plausible either way. Arriving at the control is what a missing tab
     // stop cannot do.
     //
-    // The order is the reading order of the band -- the shuffle sits to the left of the verdict --
-    // and both stops are walked, so a second control spliced in ahead of Check cannot hide by simply
-    // being skipped over.
-    it('runs the tab order from the last box through both controls', async () => {
+    // THE SECOND TAB IS THE HALF THAT MATTERS NOW. It used to land on Check; there is nothing left
+    // in the band, so it leaves the board entirely -- which is the assertion that a control quietly
+    // added back beside the shuffle would redden.
+    it('runs the tab order from the last box to the one control', async () => {
       const { user } = setup()
       boxNamed(4).focus()
 
       await user.tab()
       expect(screen.getByRole('button', { name: 'Shuffle letters' })).toHaveFocus()
       await user.tab()
-      expect(screen.getByRole('button', { name: 'Check' })).toHaveFocus()
-    })
-
-    // keepsFocusOnPress, and this is the assertion that defends it. The composer contract exists so
-    // a press does not collapse the software keyboard over the field being typed in; that is this
-    // bench's press exactly, even though the field is in the other band. Drop the prop and the
-    // button takes focus, the keyboard drops, and the layout moves at the instant the verdict lands.
-    it('leaves focus in the box the player was typing in', async () => {
-      const { user } = setup()
-      await user.type(boxNamed(1), 'KET')
-
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
-      expect(boxNamed(1)).toHaveFocus()
+      expect(screen.getByRole('button', { name: 'Shuffle letters' })).not.toHaveFocus()
     })
   })
 
@@ -944,12 +928,16 @@ describe('ThemedAnagramsBoard', () => {
     // hard enough to show, out of 180. The contract says the control hides itself there, because a
     // button that visibly does nothing reads as a bug in the app. This is also the shape the deployed
     // API answers with today, so the rows assertion is what says the board still draws.
+    //
+    // THE FLOOR IS THEN EMPTY, which is a real state of this bench rather than a broken one: an
+    // unsolved board whose pack shipped one arrangement a row offers no control at all, and it owes
+    // none -- the player types, the rows lock themselves, and the standing line says what the game
+    // is the whole time.
     it('is gone when no row has anywhere to go', () => {
       setup(legacyScrambleThemedAnagrams)
 
       expect(runs()).toEqual(PACK_RUNS)
-      expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Shuffle letters' })).toBeNull()
+      expect(screen.queryAllByRole('button')).toHaveLength(0)
     })
 
     // THE LENGTH VARIES PER ENTRY, so the question is asked per row rather than of the pack. One row
@@ -1012,9 +1000,9 @@ describe('ThemedAnagramsBoard', () => {
     // written here is green the moment it is pasted, and the task that pastes it learns nothing
     // about its own change. That is how a passing test stops meaning anything.
     //
-    // At REST, not announced. The win reaches the region only when the player presses Check; a
-    // reopened solved board has nothing to announce, because role="status" mounted with its text
-    // already in it is a region NVDA and JAWS were never watching.
+    // At REST, not announced. The win reaches the region only on the keystroke that wins in this
+    // session; a reopened solved board has nothing to announce, because role="status" mounted with
+    // its text already in it is a region NVDA and JAWS were never watching.
     it('shows the win at rest on a restored solved board', () => {
       setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
 
@@ -1026,120 +1014,44 @@ describe('ThemedAnagramsBoard', () => {
 
     // The presence assertion first is what stops this being absence-only: without it the whole test
     // passes on a bench that never drew a standing line at all.
-    it('gives the floor up to a verdict', async () => {
+    //
+    // THE SENTENCE THAT DISPLACES IT IS A ROW'S OWN, because that is the only kind left. It used to
+    // be a press of Check answering `Type an answer first.`; the rows adjudicate themselves, so what
+    // takes the floor is the report of a row going right.
+    it('gives the floor up to a message', async () => {
       const { user } = setup()
       expect(screen.getByText(INSTRUCTION)).toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: 'Check' }))
+      await user.type(boxNamed(1), 'KETTLE')
 
-      expect(ribbon()).toHaveTextContent(TYPE_FIRST)
+      expect(ribbon()).toHaveTextContent('KETTLE is right — 3 to go.')
       expect(screen.queryByText(INSTRUCTION)).not.toBeInTheDocument()
     })
   })
 
-  // THE THREE SENTENCES A PRESS CAN PRODUCE, one test each. Every one of them reads the ribbon with
-  // toHaveTextContent rather than by value, because the transient's repeat mark rides on the end of
-  // whichever message is said an odd number of times.
-  describe('the three verdicts', () => {
-    it('asks for an answer when nothing is typed', async () => {
-      const { user } = setup()
-
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
-      expect(ribbon()).toHaveTextContent(TYPE_FIRST)
-    })
-
-    // ONLY THE ROWS STILL IN PLAY, and this is the row that says so. Reddening mutation: a check
-    // that looked at all four guesses would find KETTLE among them and answer `Not yet.` on a board
-    // where the only thing typed is already right and there is nothing left to judge.
-    it('asks for an answer when the only typing on the board is a row that is already right', async () => {
-      const { user } = setup()
-      await user.type(boxNamed(1), 'KETTLE')
-
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
-      expect(ribbon()).toHaveTextContent(TYPE_FIRST)
-    })
-
-    // normalizeAnswer decides what "typed something" means, exactly as it decides what "right"
-    // means, so three spaces is an empty box rather than an attempt. Reddening mutation: a check
-    // that asked `guess !== ''` says `Not yet.` here and passes judgment on whitespace.
-    it('asks for an answer when the only typing is spaces', async () => {
-      const { user } = setup()
-      await user.type(boxNamed(1), '   ')
-
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
-      expect(ribbon()).toHaveTextContent(TYPE_FIRST)
-    })
-
-    // `Not yet.` rather than the sibling bench's `Not it.`: three rows can be right while one is
-    // not, and "Not it" passes judgment on the whole board. The second half points at the real
-    // trick -- every letter in the row is used, once each.
-    //
-    // THE WRONG WORD GOES IN ROW 1, whose answer is KETTLE, and that is not arbitrary. SAUCEPANS in
-    // ROW 2 does not stay wrong: the board adjudicates every keystroke, so the row locks the
-    // moment the eighth letter makes it SAUCEPAN, the box turns readOnly, the trailing S is
-    // refused, and the board reaches Check holding a row that is RIGHT -- which answers `Type an
-    // answer first.` This whole block would then pin the opposite of what its names say.
-    it('says what the trick is when something typed is not right', async () => {
-      const { user } = setup()
-      await user.type(boxNamed(1), 'SAUCEPANS')
-
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
-      expect(ribbon()).toHaveTextContent(NOT_YET)
-    })
-
-    // THE THIRD VERDICT, and with the floor's control replaced by `Play again` on a solved board
-    // this is the ONLY way to reach `check` there: a readOnly input still delivers keydown. That is
-    // why it is written with Enter rather than with the button.
-    // Without the solved arm the player who just won and pressed their keyboard's action key is
-    // told `Type an answer first.` -- the one sentence that is never true on a board holding four
-    // right answers.
-    it('says the win when the player checks a board that is already solved', async () => {
-      const { user } = setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
-
-      await user.type(boxNamed(1), '{Enter}')
-
-      expect(ribbon()).toHaveTextContent(SOLVED)
-    })
-  })
-
+  // THERE IS NO VERDICT CONTROL AND NO VERDICT KEY, and this block is what says so. A `Check` button
+  // stood in the floor and the boxes ran it from the OS keyboard's action key; it adjudicated
+  // nothing -- a row locks itself on the keystroke that makes it right and `change` says the
+  // sentence -- so every press it could take was a press on a board that had already answered, and
+  // the two sentences it owned (`Type an answer first.` and `Not yet. Each answer uses every letter
+  // in its row, once each.`) went with it.
+  //
+  // NAMED FOR THE KEY RATHER THAN FOR THE BUTTON, because the key is the half that can come back by
+  // accident: a submit-shaped handler is one line, and an input in no form takes Enter silently
+  // today. The value assertion leads, so this fails loudly on a board that never took the keystrokes
+  // rather than passing on an empty region.
   describe('the keyboard’s action key', () => {
-    // Where the shell's keyboard mitigations do not land, the OS keyboard covers the floor and its
-    // own action key is the only control the player can reach. Each box already says enterKeyHint
-    // "go"; this is the half that makes the key do the job it is named for.
-    // Row 1 again, and for the reason spelled out on `says what the trick is` above: the same string
-    // in row 2 locks that row on its eighth letter and never reaches Enter as a wrong answer.
-    it('checks the board when the player presses it', async () => {
+    it('says nothing and changes nothing when the player presses it', async () => {
       const { user } = setup()
 
       await user.type(boxNamed(1), 'SAUCEPANS{Enter}')
 
-      expect(ribbon()).toHaveTextContent(NOT_YET)
-    })
-
-    // AN IME OR AN ANDROID GLIDE-TYPING COMMIT delivers Enter at a word boundary, so a handler that
-    // reads only `event.key` checks the board in the middle of a word the player is still writing.
-    // fireEvent rather than the user instance, and it is the one interaction in this file that is
-    // not driven through it: `isComposing` lives on the native event and user-event has no way to
-    // set it, so the choice is this or no test at all. The value assertion leads, so the test fails
-    // loudly on a board that never took the keystrokes rather than passing on an empty region.
-    // Row 1 again, and here the choice does a second job: an unlocked row leaves the ribbon empty,
-    // so `toBeEmptyDOMElement` reads the guard rather than a row's own sentence left standing in it.
-    it('takes a composition commit without checking the board', async () => {
-      const { user } = setup()
-      await user.type(boxNamed(1), 'SAUCEPANS')
-
-      fireEvent.keyDown(boxNamed(1), { isComposing: true, key: 'Enter' })
-
       expect(boxNamed(1)).toHaveValue('SAUCEPANS')
       expect(ribbon()).toBeEmptyDOMElement()
+      expect(screen.queryByRole('button', { name: 'Check' })).toBeNull()
     })
 
-    // A key that is not Enter says nothing at all -- otherwise every keystroke in a box would be a
-    // press of Check.
+    // The mirror of it, and the row that would redden if a handler came back reading any key at all.
     it('says nothing when the player presses any other key', async () => {
       const { user } = setup()
 
@@ -1150,10 +1062,12 @@ describe('ThemedAnagramsBoard', () => {
     })
   })
 
-  // THE REPEAT MARK, and the case it exists for is real: a player who presses Check twice out of
-  // doubt. Saying an identical string twice is an Object.is bail-out -- the DOM text never changes,
-  // and role="status" is keyed to a change rather than to a write -- so the second press would be
-  // silent, which reads as a broken key.
+  // THE REPEAT MARK, and the case it exists for is real: a player who presses Shuffle letters twice.
+  // Saying an identical string twice is an Object.is bail-out -- the DOM text never changes, and
+  // role="status" is keyed to a change rather than to a write -- so the second press would be
+  // silent, which reads as a broken key. It used to be a second press of Check, which is gone;
+  // `Letters shuffled.` is now the only sentence on this bench that can follow itself, since a row's
+  // report names the row and the win is said once.
   //
   // The mark rides the FIRST press here, not the second, and that is not a mistake: the nonce starts
   // at 0 and is incremented before it is used, so message one is odd and message two is even. What
@@ -1161,25 +1075,29 @@ describe('ThemedAnagramsBoard', () => {
   // says so. toHaveProperty rather than toHaveTextContent, because a substring match cannot see a
   // zero-width character on the end of the string it just matched.
   describe('a second press on an unchanged board', () => {
-    it('says the same verdict in a way the region will announce', async () => {
+    const SHUFFLED = 'Letters shuffled.'
+
+    it('says the same sentence in a way the region will announce', async () => {
       const { user } = setup()
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-      expect(ribbon()).toHaveProperty('textContent', `${TYPE_FIRST}${REPEAT_MARK}`)
+      await user.click(screen.getByRole('button', { name: 'Shuffle letters' }))
+      expect(ribbon()).toHaveProperty('textContent', `${SHUFFLED}${REPEAT_MARK}`)
 
-      await user.click(screen.getByRole('button', { name: 'Check' }))
+      await user.click(screen.getByRole('button', { name: 'Shuffle letters' }))
 
-      expect(ribbon()).toHaveProperty('textContent', TYPE_FIRST)
+      expect(ribbon()).toHaveProperty('textContent', SHUFFLED)
     })
   })
 
   describe('once solved', () => {
-    // The slot does not move: one position, two names, so nothing on the bench reflows at the exact
-    // moment the player is looking at it.
-    it('offers Play again in place of Check', () => {
+    // THE ONLY CONTROL THE FLOOR EVER DRAWS BESIDE THE SHUFFLE, and the win is the only state that
+    // draws it. It used to share its position with `Check`, which is why the count is asserted: on a
+    // solved board the shuffle is gone too, so `Play again` stands alone and a button quietly added
+    // back beside it reddens here.
+    it('offers Play again and nothing else', () => {
       setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
 
       expect(screen.getByRole('button', { name: 'Play again' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Check' })).not.toBeInTheDocument()
+      expect(screen.getAllByRole('button')).toHaveLength(1)
     })
 
     // NO SECOND `shows the win as a standing line` TEST HERE. `the standing line` above already owns
@@ -1278,19 +1196,22 @@ describe('ThemedAnagramsBoard', () => {
     })
 
     // THE SAME PRESS FROM AN ODD NONCE, which is the only path that reaches `announced`'s empty
-    // guard -- and no other test in this file can get there. Every win says four sentences, leaving
-    // the nonce even, so the mark is '' anyway and the guard is never consulted. A restored solved
-    // board plus one Check makes it odd.
+    // guard. A win says four sentences on its own, which leaves the nonce even and the mark '' --
+    // so the guard is never consulted on a board that was only played. THE SHUFFLE IS WHAT MAKES IT
+    // ODD: one press before the four answers is a fifth sentence, and this is the only way left to
+    // reach the state at all. It used to be a restored solved board plus one press of Check, and
+    // there is no Check to press.
     //
     // Without the guard the ribbon holds a lone zero-width space after the press: invisible, but not
     // empty -- and FloorBar draws `resting` only while the message is '', so the player lands on a
     // fresh board with no line telling them what the game is, and nothing on screen to explain why.
     it('puts the standing line back even when the repeat mark is due', async () => {
-      const { user } = setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
-      // Enter rather than the control, because a solved board's control IS `Play again` -- there is
-      // no Check to press. A won row is readOnly, and a readOnly input still receives keydown, which
-      // is what makes this path reachable at all.
-      await user.type(boxNamed(1), '{Enter}')
+      const { user } = setup()
+      await user.click(screen.getByRole('button', { name: 'Shuffle letters' }))
+      await user.type(boxNamed(1), 'KETTLE')
+      await user.type(boxNamed(2), 'SAUCEPAN')
+      await user.type(boxNamed(3), 'SKILLET')
+      await user.type(boxNamed(4), 'SPATULA')
       expect(ribbon()).toHaveProperty('textContent', `${SOLVED}${REPEAT_MARK}`)
 
       await user.click(screen.getByRole('button', { name: 'Play again' }))
@@ -1319,18 +1240,20 @@ describe('ThemedAnagramsBoard', () => {
     })
 
     // Play again is pressed WITH FOCUS ON IT -- a click focuses a button that does not refuse it --
-    // and the control it becomes is at the same position under a new name. React keeps a stable
-    // element type at a stable position, so the node survives and focus stays on it. A control
-    // rebuilt rather than renamed -- two sibling conditionals rather than one ternary -- would drop
-    // focus to <body>, from which the next Tab restarts at the top of the page, and nothing else in
-    // this file would notice: every other Play again test asserts what happened to the boxes, not to
-    // the caret.
-    it('keeps focus on the control through Play again', async () => {
+    // and the press is what takes the control off the screen. It used to be renamed rather than
+    // removed: `Check` stood in the same position, React kept the node, and focus simply stayed
+    // where it was. With nothing to inherit it, focus would fall to <body>, from which the next Tab
+    // restarts at the top of the page -- so the board hands it to the first box instead, which is
+    // where a player who just asked to start over is going anyway.
+    //
+    // NOTHING ELSE IN THIS FILE WOULD NOTICE: every other Play again test asserts what happened to
+    // the boxes, not to the caret.
+    it('moves focus to the first box on Play again', async () => {
       const { user } = setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
 
       await user.click(screen.getByRole('button', { name: 'Play again' }))
 
-      expect(screen.getByRole('button', { name: 'Check' })).toHaveFocus()
+      expect(boxNamed(1)).toHaveFocus()
     })
   })
 
@@ -1382,7 +1305,7 @@ describe('ThemedAnagramsBoard', () => {
   // nothing.
   describe('the IDREFs this board does not build', () => {
     it.each<[string, string | null, string]>([
-      ['fresh', null, 'Check'],
+      ['fresh', null, 'Shuffle letters'],
       ['solved', SOLVED_PROGRESS, 'Play again'],
     ])('builds no aria-controls on a %s board', (_description, progress, control) => {
       const { container } = setup(themedAnagramsPuzzle, progress)
@@ -1471,7 +1394,6 @@ describe('ThemedAnagramsBoard', () => {
       expect(screen.getByRole('region', { name: 'Themed Anagrams' })).toBeInTheDocument()
       expect(screen.getByText('Kitchen tools')).toBeInTheDocument()
       expect(screen.getByText('0 of 4 right')).toHaveProperty('textContent', '0 of 4 right')
-      expect(screen.getByRole('button', { name: 'Check' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull()
       // AND NO SHUFFLE, which is the `rows.length > 0` half of its guard. `!solved` alone leaves a
       // live control on a board with no rows to shuffle -- a press that says `Letters shuffled.`
@@ -1481,18 +1403,17 @@ describe('ThemedAnagramsBoard', () => {
       expect(screen.queryAllByRole('img')).toHaveLength(0)
     })
 
-    // THE BOARD IS STILL OPERABLE, which is the difference between surviving a malformed pack and
-    // going quiet on one. A player who presses Check on a board with no rows gets a sentence rather
-    // than nothing, and it is the empty-board sentence: `pending` is four empty drafts, none of
-    // which any row is adjudicating.
-    it('still answers a press on a board with no rows', async () => {
-      const { user } = setup(withEntries(undefined))
+    // THE BOARD SURVIVES THE PACK, and what that means changed with the floor. There used to be a
+    // control here to press -- `Check`, which answered `Type an answer first.` over a board with no
+    // rows -- and the promise was that the bench still spoke. There is nothing to press now, so the
+    // promise is the narrower and more honest one: the sign row, the standing line and the region
+    // are all drawn, and nothing on the bench can be operated into a state it has no rows for.
+    it('draws a speaking bench on a board with no rows', () => {
+      setup(withEntries(undefined))
 
-      await user.click(screen.getByRole('button', { name: 'Check' }))
-
-      // Substring, the way the other three verdicts are asserted: the ribbon carries the repeat
-      // mark on every other message and its parity is not what this row is about.
-      expect(ribbon()).toHaveTextContent(TYPE_FIRST)
+      expect(screen.getByText(INSTRUCTION)).toBeInTheDocument()
+      expect(ribbon()).toBeEmptyDOMElement()
+      expect(screen.queryAllByRole('button')).toHaveLength(0)
     })
   })
 
