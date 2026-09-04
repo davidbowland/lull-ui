@@ -11,12 +11,14 @@ describe('the cryptogram hint adapter', () => {
   const DATA = { answer: cryptogramPuzzle.data.answer, ciphertext: CIPHERTEXT }
 
   // WRITTEN OUT AND NOT COMPUTED, which is what makes them assertions rather than a second copy of
-  // the rule. Every cipher letter of this fixture appears three times, so the low percentile lands on
-  // the alphabetically first candidate and the walk-up finds nothing higher and takes the last -- and
-  // the row that would catch a percentile silently becoming an index is the row that spells the
-  // answers out.
+  // the rule. Every cipher letter of this fixture appears three times, so the surviving pool is ONE
+  // frequency tier: there is no second-rarest tier for rung 1 to prefer and no higher one for rung 2
+  // to climb to, and every candidate is worth exactly what every other one is. Which of them each
+  // rung names is therefore the DRAW, seeded from `cryptogramPuzzleId` -- Q out of Q, V and Z, then V
+  // out of the two left. The row that would catch the tier choice silently becoming an index, or the
+  // seed silently becoming the board, is the row that spells the answers out.
   const LOW_RUNG = 'Every Q is an E.'
-  const HIGH_RUNG = 'Every Z is a T.'
+  const HIGH_RUNG = 'Every V is an A.'
   const WORD_RUNG = 'One of the words is ATE.'
 
   // Every cipher letter mapped correctly, which is the state that used to empty the fold and take the
@@ -77,10 +79,21 @@ describe('the cryptogram hint adapter', () => {
       expect(texts(encode({ Q: 'E' }))[0]).not.toEqual(LOW_RUNG)
     })
 
-    // Nothing here draws, so the tail is stable for a given board with no seed to carry -- every
-    // choice the rule makes is a total order over the ciphertext's own letter counts.
+    // THE SEED IS WHAT MAKES THIS TRUE, and it stopped being free the day the letter rungs started
+    // drawing. This runs on every render; an unseeded generator would re-pick inside the tier each
+    // pass, so the rung a player SEES in the bar need not be the rung they BUY when they press it.
+    // The fold builds its generator fresh from the puzzle id, so two folds of one board agree.
     it('draws the same speculative rung twice running', () => {
       expect(texts('')).toEqual(texts(''))
+    })
+
+    // AND A DIFFERENT PUZZLE IS ALLOWED TO DIFFER, which is the point of drawing at all. Same board,
+    // same ciphertext, same flat tier -- only the id moves, and the ladder opens somewhere else. A
+    // fold that ignored the seed would pass the row above and fail this one.
+    it('opens somewhere else for a puzzle with a different id', () => {
+      const elsewhere = { ...PUZZLE, id: '2026-08-20:cryptogram:7c6b5a49' } as Puzzle<unknown>
+
+      expect((cryptogramHints.ladder(elsewhere, '') ?? []).map((hint) => hint.text)[0]).not.toEqual(LOW_RUNG)
     })
 
     // A SOLVED BOARD KEEPS ITS BAND. Every cipher letter is mapped correctly, so the fold has no

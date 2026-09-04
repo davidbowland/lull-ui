@@ -1,14 +1,12 @@
-// Shared rule. This file is copied byte-identical into lull-ui, so it must stay pure: no AWS SDK,
-// no Node built-ins, no imports at all. It compiles in a Lambda bundle and in a Next.js bundle.
-//
-// Nothing checks that the two copies match. Change it here, then copy this file and its tests into
-// lull-ui in the same sitting. The tests travel with the rule so the copy is proved to BEHAVE
-// rather than merely to match a diff.
+// THE CRYPTOGRAM HINT LADDER: which rung to sell next, and what that rung says. lull-ui owns this
+// file outright. It sat in src/rules/ while that directory meant "vendored from lull-api", but
+// nothing in lull-api's src/ ever imported it, so it moved here beside the board that does. There is
+// no second copy and nothing to keep in step.
 //
 // It lives here rather than shipping as data on the puzzle because it runs over the board a player
 // has built at play time, which no generator can enumerate in advance. lull-api ships no cryptogram
-// hints at all; it executes this file only in __tests__/unit/rules/hint-sweep.test.ts, which is what
-// keeps a broken rule from reaching lull-ui unnoticed.
+// hints at all; the sweep that keeps a broken rule from reaching a player is test/rungs-sweep.test.ts,
+// which travelled with it.
 //
 // TWO FUNCTIONS, AND THE SPLIT IS THE WHOLE DESIGN. `chooseCryptogramRung` reads live player state
 // and picks; `cryptogramHintFor` is pure in the puzzle and renders a frozen choice. If one function
@@ -29,8 +27,6 @@ export interface CryptogramPlayerState {
 }
 
 const RUNG_COUNT = 3
-const LOW_PERCENTILE = 0.25
-const HIGH_PERCENTILE = 0.75
 
 // This type's own cap, and it is 99 rather than the 80 every other hint on this wire takes, because
 // 80 was a claim about a bound that does not exist. CRYPTOGRAM HAS NO PER-WORD LENGTH GATE:
@@ -106,6 +102,31 @@ const isCorrect = (state: CryptogramPlayerState, truth: Record<string, string>, 
   state.mapping[cipher] === truth[cipher]
 
 /**
+ * A deterministic generator: one seed, one sequence, forever.
+ *
+ * DUPLICATED FROM PHRAZLE'S rungs.ts RATHER THAN IMPORTED. The original reason was vendoring: this
+ * file took no imports at all so that copying it into lull-ui by hand could not produce a broken
+ * build. That reason left with the copy. What stands is the reason the duplication was ever SAFE --
+ * the two copies do NOT have to agree, because nothing compares a cryptogram's sequence with a
+ * phrazle's, so a fix to one is free to leave the other alone. Sharing it now would mean one board's
+ * directory importing another's, which is a coupling to buy for nine lines that would not make it
+ * safe for a rule two callers read the same answer out of.
+ */
+export const seededRandom = (seed: string): (() => number) => {
+  let state = 0x6d2b79f5
+  for (const character of seed) {
+    state = Math.imul(state ^ character.charCodeAt(0), 2654435761)
+    state >>>= 0
+  }
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let value = Math.imul(state ^ (state >>> 15), 1 | state)
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
  * The next rung, or null when the ladder is spent or nothing left has anything to say.
  *
  * THE LADDER TAKES THE FIRST RUNG THAT STILL HAS SOMETHING TO SAY, not the rung at position
@@ -123,10 +144,15 @@ const isCorrect = (state: CryptogramPlayerState, truth: Record<string, string>, 
  * is what the word rung's own filter buys; before it, a letter pool emptied by rungs 1 and 2 still
  * sold a third rung naming a word made entirely of what those rungs had just revealed.
  *
- * The order is unchanged, so a fresh board produces the ladder it always did: the low-frequency
- * letter, the high-frequency letter, the word. That escalates in what a rung YIELDS rather than in
- * how much it looks like it says -- a rare letter opens few squares, a common letter opens many, and
- * a word locks every distinct letter in it. The giveaway is last.
+ * The order is a fresh board's ladder: a letter from the SECOND-RAREST frequency tier, a letter from
+ * the highest tier left, then the word. That escalates in what a rung YIELDS rather than in how much
+ * it looks like it says -- a middling letter opens a square or two, a common letter opens many, and a
+ * word locks every distinct letter in it. The giveaway is last.
+ *
+ * IT DOES NOT ESCALATE STRICTLY, and that is a property of the pools rather than an oversight. A
+ * two-tier board puts rung 1 on the top tier already, so rung 2 opens the same number of squares; a
+ * board where the top tier holds ONE letter hands it to rung 1 and leaves rung 2 a rarer one. Both
+ * are the cost of rung 1 being worth having, which is the trade this ladder makes.
  *
  * THE WORD RUNG ENDS THE LADDER, and that refusal has to come FIRST rather than after the letter
  * block. `spent` is untrusted, so a record holding a word rung and nothing else is representable --
@@ -137,11 +163,22 @@ const isCorrect = (state: CryptogramPlayerState, truth: Record<string, string>, 
  * FREQUENCY IS COUNTED IN THIS PUZZLE'S OWN CIPHERTEXT, not from the shared strength table. A letter
  * appearing six times here is worth more to this player than one that is common in English and
  * appears once, and the ciphertext is on their screen to be counted.
+ *
+ * `random` IS REQUIRED, for the reason Phrazle's builder is the worked case of. It has no honest
+ * default here: a seed derived from the puzzle id is unreachable in a module that never sees a
+ * puzzle id, and defaulting to Math.random would make the SPECULATIVE TAIL re-draw on every render,
+ * so the rung a player sees in the tail need not be the rung they buy. The caller seeds it from the
+ * puzzle id; the freeze at purchase makes the choice permanent afterwards.
+ *
+ * ONLY THE LETTER RUNGS DRAW. The word rung is a total order over the board -- distinct letters
+ * locked, then squares opened, then position -- and a draw there would trade a measured choice for
+ * an arbitrary one.
  */
 export const chooseCryptogramRung = (
   data: CryptogramHintData,
   state: CryptogramPlayerState,
   spent: CryptogramSpentRung[],
+  random: () => number,
 ): CryptogramSpentRung | null => {
   // Reachable: stored progress is untrusted, so a malformed record naming one kind repeatedly would
   // otherwise buy a fourth rung below.
@@ -168,36 +205,66 @@ export const chooseCryptogramRung = (
       .sort((left, right) => counts[left] - counts[right] || (left < right ? -1 : 1))
 
     if (candidates.length > 0) {
-      // A PERCENTILE OF THE SURVIVING POOL, recomputed each time, rather than a fixed index. The
-      // pool shrinks as the player maps letters correctly and as rungs reveal them, so an index into
-      // it has to be a proportion or it drifts toward the rare end on a board that is nearly solved.
-      const percentile = letterRungs.length === 0 ? LOW_PERCENTILE : HIGH_PERCENTILE
-      const start = Math.floor((candidates.length - 1) * percentile)
-
-      // THE WALK-UP, and without it rung 2 does not escalate on a real phrase. A percentile over a
-      // count-SORTED LIST is not a percentile over frequency, and the corpus is skewed hard enough
-      // for the difference to swallow the whole ladder: on a 12-30 letter phrase the letters
-      // appearing ONCE are a majority of the distinct set, so the 25th and the 75th index both land
-      // inside that one low-count block. Measured over 20 corpus-shaped phrases, rung 1 landed on a
-      // 1-occurrence letter 20 times out of 20, rung 2 landed on the most frequent letter 0 times,
-      // and 5 of the 20 gave the two rungs IDENTICAL yield -- a hint the player paid for twice.
+      // THE POOL IS A FREQUENCY TIER, NOT A POSITION IN A LIST, and that is the repair a percentile
+      // could not make. A percentile over a count-SORTED LIST is not a percentile over frequency,
+      // and the corpus is skewed hard enough for the difference to swallow the whole ladder: on a
+      // 12-30 letter phrase the letters appearing ONCE are a MAJORITY of the distinct set, so the
+      // 25th and the 75th index both land inside that one low-count block. Measured over 20
+      // corpus-shaped phrases, rung 1 landed on a 1-occurrence letter 20 times out of 20 and rung 2
+      // landed on the most frequent letter 0 times.
       //
-      // So the percentile stays -- it is what keeps rung 2 off the extreme, which is what was asked
-      // for -- and the escalation is made real on top of it: from the percentile candidate, walk UP
-      // to the first letter that appears strictly more often than the one rung 1 revealed. When no
-      // such letter exists anywhere the pool is flat, and the highest count available is the most
-      // this rung can honestly offer.
-      const floor = letterRungs.reduce((most, rung) => Math.max(most, counts[rung.cipher] ?? 0), 0)
-      const walked = candidates.findIndex((cipher, index) => index >= start && counts[cipher] > floor)
-      return { cipher: candidates[walked === -1 ? candidates.length - 1 : walked], kind: 'letter' }
+      // Distinct counts, rarest first -- so a board of sixteen singletons and four repeats has TWO
+      // tiers rather than twenty positions, and the second one is reachable.
+      const tiers = [...new Set(candidates.map((cipher) => counts[cipher]))]
+
+      // RUNG 1 SKIPS THE RAREST TIER ON PURPOSE. A rung naming a letter that appears once opens one
+      // square out of twenty -- true, paid for, and of almost no use at the point in a cryptogram
+      // where a player is stuck. One tier up is the cheapest rung that actually moves a board.
+      //
+      // `?? tiers[0]` IS THE RULE AND NOT A CONVENIENCE: a board whose surviving letters all appear
+      // the same number of times has no second tier to reach for, and the tier it has is the only
+      // honest answer.
+      //
+      // RUNG 2 TAKES THE HIGHEST COUNT LEFT, over the pool as it stands with rung 1's letter already
+      // out. On a board with three or more tiers that is strictly more than rung 1 opened. On a
+      // two-tier board it is the SAME count, because rung 1 was already standing on the top tier --
+      // and equal is the honest answer there rather than a step down to a rarer letter for the sake
+      // of a rising number.
+      const target = letterRungs.length === 0 ? (tiers[1] ?? tiers[0]) : tiers[tiers.length - 1]
+
+      // A DRAW FROM THE TIER, NOT THE FIRST MEMBER OF IT. Every letter in the tier opens the same
+      // number of squares, so there is nothing to choose between them on merit -- and taking the
+      // alphabetically first made the hint predictable across puzzles in a way a player can learn:
+      // the ladder opened on the earliest letter of the tier every single day. `random` is seeded
+      // from the puzzle id, so the draw is fixed for a given puzzle and varies between them.
+      //
+      // THE INDEX IS CLAMPED, AND THE CLAMP IS THE TIER GUARANTEE. A generator is a parameter here,
+      // so one returning exactly 1 -- or anything above it -- is an input this file receives rather
+      // than one it is protected from, and it indexes one past the end of the pool. Falling through
+      // to `candidates[0]` there would answer with the RAREST surviving letter, quietly undoing the
+      // one thing the tier is for; clamping keeps a broken generator inside the tier it was asked
+      // about. The `??` cannot fire -- `target` was drawn from the counts of these very candidates,
+      // so `pool` holds at least one -- and it is written rather than asserted because this file may
+      // not throw.
+      const pool = candidates.filter((cipher) => counts[cipher] === target)
+      return {
+        cipher: pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))] ?? candidates[0],
+        kind: 'letter',
+      }
     }
   }
 
   // The word locking the most DISTINCT cipher letters the player DOES NOT ALREADY HAVE -- not the
   // most cells. Opening a word locks every distinct cipher letter in it and a locked letter pays out
   // across the whole board, so a six-cell word of one letter is worth less than a five-cell word of
-  // five. Ties break to the earliest word, so the choice is deterministic without naming the
-  // position in the sentence.
+  // five.
+  //
+  // A TIE ON DISTINCT LETTERS BREAKS ON SQUARES OPENED, and only then on position. Distinct letters
+  // is the right FIRST ruler and it is a coarse one: on the BETTER LATE THAN NEVER endgame the words
+  // BETTER and LATE each hand over exactly one new cipher letter, and BETTER's opens a single square
+  // where LATE's opens two. Both rungs are honest, one is worth twice the other, and taking the
+  // earlier word threw that away for nothing. Position still breaks a tie on BOTH counts, so the
+  // choice stays total and the sentence still never names where the word sits.
   //
   // "DOES NOT ALREADY HAVE" IS BOTH HALVES, and counting only the first half shipped the exact rung
   // this repo names as its worst failure. The count used to be "cipher letters not yet correctly
@@ -216,12 +283,16 @@ export const chooseCryptogramRung = (
   const words = wordsOf(data.ciphertext)
   let best = -1
   let bestUnsolved = 0
+  let bestCells = 0
   words.forEach((word, index) => {
-    const unsolved = new Set([...word].filter((cipher) => !revealed.has(cipher) && !isCorrect(state, truth, cipher)))
-      .size
-    if (unsolved > bestUnsolved) {
+    const unsolved = [...new Set(word)].filter((cipher) => !revealed.has(cipher) && !isCorrect(state, truth, cipher))
+    const cells = unsolved.reduce((total, cipher) => total + counts[cipher], 0)
+    // `bestCells` cannot rescue a word worth nothing: a word with no unsolved letters opens no cells
+    // either, so both halves are 0 and neither comparison is strict.
+    if (unsolved.length > bestUnsolved || (unsolved.length === bestUnsolved && cells > bestCells)) {
       best = index
-      bestUnsolved = unsolved
+      bestUnsolved = unsolved.length
+      bestCells = cells
     }
   })
 

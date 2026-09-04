@@ -1,19 +1,21 @@
-import {
-  choosePhrazleRung,
-  MAX_PHRAZLE_RUNG_LENGTH,
-  phrazleHintFor,
-  PhrazleSpentRung,
-  seededRandom,
-} from '@rules/hint-phrazle'
+import { choosePhrazleRung, MAX_PHRAZLE_RUNG_LENGTH, phrazleHintFor, PhrazleSpentRung, seededRandom } from './rungs'
 
-// RESTATED, NOT IMPORTED, and that is a portability constraint rather than a preference. This file
-// is copied byte-identical into lull-ui, which has no generators to import from, so
-// `@generators/phrazle/difficulty` here would resolve in one repo and take the whole suite down in
-// the other. The number is generators/phrazle/difficulty.ts's MAX_WORD_LETTERS.
+// RESTATED, NOT IMPORTED, because the gate it names is in the other repo: this is lull-api's
+// generators/phrazle/difficulty.ts MAX_WORD_LETTERS, and this repo has no `@generators/...` to
+// import from.
 //
-// THE RESTATEMENT CANNOT DRIFT SILENTLY: hint-sweep.test.ts pins this value against the generator's
-// own constant, and that file deliberately does NOT travel to lull-ui, so the cross-check lives in
-// the one repo that can perform it.
+// AND IT IS NOW UNPINNED, which is a loss rather than a note. While this file lived in lull-api's
+// vendored src/rules/ tests, hint-sweep.test.ts read this literal out of the SOURCE TEXT and asserted
+// it against the generator's own constant -- the only arrangement that could catch someone editing
+// the 11 below, since importing the restatement would have re-run this whole file inside that one.
+// The sweep travelled here as test/rungs-sweep.test.ts and the generator's constant did not, so
+// nothing compares them any more. lull-api keeps a plain `expect(MAX_WORD_LETTERS).toBe(11)` in its
+// phrazle difficulty test naming this line; what joins the two halves now is two comments and a
+// person who reads them.
+//
+// THE POST-MORTEM IS WHY THAT MATTERS: this literal once said 7, four below the real gate, and the
+// rung cap was derived from the wrong number. That is the failure the old pin caught and this
+// comment cannot.
 const MAX_WORD_LETTERS = 11
 
 // TOE HOLD. Present letters: T, O, E, H, L, D. Absent: everything else.
@@ -360,6 +362,19 @@ describe('phrazleHintFor', () => {
     expect(text).toBe('Word 1 uses these letters, alphabetized: A, D, G, I, N, N, O, S, T, T, and U.')
     expect(text).toHaveLength(77)
     expect(text.length).toBeLessThanOrEqual(MAX_PHRAZLE_RUNG_LENGTH)
+  })
+
+  // THE OTHER HALF OF THIS PIN IS IN THE OTHER REPO, and it is now a manual link. 80 is lull-api's
+  // MAX_GLOSS_LENGTH in generators/crypticclue/hints.ts -- one number, so that every rung the hint
+  // bar prints fits the same line as every gloss it prints. While this rule was vendored, lull-api's
+  // crypticclue hints test asserted the two equal in one expression; the rule left and the assertion
+  // could not follow, so each repo now pins its own to 80 and names the other.
+  //
+  // A ROW ABOUT A NUMBER RATHER THAN ABOUT BEHAVIOR, deliberately. Nothing else here would fail if
+  // the cap moved to 90: the ceiling row above asserts 77 <= cap, which stays true. This is the row
+  // that turns "the caps agreed" into something a reader can find from either side.
+  it('holds the cap at the gloss length lull-api pins from its own side', () => {
+    expect(MAX_PHRAZLE_RUNG_LENGTH).toBe(80)
   })
 })
 

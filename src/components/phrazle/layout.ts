@@ -75,6 +75,15 @@ export const DEFAULT_WIDTH = 358
  * board, never derived from the viewport. A viewport-derived size is wrong inside any container that
  * is not the full width, and this one sits inside two levels of horizontal padding.
  *
+ * THE CONTRACT WAS NEVER THE BUG; THE CALLER WAS, and the word CONTENT above is why it can be
+ * called a bug at all. The board fed this `plate.clientWidth`, which is the PADDING box and
+ * therefore 32px wider than the room a row has -- the plate's own gutter, once a side -- so every
+ * size this function returned was correct for a box that did not exist, and a long word overflowed
+ * the plate at every width up to 390. Nothing in here changed to fix it: the board now reads the
+ * ResizeObserver entry's `contentRect`, which is the content box this paragraph always claimed it
+ * was being handed. A reader wondering whether CONTENT is load-bearing has the answer -- it is the
+ * only thing that stood between this bench and a sideways scrollbar.
+ *
  * THE FLOOR IS NOW ALL BUT UNREACHABLE from the corpus, and it stays anyway. The densest phrase the
  * corpus can hold is three seven-letter words, which needs 7 tiles on a line rather than 21 -- 39px
  * at a 320 viewport. It takes a fifteen-letter word to reach 18 there, and a word that long is a

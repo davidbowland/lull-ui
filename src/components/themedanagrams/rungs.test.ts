@@ -1,11 +1,10 @@
 import {
   chooseThemedAnagramsRung,
   MAX_ANAGRAM_RUNG_LENGTH,
-  pinnedDisplay,
   pinnedIndices,
   themedAnagramsHintFor,
   ThemedAnagramsSpentRung,
-} from '@rules/hint-themed-anagrams'
+} from './rungs'
 
 // Deliberately NOT length-sorted, so an ordinal in a sentence cannot be mistaken for a rank.
 // Lengths: KETTLE 6, COLANDER 8, TOASTER 7, SPATULA 7.
@@ -349,6 +348,19 @@ describe('themedAnagramsHintFor', () => {
       expect(themedAnagramsHintFor(ENTRIES, rung).text.length).toBeLessThanOrEqual(MAX_ANAGRAM_RUNG_LENGTH),
     )
   })
+
+  // THE OTHER HALF OF THIS PIN IS IN THE OTHER REPO, and it is now a manual link. 80 is lull-api's
+  // MAX_GLOSS_LENGTH in generators/crypticclue/hints.ts -- one number, so that every rung the hint
+  // bar prints fits the same line as every gloss it prints. While this rule was vendored, lull-api's
+  // crypticclue hints test asserted the two equal in one expression; the rule left and the assertion
+  // could not follow, so each repo now pins its own to 80 and names the other.
+  //
+  // A ROW ABOUT A NUMBER RATHER THAN ABOUT BEHAVIOR, deliberately. The row above only asks that every
+  // rendered rung fits under the cap, which stays true at any larger cap. This is the row that turns
+  // "the caps agreed" into something a reader can find from either side.
+  it('holds the cap at the gloss length lull-api pins from its own side', () => {
+    expect(MAX_ANAGRAM_RUNG_LENGTH).toBe(80)
+  })
 })
 
 describe('pinnedIndices', () => {
@@ -394,43 +406,12 @@ describe('pinnedIndices', () => {
   })
 })
 
-describe('pinnedDisplay', () => {
-  it('pins the revealed initial and fills the rest in scramble order', () => {
-    expect(pinnedDisplay('SHOW', 'OSWH', new Set([0]))).toBe('SOWH')
-  })
-
-  it('pins both bookends and fills the gap', () => {
-    expect(pinnedDisplay('SHOW', 'OSWH', new Set([0, 3]))).toBe('SOHW')
-  })
-
-  it('returns the scramble untouched when nothing is pinned', () => {
-    expect(pinnedDisplay('SHOW', 'OSWH', new Set())).toBe('OSWH')
-  })
-
-  it('keeps the letter multiset of the answer', () => {
-    const display = pinnedDisplay('KETTLE', 'ELETKT', new Set([0, 5]))
-    expect([...display].sort().join('')).toBe([...'KETTLE'].sort().join(''))
-  })
-
-  // THE DISPLAY MUST NEVER BE THE ANSWER. The two-free invariant is stated over pinned INDICES; this
-  // is the property it exists to buy, checked on the string the player actually reads. Each scramble
-  // below shares at most floor(length / 3) positions with its answer, which is the ceiling the
-  // generator's severity dial imposes on a real scramble.
-  it.each([
-    ['the shortest entry', 'LADLE', 'DELAL', [true, false, true, true] as boolean[], 1],
-    ['a six-letter entry', 'KETTLE', 'ELETKT', [false, true, true, true] as boolean[], 0],
-    ['a seven-letter entry', 'SKILLET', 'LTEKLIS', [true, true, true, false] as boolean[], 3],
-  ])('leaves at least two tiles of %s wrong after the whole ladder', (_case, answer, scramble, solved, index) => {
-    const spent = foldLadder(SHORTEST, { solved })
-    const display = pinnedDisplay(answer, scramble, pinnedIndices(spent, index, answer.length))
-    expect([...display].filter((letter, at) => letter !== answer[at]).length).toBeGreaterThanOrEqual(2)
-  })
-
-  it('spends only one copy of a repeated pinned letter', () => {
-    // KETTLE pins index 0 (K) and index 5 (E); one E stays in the pool for the middle.
-    expect(pinnedDisplay('KETTLE', 'ELETKT', new Set([0, 5]))).toHaveLength(6)
-  })
-})
+// THE DISPLAY TESTS THAT STOOD HERE WENT WITH `pinnedDisplay` to
+// src/components/themedanagrams/display.test.ts, in the same sitting the function was deleted from
+// lull-api. What they checked was the string a PLAYER reads, which is the board's business; this file
+// keeps the invariant those tests were downstream of, stated where it is enforced -- see 'leaves at
+// least two positions of every entry free' above, which asks `pinnedIndices` the same question over
+// indices rather than over tiles.
 
 describe('totality', () => {
   it('never throws, however malformed the input', () => {
@@ -438,7 +419,6 @@ describe('totality', () => {
     expect(() => chooseThemedAnagramsRung([{ answer: '' }], { solved: [false] }, [])).not.toThrow()
     expect(() => themedAnagramsHintFor([], { entryIndex: 9, kind: 'initial' })).not.toThrow()
     expect(() => themedAnagramsHintFor([], { entryIndex: 9, kind: 'inner2' })).not.toThrow()
-    expect(() => pinnedDisplay('', '', new Set([0]))).not.toThrow()
   })
 
   it('offers nothing on an entry with no answer', () => {

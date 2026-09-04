@@ -1675,12 +1675,229 @@ describe('ThemedAnagramsBoard', () => {
     })
 
     // The same guard from the other side: a blank answer IS a string and sails past a typeof check,
-    // and `pinnedDisplay` returns a run of the ANSWER'S length -- so without the length comparison
-    // this row would draw no letters at all.
+    // and `drawnRun` returns a run of the ANSWER'S length -- so without the length comparison this
+    // row would draw no letters at all.
     it('draws a row whose answer is blank rather than emptying it', () => {
       setup(blankAnswerThemedAnagrams, '|1|I0')
 
       expect(runs()[0]).toEqual('ELKTET')
+    })
+  })
+
+  // WHAT THE PINS HAVE ALREADY DECIDED, which is the one thing this bench used to leave the player to
+  // type out by hand. The rows below are the three shapes `isGivenAway` answers yes to and the one it
+  // answers no to, and each is written as a stored string rather than bought through the adapter --
+  // these are about what the BOARD does with a ladder, and an adapter in the arrangement would be a
+  // second thing that could be wrong.
+  describe('a word the pins have settled', () => {
+    // Row 0 is FIVE letters, so a prefix and a final leave exactly one position open -- the single
+    // gap. Row 1 has a doubled letter at the two positions bookends leaves, which is the same state
+    // reached a different way. Row 2 is the row whose leftovers fall into place: pinned at 0, 1, 2 and
+    // 6, its pool offers T, U, L for positions 3, 4 and 5, which is SPATULA in order.
+    const settledPuzzle: Puzzle<ThemedAnagramsData> = {
+      ...themedAnagramsPuzzle,
+      data: {
+        ...themedAnagramsPuzzle.data,
+        entries: [
+          { answer: 'LADLE', scrambles: ['DELAL'] },
+          { answer: 'SEES', scrambles: ['ESSE'] },
+          { answer: 'SPATULA', scrambles: ['TUSPALA'] },
+          { answer: 'SKILLET', scrambles: ['LKSETIL'] },
+        ],
+      },
+    }
+
+    // Prefix and final on row 0: {0, 1, 2} and {4} of a five-letter answer, so position 3 is all that
+    // is left and only one letter is left to put in it.
+    const ONE_GAP = '|2|P0,F0'
+    // The prefix alone, which leaves L and E to work out -- the state ONE_GAP is one rung past, and
+    // the board that is still a puzzle.
+    const TWO_LEFT = '|1|P0'
+    // Bookends on row 1: SEES pinned at both S's, leaving E and E.
+    const DOUBLED = '|1|B1'
+    // Prefix and final on row 2, where the unpinned pool spells the rest of the answer in order.
+    const WOULD_SPELL = '|2|P2,F2'
+
+    it('fills the box with the word when one gap is left', () => {
+      setup(settledPuzzle, ONE_GAP)
+
+      expect(boxNamed(1)).toHaveValue('LADLE')
+    })
+
+    // THE DOUBLE-LETTER CASE. Two positions left and one letter to fill them is as settled as a single
+    // gap: every arrangement spells the answer, so there is nothing to work out and nothing the board
+    // could rearrange to avoid showing it.
+    it('fills the box with the word when every letter left is the same letter', () => {
+      setup(settledPuzzle, DOUBLED)
+
+      expect(boxNamed(2)).toHaveValue('SEES')
+    })
+
+    // The chip is the WORD "Right", not the tick beside it -- the tick is aria-hidden decoration, so
+    // nothing on this board is told by a mark alone.
+    it('marks the row right', () => {
+      setup(settledPuzzle, ONE_GAP)
+
+      expect(within(screen.getAllByRole('listitem')[0]).getByText('Right')).toBeInTheDocument()
+    })
+
+    it('counts the row in the tally', () => {
+      setup(settledPuzzle, ONE_GAP)
+
+      expect(screen.getByText('1 of 4 right')).toBeInTheDocument()
+    })
+
+    // readOnly, NOT disabled -- the same call every won row on this bench makes. A disabled input
+    // leaves the tab order and a screen reader's forms mode, so the word the board just handed over
+    // would be unreachable and unreadable.
+    it('stops taking keystrokes without leaving the tab order', () => {
+      setup(settledPuzzle, ONE_GAP)
+
+      expect(boxNamed(1)).toHaveAttribute('readonly')
+      expect(boxNamed(1)).not.toBeDisabled()
+    })
+
+    // A ROW STILL WORTH PLAYING IS LEFT ALONE, and this is the row the give-away must not reach. Two
+    // different letters left is a puzzle, so the box stays empty and editable and the tally does not
+    // move -- which is what the whole rule turns on.
+    it('leaves a row with two different letters left to the player', () => {
+      setup(settledPuzzle, TWO_LEFT)
+
+      expect(boxNamed(1)).toHaveValue('')
+      expect(boxNamed(1)).not.toHaveAttribute('readonly')
+      expect(screen.getByText('0 of 4 right')).toBeInTheDocument()
+    })
+
+    // THE OTHER THREE ROWS ARE UNTOUCHED. A rung buys one row, and a give-away is still one row.
+    it('leaves every other box empty', () => {
+      setup(settledPuzzle, ONE_GAP)
+
+      expect(boxNamed(2)).toHaveValue('')
+      expect(boxNamed(3)).toHaveValue('')
+      expect(boxNamed(4)).toHaveValue('')
+    })
+
+    // THE ROW MUST NOT SPELL THE ANSWER while there is still something to work out. Row 2's pool
+    // offers T, U, L for positions 3, 4 and 5, which is SPATULA in order -- so the plate would have
+    // printed the word, handing over four letters the rung did not sell. The first two unpinned
+    // positions holding different letters trade places and nothing else moves.
+    it('does not draw a word whose leftovers fall into place', () => {
+      setup(settledPuzzle, WOULD_SPELL)
+
+      expect(runs()[2]).toEqual('SPAUTLA')
+    })
+
+    it('leaves that row still to be typed', () => {
+      setup(settledPuzzle, WOULD_SPELL)
+
+      expect(boxNamed(3)).toHaveValue('')
+      expect(screen.getByText('0 of 4 right')).toBeInTheDocument()
+    })
+
+    // A PURCHASE CAN HAND A ROW OVER, and the ribbon is the only place a screen reader hears about it.
+    // The press is in the SHELL's hint bar, so it never reaches `change` -- the one function that says
+    // this sentence -- and the row went right in silence: the chip appeared, the tally moved, and
+    // nothing was announced.
+    it('says the row is right when a bought rung hands it over', () => {
+      const { rerender } = render(
+        <ThemedAnagramsBoard
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={TWO_LEFT}
+          puzzle={settledPuzzle}
+        />,
+      )
+
+      rerender(
+        <ThemedAnagramsBoard
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={ONE_GAP}
+          puzzle={settledPuzzle}
+        />,
+      )
+
+      expect(ribbon()).toHaveTextContent('LADLE is right — 3 to go.')
+    })
+
+    // A RUNG THAT HANDS OVER THE LAST ROW WINS THE GAME, which is the same gap one row further on:
+    // the solve is the complete news and replaces the row's own sentence, exactly as it does on the
+    // winning keystroke.
+    it('says the board is solved when a bought rung finishes it', () => {
+      const typed = '\nSEES\nSPATULA\nSKILLET'
+      const { rerender } = render(
+        <ThemedAnagramsBoard
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={`${typed}${TWO_LEFT}`}
+          puzzle={settledPuzzle}
+        />,
+      )
+
+      rerender(
+        <ThemedAnagramsBoard
+          onProgress={onProgress}
+          onReset={onReset}
+          onSolved={onSolved}
+          progress={`${typed}${ONE_GAP}`}
+          puzzle={settledPuzzle}
+        />,
+      )
+
+      expect(ribbon()).toHaveTextContent(SOLVED)
+      expect(onSolved).toHaveBeenCalledTimes(1)
+    })
+
+    // NOT ON ARRIVAL. A returning player's stored string already carries the rungs they bought, so a
+    // board restored into a handed-over row does not open by narrating a purchase they made yesterday
+    // -- and the shell marked that win when it happened.
+    it('says nothing about a row that was already handed over when it mounted', () => {
+      setup(settledPuzzle, ONE_GAP)
+
+      expect(ribbon()).not.toHaveTextContent('is right')
+    })
+
+    // THE NEXT KEYSTROKE MUST NOT CLOBBER THE WORD. `change` rebuilds all four drafts from what the
+    // board is showing, so a row the ladder handed over has to be in that value -- otherwise typing in
+    // row 2 writes an empty row 1 over an answer the player paid for, and the board and the store stop
+    // agreeing about what is on screen.
+    it('keeps the handed-over word in every later write', async () => {
+      const { user } = setup(settledPuzzle, ONE_GAP)
+
+      await user.type(boxNamed(2), 'SEES')
+
+      expect(onProgress).toHaveBeenLastCalledWith('LADLE\nSEES\n\n')
+    })
+
+    // THE BOX KEEPS ITS NAME AND ITS DESCRIPTION. Both are IDREFs this board builds -- the label's
+    // `htmlFor` and the box's `aria-describedby` -- and a settled row is a new state for both to be
+    // wrong in: the box now carries a value it did not before, and the row's letters are all but one
+    // pinned. `boxNamed` is a role-and-name query, so finding the box at all is the name assertion;
+    // the description is resolved explicitly here because `aria-describedby` contributes nothing to a
+    // name and can therefore rot in total silence.
+    it('keeps the box’s name and its description on a settled row', () => {
+      setup(settledPuzzle, ONE_GAP)
+      const described = boxNamed(1).getAttribute('aria-describedby')
+
+      expect(document.getElementById(described ?? '')).toBeInTheDocument()
+      expect(boxNamed(1)).toHaveAccessibleDescription(
+        'The letters are L A D L E. L, A, D, E are revealed and in place.',
+      )
+    })
+
+    // STARTING OVER TAKES IT BACK, because everything here is derived: `onReset` drops the ladder, so
+    // there is nothing left to have settled the row and the box empties with the rest.
+    it('gives the word back when the player starts over', async () => {
+      const typed = '\nSEES\nSPATULA\nSKILLET'
+      const { user } = setup(settledPuzzle, `${typed}${ONE_GAP}`)
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(onReset).toHaveBeenCalledTimes(1)
+      expect(onProgress).toHaveBeenLastCalledWith('')
     })
   })
 })

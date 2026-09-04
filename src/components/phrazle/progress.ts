@@ -1,6 +1,6 @@
-import type { PhrazleSpentRung } from '@rules/hint-phrazle'
 import { splitPhrase } from '@rules/is-valid-guess'
 
+import type { PhrazleSpentRung } from './rungs'
 import { PhrazleProgress } from '@types'
 
 /**
@@ -25,8 +25,9 @@ export interface PhrazleHintTail {
  *
  * IT EXTENDS `PhrazleProgress` HERE RATHER THAN WIDENING IT IN types.ts, and that is a decision. That
  * file is a copy-verbatim mirror of lull-api's, and lull-api neither reads nor writes this string;
- * widening it there would put a `@rules/hint-phrazle` import into a file whose whole claim is that it
- * has no imports and no runtime exports, to declare fields the mirrored repo has no reader for.
+ * widening it there would put a `@components/phrazle/rungs` import into a file whose whole claim is
+ * that it has no imports and no runtime exports, to declare fields the mirrored repo has no reader
+ * for -- and would point the mirror at a file that exists in only one of the two repos.
  *
  * BOTH FIELDS ARE OPTIONAL AND BOTH ARE OMITTED WHEN NOTHING IS BOUGHT. An untouched board therefore
  * writes and reads back exactly the string it did before this existed, which is what makes every
@@ -47,10 +48,10 @@ const empty = (): PhrazleBoardProgress => ({ guesses: [] })
 // to build the next purchase. A shared `[]` would be one array every board in the session extends.
 const noHints = (): PhrazleHintTail => ({ hints: [], opened: 0 })
 
-// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in
-// hint-phrazle.ts, and a test that imported the bound this checks against would assert the cap
-// against itself and pass at any value. If the rule ever sells four, this refuses the fourth and the
-// suite says so.
+// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in rungs.ts
+// beside it, and a test that imported the bound this checks against would assert the cap against
+// itself and pass at any value. If the rule ever sells four, this refuses the fourth and the suite
+// says so.
 const MAX_SPENT = 3
 
 // The per-word lengths as one comparable string. Comparing shapes rather than walking two arrays in

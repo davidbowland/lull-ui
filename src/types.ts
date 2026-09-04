@@ -239,10 +239,9 @@ export interface AnagramEntry {
 // entries by ANSWER LENGTH, ranked once at generate time, so a player who had already solved the
 // longest entry still got the whole-answer reveal spent on it. Which entries are still unsolved is a
 // fact about a board four guesses have already changed, so the rungs are chosen on the device
-// instead, by the vendored builder at src/rules/hint-themed-anagrams.ts -- which in THIS repo is a
-// file sitting beside this one, reached through the adapter in components/themedanagrams/hints.ts.
-// (lull-api's copy of this comment names it as a promise about the integrated tree, because that
-// repo holds the rule and never runs it against a board.)
+// instead, by the builder at components/themedanagrams/rungs.ts, reached through the adapter in
+// components/themedanagrams/hints.ts beside it. (lull-api's copy of this comment names it as a
+// promise about the integrated tree, because that repo no longer holds the rule at all.)
 export interface ThemedAnagramsData {
   entries: [AnagramEntry, AnagramEntry, AnagramEntry, AnagramEntry]
   theme: string
@@ -406,7 +405,7 @@ export interface MissingVowelsData extends HintedPuzzleData, PhrasePuzzleData {
 // solving a substitution cipher one letter at a time. A semantic nudge on this type is a hint for a
 // different puzzle. The replacement is letter-shaped and cannot be shipped at all: it ranks the
 // cipher letters this player has not yet got right, which is a fact about a board built at play
-// time. It runs on the device, from the vendored builder at src/rules/hint-cryptogram.ts.
+// time. It runs on the device, from the builder at components/cryptogram/rungs.ts.
 //
 // The phrase still ARRIVES with three prose hints -- passesProseGates requires them before a phrase
 // is usable at all, and Missing Vowels ships them -- and that generator drops them on the floor.
@@ -426,7 +425,7 @@ export interface CryptogramData extends PhrasePuzzleData {
 // and those reveals were blind -- `Letter 1 of word 1 is T.` names a position with no regard for
 // what four guesses have already colored in, so a rung routinely spent itself on something the
 // player had proved. A hint fixed before the player exists cannot know what is still worth saying.
-// The vendored builder at src/rules/hint-phrazle.ts replaces it on the device, reading the guesses
+// The builder at components/phrazle/rungs.ts replaces it on the device, reading the guesses
 // actually made.
 //
 // THERE IS NO GUESS LIMIT AND NO LOSS STATE. It carried one own field, `maxGuesses`, and lull-api

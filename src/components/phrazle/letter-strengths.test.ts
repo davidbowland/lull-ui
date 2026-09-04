@@ -1,4 +1,4 @@
-import { LETTER_STRENGTHS, STRONGEST_FIRST, WEAKEST_FIRST } from '@rules/letter-strengths'
+import { LETTER_STRENGTHS, STRONGEST_FIRST, WEAKEST_FIRST } from './letter-strengths'
 
 describe('letter-strengths', () => {
   it('scores all twenty-six letters', () => {
