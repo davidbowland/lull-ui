@@ -472,7 +472,28 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   useEffect(() => {
     const bought = spent.length > announcedRungs.current
     announcedRungs.current = spent.length
-    if (!bought || stolenByHint.length === 0) return
+    if (!bought) return
+
+    // A PURCHASE CAN WIN THE GAME, and this is the only place that can say so. `solvedMessage` is
+    // said in `assign` and in `undo`, and a rung reaches neither: the press is in the SHELL's hint
+    // bar, the adapter writes the string, and this board learns about it as a changed `progress`
+    // prop. On a cryptogram that is not a corner case -- one substitution runs across the whole
+    // phrase, so a word rung on a phrase whose letters repeat routinely fills every remaining square
+    // -- and the board went on showing whatever the last keystroke had said.
+    //
+    // Nothing else on the bench covers it. The tally is outside every live region deliberately, and
+    // FloorBar draws `resting` only while the ribbon is empty, so a board that had been typed in at
+    // all had the one sentence that matters displaced by a stale one.
+    //
+    // IT REPLACES THE STOLEN-SQUARE SENTENCES rather than following them, which costs nothing: a
+    // solved board has every ciphertext letter mapped, so `stolenByHint` is empty whenever this
+    // branch is taken. The ordering is stated anyway, because the two lines read as a choice and the
+    // reason they cannot both be true is not visible from here.
+    if (solved) {
+      say(solvedMessage())
+      return
+    }
+    if (stolenByHint.length === 0) return
 
     say(
       stolenByHint

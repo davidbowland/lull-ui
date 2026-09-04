@@ -2149,5 +2149,59 @@ describe('CryptogramBoard', () => {
 
       expect(screen.getByText('You solved this one')).toBeInTheDocument()
     })
+
+    // A PURCHASE CAN WIN THE GAME, and until this it was the one way of winning that the board said
+    // nothing about. `Solved. The answer is ...` is said in `assign` and in `undo`, and a rung goes
+    // through neither: the press is in the SHELL's hint bar, the adapter writes the string, and the
+    // board simply re-renders with a new `progress`. A player who bought the word rung on a phrase
+    // whose letters repeat -- which is every cryptogram -- watched the rest of the squares fill in
+    // and got no word about having finished.
+    //
+    // `rerender` rather than a mount, because the mount case is the row above and it is a different
+    // fact: a board restored INTO a solved string reports nothing, deliberately, since the shell
+    // marked that win when the player actually made it.
+    it('reports a solve a bought rung completed', () => {
+      const { rerender } = renderBoard(cryptogramPuzzle, 'VA')
+
+      rerender(
+        <CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress={WORD_RUNG} puzzle={cryptogramPuzzle} />,
+      )
+
+      expect(onSolved).toHaveBeenCalledTimes(1)
+    })
+
+    // THE RIBBON IS WHERE A SOLVE IS ANNOUNCED, and on this bench it is the only place a screen
+    // reader hears about one: the sign row's tally is outside every live region on purpose, and
+    // FloorBar draws its resting line only while the ribbon is empty. So a player who had typed
+    // anything at all before buying the rung was left looking at whatever their last keystroke said.
+    //
+    // The click is what makes this the real case rather than a contrived one -- it leaves `select`'s
+    // sentence standing, which is the state any board that has been played in is in.
+    it('says the answer when a bought rung completes the board', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { rerender } = renderBoard(cryptogramPuzzle, 'VA')
+
+      await user.click(square('Cipher V, letter 1 of 9, holds A'))
+      rerender(
+        <CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress={WORD_RUNG} puzzle={cryptogramPuzzle} />,
+      )
+
+      expect(ribbon()).toHaveTextContent('Solved. The answer is ATE ATE TEA.')
+    })
+
+    // A RUNG THAT DOES NOT WIN STILL SAYS WHAT IT TOOK. The solve is the complete news and replaces
+    // the stolen-square sentence when both are true at once -- but they cannot be: a solved board has
+    // every ciphertext letter mapped, so there is no square left for a rung to have emptied. This row
+    // is the other side of that, and it is what stops the solve branch from swallowing a sentence the
+    // player needs.
+    it('still says which square a rung emptied when the rung did not win', () => {
+      const { rerender } = renderBoard(cryptogramPuzzle, 'ZA')
+
+      rerender(
+        <CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress="VA|1|LV" puzzle={cryptogramPuzzle} />,
+      )
+
+      expect(ribbon()).toHaveTextContent('Cipher Z is empty now — a hint put A on cipher V.')
+    })
   })
 })
