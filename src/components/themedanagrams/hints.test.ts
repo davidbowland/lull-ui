@@ -142,11 +142,80 @@ describe('the themed anagrams hint adapter', () => {
       expect(texts(buy(3))).toEqual([INITIAL_RUNG, BOOKENDS_RUNG, PREFIX_RUNG])
     })
 
-    // THE INPUT BOX IS UNTOUCHED, which is this bench's whole difference from cryptogram's. A rung
+    // THE INPUT BOX IS UNTOUCHED, which is this bench's ordinary difference from cryptogram's. A rung
     // here changes the DISPLAY -- letters pinned into their true positions in the scramble -- and
-    // never what the player typed, so a purchase leaves all four drafts exactly as they were.
+    // never what the player typed, so a purchase leaves all four drafts exactly as they were. The one
+    // exception is a row the rung SETTLES, which is the group below; no rung on this fixture does.
     it('writes no draft of its own', () => {
       expect(decode(buy(3, draft('KET'))).guesses).toEqual(['KET', '', '', ''])
+    })
+
+    // A ROW A RUNG SETTLES IS WRITTEN INTO THE STORE, which is the cipher bench's arrangement and is
+    // here for the cipher bench's reason: what is stored and what is drawn should be one arrangement
+    // rather than two that have to agree. The board derives the same overlay on every render, so the
+    // screen would be right either way -- what the write buys is the STORE agreeing with it, and the
+    // fold reading it back.
+    //
+    // A SEVEN-LETTER ANSWER WITH FIVE COPIES OF ONE LETTER, which is contrived and has to be: the
+    // shipped fixture is four ordinary words, and `MIN_FREE_POSITIONS` keeps the chooser from pinning
+    // any of them down to a single word. `data` is opaque JSON off the network, so this shape is
+    // representable; it is also the only shape that puts the two facts below in one board.
+    //
+    // The two S's are the bookends, so rungs 1 and 2 stack on row 0 and leave five positions holding
+    // nothing but E -- settled, with five positions still FREE, which is what lets a third rung be
+    // aimed at it. The other three rows are two letters long, so no rung clears the free-position
+    // gate on any of them and the ladder has nowhere else to go.
+    describe('a rung that settles a row', () => {
+      const SETTLING = {
+        ...PUZZLE,
+        data: {
+          entries: [
+            { answer: 'SEEEEES', scrambles: ['EESEESE'] },
+            { answer: 'AB', scrambles: ['BA'] },
+            { answer: 'CD', scrambles: ['DC'] },
+            { answer: 'EF', scrambles: ['FE'] },
+          ],
+          theme: 'Contrived',
+        },
+      } as Puzzle<unknown>
+
+      const buySettling = (steps: number, from = ''): string => {
+        let progress = from
+        for (let step = 0; step < steps; step += 1) {
+          progress = themedAnagramsHints.open(SETTLING, progress) as string
+        }
+        return progress
+      }
+
+      it('fills the row in when its unpinned letters can only be one word', () => {
+        expect(decode(buySettling(2)).guesses).toEqual(['SEEEEES', '', '', ''])
+      })
+
+      it('leaves the rows it did not settle exactly as the player left them', () => {
+        expect(decode(buySettling(2, draft('', 'AB'))).guesses).toEqual(['SEEEEES', 'AB', '', ''])
+      })
+
+      // The initial alone pins one S and leaves the other, so there are still two different letters to
+      // place. Nothing is written and the row stays the player's to solve.
+      it('writes nothing while the row still has two letters to work out', () => {
+        expect(decode(buySettling(1)).guesses).toEqual(['', '', '', ''])
+      })
+
+      // THE WHOLE REASON THE WRITE IS WORTH MAKING. `fold` asks `solvedIn` which rows are already won
+      // and it asks the STORED drafts, so the write is what takes this row out of the ranking. Without
+      // it the row is still unsolved as far as the fold can see and still has five free positions, so
+      // the third press sells an inner-pair rung about a word the second press had already handed
+      // over -- a hint bought about the box it is sitting in.
+      //
+      // The press is not wasted: with the row out of the ranking and no other row able to take a rung,
+      // the ladder ends at two and the third press sells the ANSWER step instead, which is what
+      // `opened` climbing past `hints.length` says.
+      it('stops selling rungs about a row it has already handed over', () => {
+        const spent = decode(buySettling(3))
+
+        expect(spent.hints).toHaveLength(2)
+        expect(spent.opened).toEqual(3)
+      })
     })
 
     // THE STEP PAST THE LAST RUNG IS THE ANSWER, and it is the reason `opened` is stored rather than

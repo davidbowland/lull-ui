@@ -1,7 +1,8 @@
-import { pinnedDisplay, pinnedIndices } from '@rules/hint-themed-anagrams'
+import { pinnedIndices } from '@rules/hint-themed-anagrams'
 import React, { useEffect, useId, useRef, useState } from 'react'
 
 import { isRight } from './answers'
+import { drawnRun, isGivenAway } from './display'
 import { decode, decodeHints, encode, Guesses, MAX_GUESS } from './progress'
 import { Button } from '@components/button'
 import { FloorBar } from '@components/floor-bar'
@@ -359,22 +360,56 @@ export const ThemedAnagramsBoard = ({
     canPin(index) ? pinnedIndices(spent, index, rows[index].answer.length) : new Set<number>()
 
   // THE RUN AS IT IS DRAWN: revealed letters standing in their true positions, the rest filling the
-  // gaps in the current scramble's own order, skipping one occurrence per pinned letter.
+  // gaps in the current scramble's own order, skipping one occurrence per pinned letter -- and never
+  // spelling the answer while there is still something to work out. See `drawnRun`, which owns both
+  // halves.
   //
   // TWO ALTERNATIVES WERE REJECTED AND ARE RECORDED HERE so the call site does not relitigate them,
-  // with the reasons from `pinnedDisplay`'s own doc comment. RE-SHUFFLING THE UNPINNED REMAINDER
-  // churns letters the player is actively reading, so the board would change more than the hint
-  // justifies -- a rung that bought one fact must not move the other six tiles. CHOOSING A PRE-GATED
-  // SCRAMBLE THAT ALREADY HAS THE LETTER IN PLACE cannot work at all: lull-api's severity dial
-  // MINIMIZES positional agreement -- `maxSharedPositions` is `floor(length / 3)` -- so usually no
-  // member of `scrambles` has the revealed letter where the answer wants it, and a row would
-  // silently fail to pin with nothing to say why.
+  // with the reasons from `drawnRun`'s own doc comment. RE-SHUFFLING THE UNPINNED REMAINDER churns
+  // letters the player is actively reading, so the board would change more than the hint justifies --
+  // a rung that bought one fact must not move the other six tiles, which is also why the anti-spell
+  // repair is ONE swap rather than a redraw. CHOOSING A PRE-GATED SCRAMBLE THAT ALREADY HAS THE
+  // LETTER IN PLACE cannot work at all: lull-api's severity dial MINIMIZES positional agreement --
+  // `maxSharedPositions` is `floor(length / 3)` -- so usually no member of `scrambles` has the
+  // revealed letter where the answer wants it, and a row would silently fail to pin with nothing to
+  // say why.
   //
   // A row with nothing pinned takes the same path rather than a branch around it: with an empty
   // pinned set the pool is the scramble in its own order and every position takes the next letter,
-  // so `pinnedDisplay` is the identity there and one code path is one thing to reason about.
+  // so `drawnRun` is the identity there and one code path is one thing to reason about.
   const displayOf = (index: number): string =>
-    canPin(index) ? pinnedDisplay(rows[index].answer, runOf(index), pinnedIn(index)) : runOf(index)
+    canPin(index) ? drawnRun(rows[index].answer, runOf(index), pinnedIn(index)) : runOf(index)
+
+  // WHICH ROWS THE LADDER HAS ALREADY DECIDED, and therefore which boxes the board fills in itself.
+  //
+  // A row whose unpinned positions can hold only one word is a row with nothing left to work out --
+  // one gap with one letter for it, or two positions and a single doubled letter to fill them. Making
+  // the player type out a word the plate is already showing them is busywork, and on the doubled case
+  // it is worse than that: `drawnRun` cannot rearrange those tiles to avoid spelling the answer, so
+  // the board would be printing the word and still asking for it.
+  //
+  // ASKED THROUGH `isGivenAway` RATHER THAN OFF `pinnedIn` ABOVE, and the difference is load-bearing.
+  // `canPin` -- which `pinnedIn` goes through -- also refuses a row whose scramble and answer are
+  // different lengths, which is a DRAWING concern: `drawnRun` returns a run of the answer's length, so
+  // a mismatched pack would silently add or drop tiles. The ADAPTER has no scramble and cannot ask
+  // that question, so a board that folded it in here would disagree with the adapter about which rows
+  // are settled on exactly those packs -- and `change` below rebuilds all four drafts from this list,
+  // so a disagreement is a keystroke in one row quietly clearing an answer in another.
+  //
+  // Mapped over `rows` rather than over `guesses`, so a pack this board refused leaves an empty list
+  // and every index below reads `undefined`, which is falsy -- rather than reaching into `rows[index]`
+  // on a board that has no rows.
+  const givenAwayRows: boolean[] = rows.map((entry, index) => isGivenAway(entry.answer, spent, index))
+
+  // THE FOUR DRAFTS AS THE BOARD SHOWS THEM: what the player typed, with a settled row standing in its
+  // own answer. Everything downstream reads this and not `guesses` -- the boxes, the chips, the tally,
+  // the win and every write back out -- so there is one value that says what is on screen.
+  //
+  // DERIVED, EXACTLY AS `rights` AND `solved` ARE. `guesses` stays the player's own typing, and this is
+  // the overlay, which is the same split the cipher bench draws between its `mapping` and its `board`.
+  // Storing the answer into `guesses` instead would make Play again's job two things rather than one:
+  // the ladder is dropped by `onReset` and the row un-settles itself, with nothing to unwind here.
+  const shown: Guesses = guesses.map((guess, index) => (givenAwayRows[index] ? rows[index].answer : guess)) as Guesses
 
   // A TRANSIENT, so it is empty at mount, which is what keeps the region unoccupied on a first
   // render: NVDA and JAWS announce changes inside a region they are ALREADY watching. Anything this
@@ -422,7 +457,11 @@ export const ThemedAnagramsBoard = ({
   // in the file.
   const rightIn = (current: Guesses): boolean[] => rows.map((entry, index) => isRight(current[index], entry.answer))
 
-  const rights = rightIn(guesses)
+  // Asked of `shown` rather than of `guesses`, so a row the ladder settled is right for the same
+  // reason a typed one is: its box holds the answer. Nothing here decides that a word is correct on
+  // its own -- `isRight` still adjudicates, against the pack's own answer -- and a settled row simply
+  // arrives at the comparison with the answer already in it.
+  const rights = rightIn(shown)
   const right = rights.filter(Boolean).length
   // `rows.length > 0 &&` IS THE WHOLE GUARD, and it landed one commit early because that is the
   // commit that made it destructive. `right === rows.length` alone is `0 === 0` on a pack this board
@@ -454,6 +493,41 @@ export const ThemedAnagramsBoard = ({
     reported.current = solved
   }, [onSolved, solved])
 
+  // WHAT A PURCHASE DID TO THE BOARD, so the one state change on this bench that used to happen in
+  // silence stops doing so.
+  //
+  // `change` says `SPATULA is right — 2 to go.` and it is the only thing that does -- but a rung that
+  // settles a row never reaches it: the press is in the SHELL's hint bar, the adapter writes the
+  // string, and this board learns about it as a changed `progress` prop. The row went right with the
+  // chip appearing and the tally moving and not a word said, which is exactly the lost work every
+  // sentence on this bench exists to prevent, and it is worse for a reader who has neither.
+  //
+  // FIRED ON THE RUNG COUNT AND NOTHING ELSE, and the ref is seeded with the MOUNT-TIME count so a
+  // returning player is not told about a purchase they made yesterday.
+  //
+  // THE LAST RUNG NAMES THE ROW. `open` appends exactly one rung per press and a rung is aimed at one
+  // entry, so at most one row can be settled by a purchase and there is no list to compose. Reading
+  // the entry off the rung is also what keeps this from re-announcing a row an EARLIER rung settled.
+  //
+  // The solve REPLACES the row's own sentence rather than following it, exactly as it does on the
+  // winning keystroke: `LADLE is right — 0 to go.` is not what a player who has just finished wants
+  // to be told.
+  const announcedRungs = useRef(spent.length)
+  useEffect(() => {
+    const bought = spent.length > announcedRungs.current
+    announcedRungs.current = spent.length
+    if (!bought) return
+
+    if (solved) {
+      say(SOLVED)
+      return
+    }
+    const aimed = spent[spent.length - 1]?.entryIndex
+    if (aimed === undefined || givenAwayRows[aimed] !== true) return
+
+    say(`${rows[aimed].answer} is right — ${rows.length - right} to go.`)
+  }, [spent.length])
+
   // The cast is the tuple coming back from map, which types as string[] because map cannot know the
   // length it was handed. Nothing else changes shape here: one row's draft is replaced and the
   // other three are the same strings.
@@ -468,7 +542,11 @@ export const ThemedAnagramsBoard = ({
   // backspace and a lost purchase. Adding an `onReset()` here would empty the hint bar every time a
   // player cleared their last draft.
   const change = (index: number, next: string): void => {
-    const updated = guesses.map((guess, at) => (at === index ? next : guess)) as Guesses
+    // BUILT FROM `shown`, NEVER FROM `guesses`. A row the ladder settled holds its answer on screen
+    // and in the store, and rebuilding the four drafts from the player's own typing would write an
+    // empty string over it on the next keystroke in any other row -- an answer they paid a rung for,
+    // gone, on a press that had nothing to do with that row.
+    const updated = shown.map((guess, at) => (at === index ? next : guess)) as Guesses
 
     setGuesses(updated)
     onProgress(encode(updated))
@@ -749,7 +827,9 @@ export const ThemedAnagramsBoard = ({
                   ref={index === 0 ? firstBox : undefined}
                   spellCheck={false}
                   type="text"
-                  value={guesses[index]}
+                  // `shown`, so a row the ladder settled draws the answer it was handed. `guesses`
+                  // is the player's own typing and does not carry it -- see `shown` above.
+                  value={shown[index]}
                 />
                 {rights[index] && (
                   <p className={CHIP}>

@@ -7,6 +7,7 @@ import {
 } from '@rules/hint-themed-anagrams'
 
 import { isRight } from './answers'
+import { isGivenAway } from './display'
 import { attachHints, decode, decodeHints, encode, Guesses, ThemedAnagramsHintTail } from './progress'
 import type { HintAdapter } from '@registry'
 import { HintLadder, Puzzle, PuzzleProgress, ThemedAnagramsData } from '@types'
@@ -101,6 +102,30 @@ const grow = (
 // with none, so there is no shorter honest way to say it and no length to derive.
 const NOTHING_SOLVED: ThemedAnagramsPlayerState = { solved: [false, false, false, false] }
 
+/**
+ * The four drafts with any row the ladder has SETTLED standing in its own answer.
+ *
+ * A row whose unpinned positions can hold only one word has nothing left to work out, so the board
+ * fills it in and marks it right -- see `isGivenAway`, which is where that judgement lives and which
+ * the board calls with the same two arguments. THIS FUNCTION IS WHY IT TAKES A SPENT LIST RATHER THAN
+ * A PINNED SET: the board and this adapter must agree row for row, and two places building a pinned
+ * set separately is two places that can build it differently.
+ *
+ * THE PURCHASE WRITES THE BOARD, which is the arrangement the cipher bench already uses and the
+ * reason it is here rather than left to the board alone. The board derives the same overlay on every
+ * render, so the screen would be right either way -- what the write buys is the STORE agreeing with
+ * it. `fold` reads `decode(progress).guesses` to ask which rows are already won, and without this a
+ * later rung would go on aiming at a row the ladder had already handed over: a hint spent on a word
+ * standing in the box beside it.
+ *
+ * IT IS NOT A SECOND WRITER OF THE HINT FIELDS. This composes the BOARD portion, and `attachHints`
+ * puts the tail on -- the same one-writer split every board write goes through.
+ */
+const settle = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagramsSpentRung[]): Guesses =>
+  guesses.map((guess, index) =>
+    isGivenAway(entries[index]?.answer, spent, index) ? entries[index].answer : guess,
+  ) as Guesses
+
 const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagramsSpentRung[]) => {
   const probe = grow(entries, { solved: solvedIn(entries, guesses) }, spent)
   if (probe.length > 0) return probe
@@ -160,9 +185,14 @@ const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagra
  * bar can sell is the ANSWER and there is no rung for it. See `ThemedAnagramsHintTail` in progress.ts.
  *
  * `open` returns the next progress string or null. Null is a decline and the count stays where it is,
- * which is what HintBar documents for a controlled owner that says no. IT WRITES NO DRAFT: unlike
- * cryptogram, a rung here changes the DISPLAY and never the player's typing, so the board portion is
- * copied through untouched and the input box is left entirely alone.
+ * which is what HintBar documents for a controlled owner that says no.
+ *
+ * IT WRITES A DRAFT ONLY FOR A ROW THE LADDER HAS SETTLED -- see `settle`. A rung on this bench
+ * normally changes the DISPLAY and never the player's typing, so the board portion is copied through
+ * untouched and the input box is left alone; the exception is a row whose unpinned positions can hold
+ * only one word, which the board hands over rather than making the player copy it off the plate. That
+ * is the cipher bench's arrangement, and it is here for the cipher bench's reason: what is stored and
+ * what is drawn should be one arrangement rather than two that have to agree.
  */
 export const themedAnagramsHints: HintAdapter = {
   ladder: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): HintLadder | null => {
@@ -208,11 +238,11 @@ export const themedAnagramsHints: HintAdapter = {
         ? { hints, opened: opened + 1 }
         : { hints: probe.slice(0, opened + 1), opened: opened + 1 }
 
-    // `encode(guesses)` rather than the stored string, so the board portion this writes is one the
+    // `encode(settle(...))` rather than the stored string, so the board portion this writes is one the
     // decoder above just accepted. A string it refused would otherwise be carried forward verbatim
     // and refused again on every later load, with the ladder growing beside four drafts nothing can
     // read.
-    return attachHints(encode(guesses), tail)
+    return attachHints(encode(settle(entries, guesses, tail.hints)), tail)
   },
 
   opened: (progress: PuzzleProgress): number => decodeHints(progress).opened,
