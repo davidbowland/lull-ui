@@ -45,9 +45,17 @@ describe('PhrazleBoard', () => {
   // IT ALTERNATES, and every assertion below is written against the arithmetic rather than around
   // it. `say` increments the nonce before the mark is drawn from it and the board appends the mark
   // on an ODD nonce, so a test's FIRST message carries one and its SECOND carries none -- the same
-  // arithmetic themedanagrams asserts. Filling the row is itself a message (`Every tile is full.`), so every
-  // press of Guess that follows a full row is a second message and its text stands alone. Pinning
-  // both by value is what says the two consecutive messages DIFFER, which is the whole mechanism.
+  // arithmetic themedanagrams asserts. Pinning both by value is what says the two consecutive
+  // messages DIFFER, which is the whole mechanism.
+  //
+  // COUNT TWO THRESHOLDS, NOT ONE, and this is the half of the key that changed when the board
+  // started marking a word the list does not have. Filling the row is a message
+  // (`Every tile is full.`) and it always was; completing a word the list does not have is now a
+  // message too. So a press of Guess is not reliably message two any more -- on a row whose words
+  // are all in the list it still is, and on a row with one rejected word it is message three, which
+  // is ODD and therefore carries the mark. Work the count from the keystrokes rather than assuming
+  // the old rule: `refuses every guess when it was handed no dictionary` is the row that proves it,
+  // because against an empty list every completed word is rejected.
   const REPEAT_MARK = '\u200b'
 
   // markGuess on TOE HOLD / HOT HAND, worked through by hand and written here so a reader can check
@@ -438,11 +446,17 @@ describe('PhrazleBoard', () => {
       expect(composing()).toHaveAccessibleName('Your guess, TOE HOL')
     })
 
-    // `hush()` IN `press`, which nothing reached either: the only test that pressed a letter with a
-    // sentence already standing in the ribbon was one where the sentence was `Every tile is full.`, and that
-    // press returns at the guard above before it can hush anything. So a player who pressed Guess on
-    // a short row and then went on typing kept `Fill every tile first.` in the live region over a row
-    // that was no longer short.
+    // `hush()` IN `press`, which nothing reached when this was written: the only test that pressed a
+    // letter with a sentence already standing in the ribbon was one where the sentence was `Every
+    // tile is full.`, and that press returns at the guard above before it can hush anything. So a
+    // player who pressed Guess on a short row and then went on typing kept `Fill every tile first.`
+    // in the live region over a row that was no longer short.
+    //
+    // `says the word is not in the list once and does not say it again` now reaches the same `hush()`
+    // and reaches it from further in -- a rejected word leaves a sentence standing on a row that is
+    // NOT full, so the press falls through the guard and hushes for real. This row stays because it
+    // is the one that names the refusal being cleared; that one is the one that names the mark
+    // outliving it.
     //
     // REDDENS ON: dropping `hush()` from `press` -- the ribbon still reads `Fill every tile first.`
     it('clears a standing refusal as soon as the player types again', async () => {
@@ -614,14 +628,24 @@ describe('PhrazleBoard', () => {
     // off disk as a spent guess holding a word the list does not have. Only the composing row is
     // ever marked.
     //
-    // REDDENS ON: dropping the `isComposing` guard from `wordRejected`, which marks the spent row
-    // whenever the player's own composing word happens to be rejected at the same index.
-    it('marks nothing on a committed row holding a word the list lacks', () => {
-      const { container } = renderBoard(phrazlePuzzle, '{"guesses":["TOD HOLD"]}')
+    // THE PLAYER HAS TO TYPE THE SAME WORD, and that is what makes this a test rather than a
+    // sentence. `rejected` is derived from `typed`, so on an untouched board every entry fails the
+    // `word.length === lengths[index]` completion test and is false -- which means `isComposing &&
+    // rejected[i]` and a bare `rejected[i]` both come out false on BOTH rows and the guard this test
+    // is named for is unprotected. Typing TOD makes index 0 rejected for real, so the spent row
+    // above has something to copy.
+    //
+    // REDDENS ON: dropping the `isComposing` guard from `wordRejected` -- the spent TOD takes a chip
+    // and an outline too, and both counts come back 2.
+    it('marks nothing on a committed row holding a word the list lacks', async () => {
+      const { container, user } = renderBoard(phrazlePuzzle, '{"guesses":["TOD HOLD"]}')
+
+      await type(user, 'TOD')
 
       expect(screen.getByRole('group', { name: 'Guess 1, TOD HOLD' })).toBeInTheDocument()
-      expect(marks(container)).toHaveLength(0)
-      expect(extents(container)).toHaveLength(0)
+      expect(marks(container)).toHaveLength(1)
+      expect(extents(container)).toHaveLength(1)
+      expect(extents(container)[0]).toBe(composing().children[0])
     })
 
     // AN ACCEPTED WORD BESIDE A REJECTED ONE CARRIES NOTHING, with the rejection in word 2 this time

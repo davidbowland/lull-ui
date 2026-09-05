@@ -115,10 +115,13 @@ const COMPOSING = 'border border-[var(--lull-rule)] bg-[var(--lull-raised)] text
 // rather than as a tile with a badge on it. NotAWord is the channel that survives a color vision
 // deficiency, and it survives it by being a shape.
 //
-// AN ACCENT BORDER ON AN `r-sm` CELL ALREADY MEANS SOMETHING ELSE IN THIS APP, in two other places
-// and in three other senses: cryptogram/index.tsx:162,187 draws it for the SELECTED square, and
-// gofigure/index.tsx:255,261 draws it for the caret and again for a hint-locked cell. This is a
-// third sense -- REJECTED -- and it is accepted rather than overlooked, on three grounds. Phrazle
+// AN ACCENT EDGE ON AN `r-sm` CELL ALREADY MEANS SOMETHING ELSE IN THIS APP, and the tally is worth
+// getting right because a vaguer version of it reads as a smaller problem than it is. Two of them
+// are BORDERS like this one -- cryptogram/index.tsx:162 for the selected square (which also spends
+// accent on hover) and gofigure/index.tsx:261 for a hint-locked cell -- and two more are `inset-ring-2`
+// rather than a border, drawn for the caret on each of those benches (cryptogram/index.tsx:187,
+// gofigure/index.tsx:255). So this is a FIFTH sense of accent on a cell and a THIRD drawn as a
+// border: REJECTED. It is accepted rather than overlooked, on three grounds. Phrazle
 // has no caret and no current-word affordance for it to be confused with; the three benches never
 // render together, so no player meets two senses on one screen; and within this bench the chip
 // disambiguates, because nothing else on the board draws one.
@@ -336,9 +339,11 @@ const GuessRule = (): React.ReactNode => (
 //     An earlier draft specified a 5.45px offset and a 1.5px ring -- 6.95px into a 6px gap, which is
 //     a mark overlapping the tile on the line above, and that is the same fault the rejected
 //     spellcheck wave lost on.
-//   - THE CAP LINE. All 26 capitals rasterized in the real Baskervville face at round(tile x 0.58)
-//     put ink no higher than 14.75px down AT A 40px TILE; the chip's inner edge is at 12px, so it
-//     clears the tallest letter by 2.75px and never sits on a glyph the player is reading.
+//   - THE CAP LINE, AND THE CLEARANCE IS COMPUTED AT ONE TILE SIZE RATHER THAN GUARANTEED AT ALL OF
+//     THEM. All 26 capitals rasterized in the real Baskervville face at round(tile x 0.58) put ink
+//     no higher than 14.75px down AT A 40px TILE, where the chip's inner edge is at 12px and clears
+//     the tallest letter by 2.75px. See the limitation below for where that stops being true: the
+//     glyph scales with the tile and the chip does not, so the two meet on the way down.
 //   - HORIZONTALLY the chip reaches the same 3.25px into the 12px WORD_GAP on a word that is not the
 //     first, leaving 8.75px. The rejected margin caret spent 7 of those 12, which is part of why it
 //     lost: a mark in a gap has to leave the gap still reading as a word boundary.
@@ -349,11 +354,23 @@ const GuessRule = (): React.ReactNode => (
 // OUTSIDE the tile; inside the tile the chip overlaps `--lull-raised` instead, and the two grounds
 // differ by about 1.1:1, so one ring color reads as one surface across the boundary either way.
 //
-// KNOWN LIMITATION, STATED RATHER THAN SOLVED: the chip does not scale with the tile, so at MIN_TILE
-// (18px) it would cover the tile's center. layout.ts:87 records that the floor is all but
-// unreachable from the corpus -- it takes a fifteen-letter word, which is a malformed pack rather
-// than a puzzle -- and this accepts the same bound for the same reason. Scaling is not to be added
-// on spec; it is a separate change with its own render.
+// KNOWN LIMITATION, STATED RATHER THAN SOLVED, AND IT IS REACHED BEFORE THE FLOOR IS. The chip is a
+// fixed 14px and the glyph is round(tile x 0.58), so the cap line climbs toward the chip as the tile
+// shrinks. Working the cap ratio above back out -- ink starts 0.272em above the tile's center, which
+// is about 0.368 x tile -- the chip's 12px bottom edge meets the tallest capital at roughly a 33px
+// tile, and its 1.25px ring meets it at roughly 36px.
+//
+// THAT IS INSIDE THE CORPUS, not past it. At a 320 viewport the plate holds 288, which sizes an
+// eight-letter word at 34 and a nine-letter word at 30 -- so on those phrases the ring grazes the
+// first capital and, at nine, the chip itself laps about a pixel onto it. Nine letters is not a
+// malformed pack: layout.test.ts measures the overflow fix on a nine-letter word.
+//
+// IT IS ACCEPTED AT A GRAZE AND WOULD NOT BE AT MORE. The overlap is a pixel of ring on the shoulder
+// of one capital on the smallest phones, and the letter stays legible; the alternative is sizing the
+// chip off `tile` the way `letter` and `bar` already are, which is one line and a render, and is a
+// separate change rather than one made on spec. MIN_TILE (18px) is well past the graze and would put
+// the chip over the tile's center, but layout.ts:87 records that floor as all but unreachable -- it
+// takes a fifteen-letter word -- so the bound that actually matters is the 33px one above.
 //
 // aria-hidden on Bar's stated reasoning: the composing row's own accessible name already ends in
 // `not in the word list`, and a screen reader must not meet the same verdict twice.
