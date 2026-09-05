@@ -393,17 +393,30 @@ export const PhrazleBoard = ({
     const plate = plateRef.current
     if (plate === null || typeof ResizeObserver === 'undefined') return
 
-    const observer = new ResizeObserver(() => {
-      // THE PLATE, AND ONLY THE PLATE. This used to observe the board section too, for a height the
-      // tiles were sized against; that measurement is gone, and with it the reason the two boxes had
-      // to be told apart. What is left is the simple half: the plate is the box the tiles are
-      // actually laid out inside, and the section would overstate the room by a gutter a side.
+    const observer = new ResizeObserver((entries) => {
+      // THE PLATE, AND ONLY THE PLATE -- AND ITS CONTENT BOX, NEVER ITS PADDING BOX. This used to
+      // observe the board section too, for a height the tiles were sized against; that measurement
+      // is gone, and with it the reason the two boxes had to be told apart. The plate is still the
+      // right ELEMENT: it is the box the tiles are actually laid out inside, and the section would
+      // overstate the room by a gutter a side.
+      //
+      // AND THE RIGHT ELEMENT WAS BEING READ THE WRONG WAY, which is what this line used to get
+      // wrong while the paragraph above congratulated it. It was `plate.clientWidth`, and
+      // clientWidth is the PADDING box: it counts the plate's own --lull-gutter-left and
+      // --lull-gutter-right, 16px each, so it overstates the room by exactly the gutter a side the
+      // section was rejected for overstating it by. tileSize is documented and tested as taking the
+      // CONTENT width, so the tiles were sized against 32px of room no row has, and a long word
+      // overflowed -- at 320 a nine-letter word drew a 329px grid inside a 320px box, and
+      // .lull-board computes `overflow-x: auto` (index.css gives it `overflow-y: auto`), so the
+      // board really did scroll sideways. `contentRect` is the content box and the callback is
+      // handed it for free: no second measurement, and no reading a gutter back out of a stylesheet
+      // to subtract it.
       //
       // MEASURING THE PLATE'S HEIGHT WAS NEVER AN OPTION and still is not, which is worth keeping
       // said: the plate's height grows with the grid inside it, so sizing tiles off it is circular
       // -- bigger tiles, taller plate, bigger tiles, to the ceiling on every board. Width has no
       // such loop, which is why width is the one that survived.
-      const measured = plate.clientWidth
+      const measured = entries[0]?.contentRect.width ?? 0
       // A hidden or not-yet-laid-out box reports zero, and honoring that collapses every tile.
       if (measured > 0) setWidth(measured)
     })

@@ -100,8 +100,18 @@ describe('PhrazleBoard', () => {
   // elements it was told to watch, and a test drives the callback by hand. THE DELETE IS NOT
   // OPTIONAL, for the same reason scrollIntoView's is not -- `clearMocks` knows nothing about an
   // assignment to a global.
+  //
+  // THE CALLBACK TAKES ENTRIES, and the stub has to hand it some: the board reads the content box
+  // off `entries[0].contentRect` rather than re-measuring the element, so a stub calling back with
+  // no argument exercises only the `?? 0` arm and every width row would assert the mount-time
+  // default. Only the one field the board reads is modeled -- a full ResizeObserverEntry carries
+  // borderBoxSize, devicePixelContentBoxSize and a target, none of which this bench looks at, and
+  // faking them would be inventing a contract to test against.
+  interface Entry {
+    contentRect: { width: number }
+  }
   interface Recorded {
-    callback: () => void
+    callback: (entries: Entry[]) => void
     disconnects: number
     observed: Element[]
   }
@@ -120,7 +130,7 @@ describe('PhrazleBoard', () => {
       value: class {
         private readonly record: Recorded
 
-        constructor(callback: () => void) {
+        constructor(callback: (entries: Entry[]) => void) {
           this.record = { callback, disconnects: 0, observed: [] }
           observers.push(this.record)
         }
@@ -2002,37 +2012,40 @@ describe('PhrazleBoard', () => {
   // ONE BOX NOW, WHERE THERE WERE TWO. This block used to pin which dimension came off which
   // element -- the section for height, the plate for width -- and the height is gone: a grid that
   // grows a row per guess cannot be sized to fit a band, so it scrolls and tiles hold their size.
-  // What is left to defend is that the width still comes off the PLATE, which is the half that was
-  // always the subtle one.
+  // What is left to defend is WHICH BOX OF THE PLATE the width comes off, which is the half that
+  // was always the subtle one and the half that was wrong.
   describe('measuring the room the grid has', () => {
-    // Given DIFFERENT widths on purpose, so reading the wrong element produces a wrong answer rather
-    // than a zero -- a zero is caught by the board's own guard and would redden these rows for the
-    // wrong reason.
-    const box = (element: Element | null, width: number, height: number): void => {
-      Object.defineProperty(element, 'clientHeight', { configurable: true, value: height })
+    // The plate's PADDING width, set to the content width plus the gutter it carries a side, so a
+    // board that goes back to `plate.clientWidth` reports a number this block can name. Nothing in
+    // the board reads clientHeight any more, and nothing here sets it.
+    const paddingWidth = (element: Element | null, width: number): void => {
       Object.defineProperty(element, 'clientWidth', { configurable: true, value: width })
     }
     // The plate is the section's only div: the sign row above it is a <p>.
     const plateOf = (board: HTMLElement): Element | null => board.querySelector('div')
 
-    // THE WIDTH COMES OFF THE PLATE, NOT THE SECTION, and that is the whole of what this row now
-    // says. The plate is the box the tiles are actually laid out inside; the section would overstate
-    // the room by a gutter a side. Everything downstream of this reaches the screen as a px width on
-    // a tile, and style assertions are forbidden, so the call is the only place it is visible.
+    // THE CONTENT BOX, NOT THE PADDING BOX, and that is the whole of what this row now says. The
+    // plate is the right element -- the box the tiles are actually laid out inside -- and it was
+    // being read the wrong way: `clientWidth` counts the plate's own 16px gutter a side, so tileSize
+    // was handed 32px of room no row has and a long word overflowed. `contentRect` is what the
+    // callback is given. Everything downstream of this reaches the screen as a px width on a tile,
+    // and style assertions are forbidden, so the call is the only place it is visible.
+    //
+    // THE TWO NUMBERS DIFFER BY EXACTLY THE TWO GUTTERS, so the wrong read is not merely wrong, it
+    // is wrong by the amount the real bug was wrong by.
     //
     // NO HEIGHT AND NO ROW COUNT IN THE CALL, which is the arity change stated as an assertion:
     // `toHaveBeenLastCalledWith` matches the full argument list, so a board that went back to
     // passing four arguments fails here rather than silently sizing tiles against a band again.
     //
-    // REDDENS ON: reading the width off the section, which calls tileSize with 390.
-    it('reads the width off the plate rather than off the board band', () => {
+    // REDDENS ON: reading `plate.clientWidth`, which calls tileSize with 332.
+    it('sizes from the plate content box rather than from its padding box', () => {
       renderBoard()
       const board = screen.getByRole('region', { name: 'Phrazle' })
-      box(board, 390, 500)
-      box(plateOf(board), 300, 800)
+      paddingWidth(plateOf(board), 332)
 
       act(() => {
-        lastObserver().callback()
+        lastObserver().callback([{ contentRect: { width: 300 } }])
       })
 
       expect(mockTileSize).toHaveBeenLastCalledWith(300, [3, 4])
@@ -2042,18 +2055,22 @@ describe('PhrazleBoard', () => {
     // every tile as a px width. The board keeps the measurement it already had, which at mount is
     // layout.ts's guess at a 390 viewport.
     //
-    // ONE ROW WHERE THERE WERE TWO: the height row is gone with the height. It is not replaced by a
-    // second width row, because there is only one box left to report zero.
+    // TWO ROWS, ONE PER ARM OF `entries[0]?.contentRect.width ?? 0`. A zero content box is what an
+    // unlaid box reports; an empty entry list is what the optional chain is there for, and it is a
+    // shape the spec permits rather than an invented one. The plate carries a padding width in both,
+    // so a board that went back to clientWidth would size from 32 and 332 rather than hold.
     //
-    // REDDENS ON: dropping `measured > 0`, after which the call is 0.
-    it('ignores a width that has not been laid out yet', () => {
+    // REDDENS ON: dropping `measured > 0`, after which the first call is 0 and the second is 0.
+    it.each<[string, { contentRect: { width: number } }[], number]>([
+      ['a content box that has not been laid out yet', [{ contentRect: { width: 0 } }], 32],
+      ['an entry list with nothing in it', [], 332],
+    ])('holds the width it already had on %s', (_description, entries, padding) => {
       renderBoard()
       const board = screen.getByRole('region', { name: 'Phrazle' })
-      box(board, 390, 500)
-      box(plateOf(board), 0, 800)
+      paddingWidth(plateOf(board), padding)
 
       act(() => {
-        lastObserver().callback()
+        lastObserver().callback(entries)
       })
 
       expect(mockTileSize).toHaveBeenLastCalledWith(DEFAULT_WIDTH, [3, 4])
