@@ -31,6 +31,12 @@ describe('PhrazleBoard', () => {
   // so a board asked to refuse it would have to refuse a word the list has. HELD is the same
   // near-miss on HOLD, one letter away, and is the word the list does not have.
   const NOT_IN_LIST = 'HELD isn’t in the word list. Change it and press Guess.'
+  // TOD IS WORD 1's NEAR-MISS and it is chosen the way HELD was: one letter from TOE, which is the
+  // phrase's own first word, so it is the slip a player actually makes -- and the list does not have
+  // it. Two spellings of the same refusal, because the board says one of them while the row is being
+  // typed and the other once Guess can do something about it.
+  const NOT_IN_LIST_TYPING = 'TOD isn’t in the word list.'
+  const NOT_IN_LIST_TOD = 'TOD isn’t in the word list. Change it and press Guess.'
   const SOLVED = 'Solved. The answer is TOE HOLD.'
   // The board's own REPEAT_MARK, written as the escape rather than as the character, because a
   // literal zero-width space in a test file is invisible and an editor deletes it without leaving a
@@ -350,13 +356,39 @@ describe('PhrazleBoard', () => {
       expect(ribbon()).toHaveProperty('textContent', `${ROW_FULL}${REPEAT_MARK}`)
     })
 
-    // §8.2: the ribbon is NOT written while the row fills. Per-letter feedback comes from the
-    // control the player is standing on, so the live region stays free for the marking -- a region
-    // that fired seven times a guess would bury the one message that matters.
-    it('says nothing at all until the row is full', async () => {
+    // §8.2 NARROWED, AND THE OLD PREMISE IS GONE. This used to read `says nothing at all until the
+    // row is full`, which stopped being true the day a completed word the list does not have earned
+    // a sentence of its own -- and it went on passing anyway, by luck, because `TOEHOL` is a valid
+    // TOE plus a partial HOL. A test that cannot fail for the reason it names is a test that has
+    // stopped defending anything.
+    //
+    // WHAT IS STILL TRUE is the narrower rule: the ribbon is written only for a change in what Guess
+    // will do, and moving the caret is not one. Per-letter feedback comes from the control the
+    // player is standing on, so the live region stays free for the marking -- a region that fired
+    // seven times a guess would bury the one message that matters.
+    //
+    // ASSERTED AFTER EACH STEP rather than once at the end, because the failure this is written
+    // against is a single noisy keystroke somewhere in the middle: a check only at `TOEHOL` passes
+    // on a board that announced on every one of the six and then hushed.
+    //
+    // THE COMPLETION IN THE MIDDLE IS THE INTERESTING ONE. The E finishes TOE, which the list HAS,
+    // so a completion that is ACCEPTED is silent too -- the exception is the rejected completion,
+    // not the completion.
+    //
+    // REDDENS ON: `say` on any keystroke that neither completes a rejected word nor fills the row.
+    it('says nothing on a keystroke that neither completes a rejected word nor fills the row', async () => {
       const { user } = renderBoard()
 
-      await type(user, 'TOEHOL')
+      await type(user, 'TO')
+
+      expect(ribbon()).toBeEmptyDOMElement()
+
+      await type(user, 'E')
+
+      expect(composing()).toHaveAccessibleName('Your guess, TOE')
+      expect(ribbon()).toBeEmptyDOMElement()
+
+      await type(user, 'HOL')
 
       expect(composing()).toHaveAccessibleName('Your guess, TOE HOL')
       expect(ribbon()).toBeEmptyDOMElement()
@@ -462,7 +494,11 @@ describe('PhrazleBoard', () => {
       await type(user, 'TOEHELD')
       await user.click(keyNamed(/^Guess$/))
 
-      // `Every tile is full.` was message one, so this is message two and stands alone.
+      // MESSAGE ONE WAS THIS SAME SENTENCE, not `Every tile is full.`, and that is what changed
+      // here: the D both fills the row and completes HELD, so the row-full threshold says the
+      // refusal rather than the invitation. This press of Guess is therefore message two, its nonce
+      // is even, and its text stands alone -- which is also the assertion that the two consecutive
+      // identical sentences DIFFER by the repeat mark and the live region announces the second.
       expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST)
       expect(screen.getByText('Guess 1')).toBeInTheDocument()
       expect(onProgress).not.toHaveBeenCalled()
@@ -476,14 +512,275 @@ describe('PhrazleBoard', () => {
     //
     // BOTH WORDS OFFEND HERE and only the first is named, which is where `never all of them` is
     // pinned: TOE is said and HOLD is not.
+    //
+    // THE REPEAT MARK IS DUE AND IT WAS NOT BEFORE, which is the one thing about this row that
+    // moved. The empty set rejects every word, so this board says the sentence three times: the E
+    // completes TOE against nothing and earns `TOE isn’t in the word list.`, the D fills the row and
+    // earns the full refusal, and this press of Guess earns it again. Three messages is an odd
+    // nonce, and the board appends the zero-width space on an odd nonce -- the parity arithmetic
+    // documented at the top of this file, asserted rather than worked around.
     it('refuses every guess when it was handed no dictionary', async () => {
       const { user } = renderBoard(phrazlePuzzle, null, null)
 
       await type(user, 'TOEHOLD')
       await user.click(keyNamed(/^Guess$/))
 
-      expect(ribbon()).toHaveProperty('textContent', 'TOE isn’t in the word list. Change it and press Guess.')
+      expect(ribbon()).toHaveProperty(
+        'textContent',
+        `TOE isn’t in the word list. Change it and press Guess.${REPEAT_MARK}`,
+      )
       expect(onProgress).not.toHaveBeenCalled()
+    })
+  })
+
+  // THE WORD THE LIST DOES NOT HAVE, MARKED WHILE IT IS STILL BEING TYPED. Two channels and two
+  // lifetimes, and the whole block is written around the difference: the MARK on the board is
+  // STANDING, DERIVED state -- recomputed every keystroke, shown for every completed rejected word
+  // at once -- and the RIBBON is an EVENT, written only on the transition into a rejected
+  // completion. Confuse the two and the live region re-announces the same sentence on every
+  // keystroke, which is the failure §8.2 exists to prevent.
+  //
+  // COUNTED IN THE DOM, because the chip and the accent outline are both style otherwise: CLAUDE.md
+  // forbids style assertions and jsdom lays nothing out, so `[data-not-a-word-mark]`,
+  // `[data-not-a-word-arm]` and `[data-not-a-word]` are the assertable halves -- the same bargain
+  // `[data-seg]`, `[data-struck]` and `[data-guess-rule]` already make on this bench.
+  describe('a word the list does not have, while the row is being typed', () => {
+    // `[data-not-a-word]` matches the attribute of that exact name and NOT `data-not-a-word-mark`:
+    // attribute selectors compare the whole name, so the extent and the chip are counted apart.
+    const marks = (container: HTMLElement): NodeListOf<Element> => container.querySelectorAll('[data-not-a-word-mark]')
+    const arms = (container: HTMLElement): NodeListOf<Element> => container.querySelectorAll('[data-not-a-word-arm]')
+    const extents = (container: HTMLElement): NodeListOf<Element> => container.querySelectorAll('[data-not-a-word]')
+    const tile = (name: string): HTMLElement => screen.getByRole('img', { name })
+
+    // ONE CHIP, TWO ARMS, ON THE WORD'S FIRST TILE. A chip per tile would read as a fifth marking
+    // verdict and would make a five-letter word look more rejected than a two-letter one; the arms
+    // are two elements rather than a ✕ character because a glyph at 7.5px is a font's opinion and
+    // nothing here can count it.
+    //
+    // ASSERTED FROM BOTH ENDS -- the document count and the tile it sits in -- because either half
+    // alone survives the edit that draws the chip on the wrong tile.
+    //
+    // REDDENS ON: dropping `at === 0`, which draws three chips; dropping the chip entirely.
+    it('draws one chip on the first tile of the rejected word', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TOD')
+
+      expect(marks(container)).toHaveLength(1)
+      expect(arms(container)).toHaveLength(2)
+      expect(tile('T').querySelectorAll('[data-not-a-word-mark]')).toHaveLength(1)
+      expect(tile('D').querySelectorAll('[data-not-a-word-mark]')).toHaveLength(0)
+    })
+
+    // THE EXTENT, AND `[data-not-a-word]` IS THE ONLY THING THAT CAN SEE IT. The accent outline is a
+    // class swap on every tile of the word, so without this attribute the whole channel would ship
+    // orphaned -- correct on screen and invisible to the suite, which is how it would later be
+    // deleted in silence.
+    //
+    // Asserted as the ELEMENT, not just the count: the attribute has to land on the word div the
+    // player is looking at, and a board that put it on the row would satisfy a count of one.
+    //
+    // REDDENS ON: dropping `data-not-a-word`; putting it on the row instead of the word.
+    it('outlines the rejected word and no other word', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TODHOLD')
+
+      expect(extents(container)).toHaveLength(1)
+      expect(extents(container)[0]).toBe(composing().children[0])
+    })
+
+    // THE STANDING-STATE ASSERTION, AND IT IS THE ONE THAT MATTERS MOST. The mark is derived every
+    // render rather than latched on the keystroke that earned it, so the backspace that makes the
+    // word incomplete has to take the whole thing back -- chip, arms and outline together. A mark
+    // stored on completion would go on standing over a word that is no longer complete.
+    //
+    // REDDENS ON: any memo, ref or state that keeps the rejection between renders.
+    it('takes the whole mark back on the backspace that makes the word incomplete', async () => {
+      const { container, user } = renderBoard()
+      await type(user, 'TOD')
+
+      expect(marks(container)).toHaveLength(1)
+
+      await user.click(keyNamed(/^Delete$/))
+
+      expect(marks(container)).toHaveLength(0)
+      expect(arms(container)).toHaveLength(0)
+      expect(extents(container)).toHaveLength(0)
+    })
+
+    // A COMMITTED ROW CARRIES NO MARK, and the fixture is the one that makes the claim non-vacuous:
+    // a restore is shape-checked and never dictionary-checked, so `TOD HOLD` really can come back
+    // off disk as a spent guess holding a word the list does not have. Only the composing row is
+    // ever marked.
+    //
+    // REDDENS ON: dropping the `isComposing` guard from `wordRejected`, which marks the spent row
+    // whenever the player's own composing word happens to be rejected at the same index.
+    it('marks nothing on a committed row holding a word the list lacks', () => {
+      const { container } = renderBoard(phrazlePuzzle, '{"guesses":["TOD HOLD"]}')
+
+      expect(screen.getByRole('group', { name: 'Guess 1, TOD HOLD' })).toBeInTheDocument()
+      expect(marks(container)).toHaveLength(0)
+      expect(extents(container)).toHaveLength(0)
+    })
+
+    // AN ACCEPTED WORD BESIDE A REJECTED ONE CARRIES NOTHING, with the rejection in word 2 this time
+    // so the mark is pinned at both ends of the row rather than only at the start of it. H is the
+    // first tile of HELD and is the only H on this board.
+    it('leaves an accepted word beside a rejected one unmarked', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TOEHELD')
+
+      expect(extents(container)).toHaveLength(1)
+      expect(extents(container)[0]).toBe(composing().children[1])
+      expect(tile('H').querySelectorAll('[data-not-a-word-mark]')).toHaveLength(1)
+    })
+
+    // EVERY REJECTED WORD AT ONCE, which is what "standing, derived" means when more than one word
+    // is wrong. Two chips, four arms, two outlines -- never one mark for the row and never only the
+    // word the ribbon happens to be naming.
+    it('marks both words when both are wrong', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TODHELD')
+
+      expect(marks(container)).toHaveLength(2)
+      expect(arms(container)).toHaveLength(4)
+      expect(extents(container)).toHaveLength(2)
+    })
+
+    // The row's own name already ends in `not in the word list`, so a screen reader must not meet
+    // the chip as a second node saying the same thing -- Bar's and Strike's reasoning exactly.
+    //
+    // THE COUNT COMES FIRST, and it is not decoration: a loop over an empty NodeList asserts
+    // nothing, so a board that drew no chip at all would pass the loop alone.
+    it('keeps the chip out of the accessibility tree', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TODHELD')
+
+      expect(marks(container)).toHaveLength(2)
+      for (const mark of marks(container)) {
+        expect(mark).toHaveAttribute('aria-hidden', 'true')
+      }
+    })
+
+    // THE RIBBON IS AN EVENT AND THE MARK IS STATE, asserted in one test because the two are only
+    // interesting together. The completion says the sentence once; the very next letter says nothing
+    // at all while the chip goes on standing over the word that earned it.
+    //
+    // REDDENS ON: deriving the ribbon from the rejected words rather than writing it on the
+    // transition, after which the H re-announces the sentence and the live region fires on every
+    // keystroke of a seven-letter row.
+    it('says the word is not in the list once and does not say it again', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TOD')
+
+      // The test's first message, so the nonce is odd and the mark is due. No imperative tail:
+      // mid-row, `Change it and press Guess` is advice about a button that does nothing yet.
+      expect(ribbon()).toHaveProperty('textContent', `${NOT_IN_LIST_TYPING}${REPEAT_MARK}`)
+
+      await type(user, 'H')
+
+      expect(ribbon()).toBeEmptyDOMElement()
+      expect(marks(container)).toHaveLength(1)
+    })
+
+    // THE ROW-FULL THRESHOLD SAYS THE OTHER SPELLING, verbatim the sentence Guess itself says, so
+    // the typing-time refusal and the Guess-time refusal are one string said at two moments. The
+    // imperative arrives exactly when it becomes actionable, and `Every tile is full. Press Guess.`
+    // drops out rather than merging -- the player just filled the last tile and can see it.
+    //
+    // REDDENS ON: saying ROW_FULL here, or saying the tail-less sentence.
+    it('adds the imperative when the last tile is filled', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TOEHELD')
+
+      expect(ribbon()).toHaveProperty('textContent', `${NOT_IN_LIST}${REPEAT_MARK}`)
+    })
+
+    // THE FIRST OFFENDER AND ONLY THE FIRST, which is `commit`'s rule reused rather than a second
+    // one: a player fixes one word and presses again, and a list read into a live region is a list
+    // read for nothing. The row's NAME lists both, because a label is read on demand.
+    //
+    // TOD's completion was message one and this is message two, so the text stands alone -- and the
+    // two consecutive messages differ, which is what makes the second one announce at all.
+    it('names the first offender when the full row has two of them', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TODHELD')
+
+      expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST_TOD)
+    })
+
+    // AN ERASE HUSHES AND THE MARK STAYS, which is the split stated as one assertion. The ribbon is
+    // an event and nothing happened; the chip is state and the state has not changed.
+    //
+    // REDDENS ON: `erase` re-saying the refusal, which announces on every backspace of a row a
+    // player is repairing.
+    it('hushes the ribbon on an erase and leaves the mark standing', async () => {
+      const { container, user } = renderBoard()
+      await type(user, 'TODHELD')
+
+      expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST_TOD)
+
+      await user.click(keyNamed(/^Delete$/))
+
+      expect(ribbon()).toBeEmptyDOMElement()
+      expect(marks(container)).toHaveLength(1)
+      expect(extents(container)).toHaveLength(1)
+    })
+
+    // THE ROW'S NAME GAINS THE CLAUSE AND LOSES IT AGAIN. `getByRole(..., { name })` reads the
+    // accessibility tree, so this IS the accessibility assertion -- never jest-axe, which is not a
+    // dependency of this repo and must not become one.
+    //
+    // THE HEAD HAS NO STRAY SPACE IN IT. `composed` ends in one space per word slot the player has
+    // not reached, and a trailing space is trimmed by name computation while an INTERIOR one is not
+    // -- so without the trimEnd this reads `Your guess, TOD , TOD not in the word list`.
+    //
+    // REDDENS ON: dropping the clause; dropping the trimEnd.
+    it('names the offending word in the row and takes the clause back', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TOD')
+
+      expect(composing()).toHaveAccessibleName('Your guess, TOD, TOD not in the word list')
+
+      await user.click(keyNamed(/^Delete$/))
+
+      expect(composing()).toHaveAccessibleName('Your guess, TO')
+    })
+
+    // TWO OFFENDERS ARE JOINED BY `and`, never by a comma: the row's name is a sentence a screen
+    // reader reads on demand, and completeness costs nothing there, so unlike the ribbon it lists
+    // every word -- in English rather than as a dump.
+    //
+    // REDDENS ON: joining with ', ' at two offenders.
+    it('joins two offending words with and', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TODHELD')
+
+      expect(composing()).toHaveAccessibleName('Your guess, TOD HELD, TOD and HELD not in the word list')
+    })
+
+    // TILE NAMES DO NOT CHANGE. A word-level fact must not be spoken by a letter-level element: a
+    // tile saying `D, not in the word list` claims about one letter what is true of three, and a
+    // screen reader working the row would hear the verdict once per tile.
+    //
+    // REDDENS ON: threading the rejection into `tileName`.
+    it('leaves the tiles named by their letters alone', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TOD')
+
+      expect(tile('T')).toBeInTheDocument()
+      expect(tile('D')).toBeInTheDocument()
+      expect(screen.queryByRole('img', { name: /word list/ })).toBeNull()
     })
   })
 

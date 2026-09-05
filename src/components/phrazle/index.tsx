@@ -102,6 +102,32 @@ const FILL: Record<TileState, string> = {
 // nearest thing on the board and the future rows stay flat plate behind it.
 const COMPOSING = 'border border-[var(--lull-rule)] bg-[var(--lull-raised)] text-[var(--lull-ink)]'
 
+// THE EXTENT OF THE MARK, and it is the same tile with one token swapped: `rule` becomes `accent` on
+// the border and nothing else moves. Ground, border width and radius are COMPOSING's, so a rejected
+// word costs no reflow, invents no fifth tile type, and cannot be mistaken for a marked tile -- the
+// four verdicts all carry a fill and a bar, and this carries neither.
+//
+// THE CHIP IS THE MARK; THIS BORDER IS REDUNDANCY, and the order matters because the obvious reading
+// is the other way round. `accent` against `rule` is 1.674:1 in light and 2.155:1 in dark -- a
+// near-luminance-identical hue swap on a 1px edge, which is precisely the failure colors.ts:112-115
+// names for tileGreen against tileYellow. So this channel is not the non-color channel and must
+// never be relied on as one: it is what makes a word already carrying a chip read as a whole word
+// rather than as a tile with a badge on it. NotAWord is the channel that survives a color vision
+// deficiency, and it survives it by being a shape.
+//
+// AN ACCENT BORDER ON AN `r-sm` CELL ALREADY MEANS SOMETHING ELSE IN THIS APP, in two other places
+// and in three other senses: cryptogram/index.tsx:162,187 draws it for the SELECTED square, and
+// gofigure/index.tsx:255,261 draws it for the caret and again for a hint-locked cell. This is a
+// third sense -- REJECTED -- and it is accepted rather than overlooked, on three grounds. Phrazle
+// has no caret and no current-word affordance for it to be confused with; the three benches never
+// render together, so no player meets two senses on one screen; and within this bench the chip
+// disambiguates, because nothing else on the board draws one.
+//
+// IT IS RECORDED SO THE NEXT EDIT IS NOT FREE. A future "current word" affordance on THIS board
+// cannot use this channel, because a board with both would be spelling two different facts in one
+// mark and the chip would be doing all the work for both.
+const COMPOSING_REJECTED = 'border border-[var(--lull-accent)] bg-[var(--lull-raised)] text-[var(--lull-ink)]'
+
 // `Press Guess to mark it`, not `to have it marked`. The passive named no actor and the sentence
 // beside it is an imperative, so one line asked the player to do something and the next described
 // something happening to them.
@@ -136,6 +162,20 @@ const LEGEND: [TileState, string][] = [
 const ROW_FULL = 'Every tile is full. Press Guess.'
 const FILL_FIRST = 'Fill every tile first.'
 const NOT_IN_LIST = (word: string): string => `${word} isn’t in the word list. Change it and press Guess.`
+// THE SAME REFUSAL WITHOUT THE IMPERATIVE, for the moment the row is still being typed. `Change it
+// and press Guess` is advice about a button that does nothing yet: a row short of full is refused by
+// the length check above, long before the dictionary is consulted, so mid-row the tail would name an
+// action that cannot be taken. It appears exactly when it becomes actionable -- when the row fills,
+// or when Guess is pressed -- and until then the sentence stops at the fact.
+//
+// ONE NOUN EVERYWHERE, AND IT IS `in the word list`. Never `isn't a word`: the list runs to about
+// 52,000 entries and real English falls outside it, so a claim about English is one this board
+// cannot support and a player holding a perfectly good word would be told they were wrong.
+//
+// A SECOND FUNCTION RATHER THAN A SLICE OF THE FIRST. Deriving one from the other -- splitting
+// NOT_IN_LIST on its own full stop, say -- would make the two sentences one string with a seam
+// inside it, and a seam is what an edit to either half breaks in silence.
+const notInList = (word: string): string => `${word} isn’t in the word list.`
 const FINISHED = 'This board is finished. Press Again to start over.'
 // goFigure's sentence verbatim, because it is the same refusal for the same reason on another
 // bench: a sheet is lying over the board and the keyboard is writing underneath it. A player who
@@ -185,8 +225,14 @@ const TONE: Record<KeyStatus, string> = {
 const TONE_UTILITY =
   'bg-[var(--lull-floor)] text-[var(--lull-floor-accent)] hover:text-[var(--lull-floor-ink)] ' +
   'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
+// `relative` IS FOR THE CHIP AND IT SITS ON THE SHARED CLASS, which means it reaches committed tiles
+// too. That is inert rather than sloppy: a tile's only descendants are a static letter span and
+// Bar's flex span, neither of which is absolutely positioned, so a positioning context nothing
+// positions against changes nothing at all. Scoping it to the composing tile would be a second tile
+// class differing by one utility, and the two would drift.
 const TILE =
-  'flex shrink-0 flex-col items-center justify-center gap-[2px] rounded-[var(--lull-r-sm)] ' + 'leading-none lull-sign'
+  'relative flex shrink-0 flex-col items-center justify-center gap-[2px] rounded-[var(--lull-r-sm)] ' +
+  'leading-none lull-sign'
 
 // TWO DIFFERENT QUESTIONS, and a `??` would collapse them into one. `state === undefined` asks
 // whether this tile has been marked; `shown === ''` asks whether the player has typed into it yet. A
@@ -266,6 +312,77 @@ const Strike = (): React.ReactNode => (
 // would be a promise no test in this repo can read. Counted by the suite as `rows - 1`.
 const GuessRule = (): React.ReactNode => (
   <span aria-hidden="true" className="h-px w-full shrink-0 bg-[var(--lull-rule)]" data-guess-rule="" />
+)
+
+// THE NOT-IN-THE-WORD-LIST CHIP, drawn on the rejected word's FIRST tile and nowhere else, and an
+// ELEMENT for the reason Bar, Strike and GuessRule are: style assertions are forbidden here and
+// jsdom lays nothing out, so a channel that lives only in CSS is a promise nothing in this repo can
+// defend. Drawn as `<span>` with a bare `data-*`, matching those three -- not `<i>`, which would be
+// a fourth spelling of one convention.
+//
+// TWO PARTS, AND BOTH WERE RENDERED BEFORE BEING BELIEVED. The ✕ alone is a speck against a
+// 292px-wide word; the accent outline alone marks a word without saying WHY it is marked. Together
+// one says "this word" and the other says "wrong".
+//
+// THE GEOMETRY IS SET BY THE TWO GAPS THE CHIP MUST NOT INVADE, and the numbers are hard-coded px
+// arrived at by rendering rather than by arithmetic. Nothing in the repo fails if they are tidied,
+// which is exactly the case this comment convention exists for:
+//
+//   - WRAP_GAP IS THE BINDING CONSTRAINT, NOT GUESS_GAP. Words wrap onto their own lines INSIDE one
+//     guess whenever they do not fit, which is the common case rather than an edge one: `SLIPPED
+//     DISK` wraps at a 390 viewport, and layout.test.ts:107 pins the three-seven-letter phrase at a
+//     39px tile with words 2 and 3 each taking a line of their own. The chip is offset 2px and rings
+//     itself in another 1.25, so it reaches 3.25px above the tile and leaves 2.75px of WRAP_GAP's 6.
+//     An earlier draft specified a 5.45px offset and a 1.5px ring -- 6.95px into a 6px gap, which is
+//     a mark overlapping the tile on the line above, and that is the same fault the rejected
+//     spellcheck wave lost on.
+//   - THE CAP LINE. All 26 capitals rasterized in the real Baskervville face at round(tile x 0.58)
+//     put ink no higher than 14.75px down AT A 40px TILE; the chip's inner edge is at 12px, so it
+//     clears the tallest letter by 2.75px and never sits on a glyph the player is reading.
+//   - HORIZONTALLY the chip reaches the same 3.25px into the 12px WORD_GAP on a word that is not the
+//     first, leaving 8.75px. The rejected margin caret spent 7 of those 12, which is part of why it
+//     lost: a mark in a gap has to leave the gap still reading as a word boundary.
+//
+// THE RING IS LOAD-BEARING AND IS NOT A HIGHLIGHT. Every tile of the rejected word is outlined in
+// accent as well, so a bare accent chip has its own edge fuse with that border -- worst in light,
+// where both are the same dark madder. It is drawn in `--lull-plate` because that is the surface
+// OUTSIDE the tile; inside the tile the chip overlaps `--lull-raised` instead, and the two grounds
+// differ by about 1.1:1, so one ring color reads as one surface across the boundary either way.
+//
+// KNOWN LIMITATION, STATED RATHER THAN SOLVED: the chip does not scale with the tile, so at MIN_TILE
+// (18px) it would cover the tile's center. layout.ts:87 records that the floor is all but
+// unreachable from the corpus -- it takes a fifteen-letter word, which is a malformed pack rather
+// than a puzzle -- and this accepts the same bound for the same reason. Scaling is not to be added
+// on spec; it is a separate change with its own render.
+//
+// aria-hidden on Bar's stated reasoning: the composing row's own accessible name already ends in
+// `not in the word list`, and a screen reader must not meet the same verdict twice.
+//
+// NO MOTION AT ALL, deliberately. A mark that fades in is a mark you had to be watching to catch,
+// and this one appears and disappears on keystrokes a player is making with their eyes on the pad.
+// Nothing in this repo transitions border-color either, so the extent arrives at the same instant.
+const NotAWord = (): React.ReactNode => (
+  <span
+    aria-hidden="true"
+    className={
+      'absolute top-[-2px] left-[-2px] flex h-[14px] w-[14px] items-center justify-center rounded-[3px] ' +
+      'bg-[var(--lull-accent)] shadow-[0_0_0_1.25px_var(--lull-plate)]'
+    }
+    data-not-a-word-mark=""
+  >
+    {/* Two bars at right angles rather than a glyph: a text ✕ is a font's opinion at 7.5px, and the
+        two arms are countable in the DOM where a character is not. */}
+    <span className="relative block h-[7.5px] w-[7.5px]">
+      <span
+        className="absolute top-1/2 left-0 h-[2px] w-full -translate-y-1/2 rotate-45 rounded-[1px] bg-[var(--lull-on-accent)]"
+        data-not-a-word-arm=""
+      />
+      <span
+        className="absolute top-1/2 left-0 h-[2px] w-full -translate-y-1/2 -rotate-45 rounded-[1px] bg-[var(--lull-on-accent)]"
+        data-not-a-word-arm=""
+      />
+    </span>
+  </span>
 )
 
 // THE TWO FACTS EVERY KEY IS DRAWN FROM: the rungs the player has BOUGHT, and the markings the grid
@@ -491,6 +608,41 @@ export const PhrazleBoard = ({
   const wordsOf = (letters: string): string[] =>
     lengths.map((length, index) => letters.slice(offsets[index], offsets[index] + length))
 
+  // WHICH WORDS ARE COMPLETE AND NOT IN THE LIST. Derived per word, at render, never stored -- the
+  // discipline `marked` already follows, and for the same reason: a corrected dictionary or a
+  // corrected splitter re-marks the row instead of contradicting it.
+  //
+  // IT READS `wordList`, NEVER THE `dictionary` PROP. `wordList` is `dictionary ?? EMPTY`, and the
+  // empty-set floor is the documented behavior of a board handed nothing -- it refuses every word
+  // rather than accepting every word, which is what reaching past it to the prop would silently do.
+  //
+  // TWO CONJUNCTS AND THE FIRST IS THE WHOLE DESIGN. A word the player is still typing is not
+  // rejected, it is unfinished; without the length check every empty slot on a fresh board would be
+  // marked at mount. `everyWordInDictionary` is false on an empty word too, so the guard is what
+  // separates "not yet" from "no".
+  //
+  // A FUNCTION OF `letters` RATHER THAN A READ OF `typed`, because `press` decides about the string
+  // it is ABOUT to set and React has not committed it yet. One predicate, two callers, no stale
+  // read.
+  //
+  // `commit` IS NOT REFACTORED AND MUST NOT BE. It applies the same predicate at its own call site
+  // as `words.filter(...)`, producing a string[] of offenders, and only on a row that is already
+  // full -- the same predicate at a different arity with the completion guard already discharged.
+  // Hoisting the two together would make one function that returns booleans for a half-typed row and
+  // strings for a full one, and the shared thing would be the easy half.
+  const rejectedIn = (letters: string): boolean[] =>
+    wordsOf(letters).map((word, index) => word.length === lengths[index] && !everyWordInDictionary([word], wordList))
+
+  // ONLY THE COMPOSING ROW IS EVER MARKED, and nothing here enforces that because nothing has to: a
+  // committed guess passed isValidGuess's dictionary clause by definition, so a spent row has no
+  // offenders to find. The grid asks for this array on the composing row alone anyway.
+  //
+  // AND IT CANNOT LIGHT UP A WHOLE ROW ON A NETWORK FAILURE, which is the failure mode a
+  // dictionary-derived mark invites. PuzzleFrame refuses to mount this board without a ready word
+  // list (puzzle-frame/index.tsx:607,628), so the empty-set floor is reachable from the suite and
+  // not from a player.
+  const rejected = rejectedIn(typed)
+
   // The state a letter key reports, and the only per-keystroke feedback a screen reader gets.
   // Nothing is drawn under the letter -- there is no per-key annotation to draw, unlike the cipher
   // bench's `= V` -- so the pad stays one row of type at 320 and the position lives in the name.
@@ -522,9 +674,42 @@ export const PhrazleBoard = ({
 
     const next = `${typed}${letter}`
     setTyped(next)
-    // THE ONE THRESHOLD THAT BREAKS THE SILENCE, because it changes what Guess will do.
+
+    // THE TWO THRESHOLDS THAT BREAK THE SILENCE, and the test both of them pass is the one this
+    // comment has always stated: the ribbon speaks for a change in WHAT GUESS WILL DO. There used to
+    // be one. Filling the last tile is still the first, because an empty Guess becomes a live one.
+    // Completing a word the list does not have is the second, because Guess will now be refused -- a
+    // player who fills the row and presses it has already spent the press, and on a bench with no
+    // Undo the cheap moment to say so is the moment it becomes true.
+    //
+    // A KEYSTROKE THAT MERELY MOVES THE CARET STILL SAYS NOTHING, which is the §8.2 rule this is a
+    // documented exception to rather than a repeal of. Position is not a change in what Guess will
+    // do, the pad's own key names carry it, and a live region that fired seven times a guess would
+    // bury the marking. The mark on the board is STANDING STATE and is recomputed every keystroke;
+    // this ribbon is an EVENT and is written only on the transition INTO a rejected completion. A
+    // rejected word that merely goes on standing is never re-announced, and that split is why an
+    // erase hushes while the chip stays.
+    const words = wordsOf(next)
+    const offenders = rejectedIn(next)
     if (next.length === total) {
-      say(ROW_FULL)
+      // The FIRST offender, which is `commit`'s rule verbatim: a player fixes one word and presses
+      // again, and a list read into a live region is a list read for nothing. NOT_IN_LIST rather
+      // than `notInList` here, so the typing-time sentence and the Guess-time refusal are one string
+      // said at two moments -- and the imperative tail lands exactly where it becomes actionable.
+      // ROW_FULL's `Every tile is full` drops out rather than merging: the player just filled the
+      // last tile and can see it, and in a two-line band the actionable half is worth more than the
+      // observable one.
+      const first = offenders.indexOf(true)
+      say(first === -1 ? ROW_FULL : NOT_IN_LIST(words[first]))
+      return
+    }
+
+    // Which word this keystroke just finished, if any -- the one whose last letter sits at
+    // `next.length`. Found off `offsets` rather than by walking the words for a full slice, because
+    // the arithmetic that cut the words is the arithmetic that says where one ends.
+    const finished = lengths.findIndex((length, index) => offsets[index] + length === next.length)
+    if (finished !== -1 && offenders[finished]) {
+      say(notInList(words[finished]))
       return
     }
     hush()
@@ -773,6 +958,37 @@ export const PhrazleBoard = ({
   }
 
   const composed = wordsOf(typed).join(' ')
+
+  // THE ROW'S NAME LISTS EVERY OFFENDER, WHERE THE RIBBON NAMES ONE, and the two are not
+  // inconsistent: a label is read on demand, so completeness costs nothing there, while a live
+  // region reads itself at the player whether or not they wanted the list.
+  //
+  // STANDING, NEVER ANNOUNCED. This is an aria-label on a role="group", so it is what a screen
+  // reader finds when it works the row -- no live region, no announcement, and nothing said on the
+  // keystroke that changes it.
+  //
+  // THE JOIN IS ENGLISH'S, not a comma-separated dump: one offender stands alone, two are joined by
+  // `and`, and three or more are comma-separated with a final `and`. `Your guess, SLIPPEX DISX,
+  // SLIPPEX and DISX not in the word list`.
+  //
+  // TILE NAMES DO NOT CHANGE, and that is the rule this clause exists under. A word-level fact must
+  // not be spoken by a letter-level element: a tile that said `X, not in the word list` would be
+  // claiming something about one letter that is true of four.
+  const offenderWords = wordsOf(typed).filter((_unused, index) => rejected[index])
+  const offenderList =
+    offenderWords.length < 2
+      ? offenderWords.join('')
+      : `${offenderWords.slice(0, -1).join(', ')} and ${offenderWords[offenderWords.length - 1]}`
+  // `trimEnd` BEFORE THE CLAUSE, and it is not cosmetic. `composed` joins every word slot with a
+  // space, so a half-typed row ends in one space per slot the player has not reached -- invisible
+  // until now, because accessible-name computation trims a trailing space and every assertion in the
+  // suite reads the computed name. Append a clause and that same space becomes INTERIOR: word 1
+  // complete and rejected with word 2 untouched would name the row `Your guess, TOD , TOD not in the
+  // word list`, which no trimming rule removes. Trimmed here rather than in `composed`, so the head
+  // is the same string with or without the clause.
+  const said = `Your guess, ${composed}`.trimEnd()
+  const composingName = offenderWords.length === 0 ? said : `${said}, ${offenderList} not in the word list`
+
   const announced = message.text === '' ? '' : `${message.text}${REPEAT_MARK.repeat(message.nonce % 2)}`
 
   return (
@@ -866,7 +1082,7 @@ export const PhrazleBoard = ({
                     aria-current={isComposing ? 'true' : undefined}
                     // `Guess 3`, matching the sign row, for the same reason: there is no total to be
                     // three of.
-                    aria-label={isComposing ? `Your guess, ${composed}` : `Guess ${index + 1}, ${guesses[index]}`}
+                    aria-label={isComposing ? composingName : `Guess ${index + 1}, ${guesses[index]}`}
                     className="flex flex-wrap"
                     // The one row worth keeping in view, so the effect above has something to point
                     // at. Undefined on every other row: React would otherwise call a cleanup callback
@@ -882,36 +1098,64 @@ export const PhrazleBoard = ({
                     {/* WORDS NEVER BREAK: word shape is a solving cue and a broken word reads as two
                         words. The row wraps BETWEEN words instead, identically on every row because
                         every row has identical word lengths, and the grid gets taller and scrolls. */}
-                    {wordsOf(letters).map((word, wordIndex) => (
-                      <div className="flex" key={wordIndex} style={{ gap: `${LETTER_GAP}px` }}>
-                        {Array.from({ length: lengths[wordIndex] }, (_unused, at) => at).map((at) => {
-                          const state = done ? marked[index][wordIndex][at] : undefined
-                          const shown = word[at] ?? ''
+                    {wordsOf(letters).map((word, wordIndex) => {
+                      // THE COMPOSING ROW AND ONLY THE COMPOSING ROW. `rejected` is derived from
+                      // `typed`, so it says nothing about a spent row's letters -- and a spent row
+                      // cannot have an offender anyway, having passed isValidGuess to get here. The
+                      // guard is what stops the array being read against the wrong letters.
+                      const wordRejected = isComposing && rejected[wordIndex]
+                      // Lifted out of the JSX rather than nested in the tile's template, because the
+                      // alternative is a ternary inside a ternary inside an attribute, and the fill
+                      // is decided by two independent questions: is this tile marked, and is the
+                      // word it sits in rejected.
+                      const composingFill = wordRejected ? COMPOSING_REJECTED : COMPOSING
 
-                          // role="img" WITH A NAME. A tile is not a control and must not be a button --
-                          // that would put 126 stops in the tab order for elements nothing can do
-                          // anything with. It is not plain text either: the visible letter alone would
-                          // announce `H` and lose the mark, and the mark IS the information. `img` with
-                          // a name is the standard way to say "this graphic means this sentence", and
-                          // it makes the tile one stop for a screen reader working the row rather than
-                          // two.
-                          return (
-                            <span
-                              aria-label={tileName(shown, state)}
-                              className={`${TILE} ${state === undefined ? COMPOSING : FILL[state]}`}
-                              key={at}
-                              role="img"
-                              style={{ height: `${tile}px`, width: `${tile}px` }}
-                            >
-                              <span aria-hidden="true" style={{ fontSize: `${letter}px` }}>
-                                {shown}
+                      return (
+                        // `data-not-a-word` IS THE ONLY ASSERTABLE PROXY FOR THE EXTENT, and it is
+                        // here for that reason rather than for styling: the border swap is a class,
+                        // style assertions are forbidden, and jsdom lays nothing out -- so without
+                        // this attribute the accent outline would ship with nothing able to see it.
+                        <div
+                          className="flex"
+                          data-not-a-word={wordRejected ? '' : undefined}
+                          key={wordIndex}
+                          style={{ gap: `${LETTER_GAP}px` }}
+                        >
+                          {Array.from({ length: lengths[wordIndex] }, (_unused, at) => at).map((at) => {
+                            const state = done ? marked[index][wordIndex][at] : undefined
+                            const shown = word[at] ?? ''
+
+                            // role="img" WITH A NAME. A tile is not a control and must not be a button --
+                            // that would put 126 stops in the tab order for elements nothing can do
+                            // anything with. It is not plain text either: the visible letter alone would
+                            // announce `H` and lose the mark, and the mark IS the information. `img` with
+                            // a name is the standard way to say "this graphic means this sentence", and
+                            // it makes the tile one stop for a screen reader working the row rather than
+                            // two.
+                            return (
+                              <span
+                                aria-label={tileName(shown, state)}
+                                className={`${TILE} ${state === undefined ? composingFill : FILL[state]}`}
+                                key={at}
+                                role="img"
+                                style={{ height: `${tile}px`, width: `${tile}px` }}
+                              >
+                                <span aria-hidden="true" style={{ fontSize: `${letter}px` }}>
+                                  {shown}
+                                </span>
+                                {state !== undefined && <Bar state={state} width={bar} />}
+                                {/* THE FIRST TILE OF THE WORD AND NO OTHER. One chip annotates a
+                                    word; a chip per tile would read as a fifth marking verdict and
+                                    would make a five-letter word look more rejected than a
+                                    two-letter one. Drawn LAST so the letter and the bar keep the
+                                    child positions the suite reads them at. */}
+                                {wordRejected && at === 0 && <NotAWord />}
                               </span>
-                              {state !== undefined && <Bar state={state} width={bar} />}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ))}
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
                   </div>
                 </React.Fragment>
               )
