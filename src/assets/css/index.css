@@ -283,7 +283,30 @@ body {
    shared container. What changes between benches is what stands in it -- the guess bench ships no
    category, so its left slot is empty -- and the band itself never does. It stays inside the puzzle
    components because those facts are read off the puzzle's own data, which the shell deliberately
-   cannot see. */
+   cannot see.
+
+   THE z-index IS WHAT MAKES `sticky` MEAN ANYTHING HERE, and it is the only one in this stylesheet.
+   All three benches mount this strip as `sticky top-0` inside `.lull-board`, which scrolls, so the
+   grid passes underneath it -- and "underneath" is a paint order, not a position. A sticky element
+   paints with the POSITIONED boxes, in tree order, and the sign row is the first child of the board.
+   Anything positioned after it therefore paints on top, background and all.
+
+   For a long time nothing in a grid was positioned, so the rule was not needed and its absence cost
+   nothing. Phrazle's not-in-the-word-list chip changed that: the chip is absolutely positioned, which
+   put `relative` on the shared TILE class, which promoted every tile in every row into the positioned
+   layer. A composing row scrolled to the top of a short viewport then drew its tiles straight over
+   `Guess 1` -- the chip clipped against the band's top edge, the letters sitting on the strip.
+
+   So this is a paint-order fix for a paint-order bug, and NOT a fix for the chip: raising the strip
+   is right whatever the grid happens to contain, and a grid is free to position whatever it likes
+   without having to know a header is above it. `1` because there is nothing else to rank against;
+   this stylesheet declares no other z-index, and a scale invented for one rule is a scale nobody can
+   read.
+
+   NOTHING IN THE SUITE DEFENDS THIS, and that is a property of the fix rather than an omission.
+   Testing standards here forbid style assertions and jsdom lays nothing out, so paint order is
+   unobservable to Jest either way -- what caught it was rendering the board at a 500px viewport, and
+   that is what will catch it again. */
 .lull-signrow {
   align-items: center;
   background-color: var(--lull-ground);
@@ -298,6 +321,7 @@ body {
   justify-content: space-between;
   padding-left: var(--lull-gutter-left);
   padding-right: var(--lull-gutter-right);
+  z-index: 1;
 }
 
 /* The one band that takes NO gutter, only the physical inset. The keypad is a QWERTY keyboard —

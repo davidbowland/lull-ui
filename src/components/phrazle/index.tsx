@@ -1105,7 +1105,19 @@ export const PhrazleBoard = ({
                     // `Guess 3`, matching the sign row, for the same reason: there is no total to be
                     // three of.
                     aria-label={isComposing ? composingName : `Guess ${index + 1}, ${guesses[index]}`}
-                    className="flex flex-wrap"
+                    // `scroll-mt` IS THE OTHER HALF OF THE STICKY SIGN ROW, and it is on the row
+                    // because `scrollIntoView` above is what puts the row where it lands. The strip
+                    // is `sticky top-0` inside the scrollport, so it OVERLAYS the top of it -- and a
+                    // browser aligning `block: 'nearest'` knows nothing about that and will tuck the
+                    // composing row underneath. Scroll margin is the property that exists for exactly
+                    // this, and it is inert everywhere else: it moves no layout and affects only a
+                    // scroll that targets this element.
+                    //
+                    // 42px = the strip's 34 plus its two 1px rules, plus the 6 the not-in-the-
+                    // word-list chip hangs above the tile it sits on. The chip is what makes the last
+                    // term more than tidiness -- clearing the row but clipping its mark is the same
+                    // bug one channel smaller.
+                    className="flex scroll-mt-[42px] flex-wrap"
                     // The one row worth keeping in view, so the effect above has something to point
                     // at. Undefined on every other row: React would otherwise call a cleanup callback
                     // with null for every spent row on every render and leave the ref holding whichever
