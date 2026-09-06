@@ -1,13 +1,11 @@
-// Shared rule. This file is copied byte-identical into lull-ui, so it must stay pure: no AWS SDK,
-// no Node built-ins, no imports at all. It compiles in a Lambda bundle and in a Next.js bundle.
-//
-// Nothing checks that the two copies match. Change it here, then copy this file and its tests into
-// lull-ui in the same sitting. The tests travel with the rule so the copy is proved to BEHAVE
-// rather than merely to match a diff.
+// THE THEMED ANAGRAMS HINT LADDER: which rung to sell next, and what that rung says. lull-ui owns
+// this file outright. It sat in src/rules/ while that directory meant "vendored from lull-api", but
+// nothing in lull-api's src/ ever imported it, so it moved here beside the board that does. There is
+// no second copy and nothing to keep in step.
 //
 // It lives here rather than shipping as data on the puzzle because it runs over which of the four
 // answers the player has already got, which no generator can enumerate in advance. lull-api ships no
-// themed anagram hints at all; it executes this file only in the fixture sweep.
+// themed anagram hints at all; the fixture sweep is test/rungs-sweep.test.ts, which travelled with it.
 //
 // THE REVEAL AXIS IS POSITION AND NOTHING ELSE. The scramble is on screen, so its length and its
 // letter multiset are already known to the player -- a rung that named either would spend a hint on

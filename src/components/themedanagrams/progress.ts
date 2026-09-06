@@ -1,4 +1,4 @@
-import type { ThemedAnagramsSpentRung } from '@rules/hint-themed-anagrams'
+import type { ThemedAnagramsSpentRung } from './rungs'
 
 // The four drafts on the board, in wire order. A tuple rather than string[] because the board has
 // exactly four rows and a length this type does not pin is a length every read site has to check.
@@ -67,7 +67,7 @@ const RUNG_SEPARATOR = ','
 // FIVE KINDS, NOT THREE. `final` and `inner2` are the residual forms the rule reaches for when a rung
 // stacks onto an entry that already has one -- `bookends` minus a pinned first letter, `prefix3`
 // minus a pinned first letter -- and they exist so a stacked ladder names only what is new. See
-// STEP_KINDS in `@rules/hint-themed-anagrams`. The marks are the initials that were still free: F for
+// STEP_KINDS in `./rungs`. The marks are the initials that were still free: F for
 // final, N for the inner pair, since I and P are taken.
 //
 // THE PATTERN AND THE TWO TABLES ARE ONE FACT WRITTEN THREE TIMES, and TypeScript holds two of them
@@ -94,9 +94,9 @@ const MARKS: Record<ThemedAnagramsSpentRung['kind'], string> = {
   prefix3: 'P',
 }
 
-// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in
-// hint-themed-anagrams.ts, and a test that imported the bound it checks against would assert the cap
-// against itself and pass at any value.
+// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in rungs.ts
+// beside it, and a test that imported the bound it checks against would assert the cap against
+// itself and pass at any value.
 const MAX_SPENT = 3
 
 /**

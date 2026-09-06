@@ -9,16 +9,36 @@ selection, and answers all arrive in the pack from `lull-api`. If you find yours
 that decides whether an answer is right, stop — either the backend should have shipped that as
 data, or it belongs in `src/rules/`.
 
-**`src/rules/` is vendored, not authored.** It is a copy of `lull-api/src/rules/`. Never edit it
-here — change it in `lull-api`, then copy the rule and its tests over in the same sitting.
+**`src/rules/` is vendored, not authored, and it holds exactly three files.**
+`normalize-answer.ts`, `is-valid-guess.ts` and `mark-guess.ts` are byte-identical copies of
+`lull-api/src/rules/`. Never edit them here — change the rule in `lull-api`, then copy it and its
+tests over in the same sitting.
+
+**The test of membership is whether `lull-api/src/` imports the file, not whether the logic feels
+like a rule.** The three hint ladders used to sit in `src/rules/` and failed that test: nothing in
+`lull-api/src/` ever imported one, so each was a copy travelling beside code that IS shared. They are
+now `src/components/<game>/rungs.ts` — cryptogram, phrazle, themedanagrams — owned outright by this
+repo, along with phrazle's `letter-strengths.ts` and the sweep that exercised them, which travelled
+from `lull-api` as `test/rungs-sweep.test.ts`. A hint ladder reads a board a player has built, which
+is why no generator can ship it and why it belongs beside the board rather than in a shared drawer.
 
 **Nothing verifies the copies match, on purpose.** CI here does not clone `lull-api`, there is no
-pinned commit, and no script owns the copy. Each of those made a two-file `cp` into a protocol, and
+pinned commit, and no script owns the copy. Each of those made a three-file `cp` into a protocol, and
 the cross-repo check made this repo's build depend on another one being reachable and already
 pushed. What catches drift is the vendored tests running in this suite and a warning on the
 `lull-api` commit that changes the rules. A stale copy is a UX inconsistency, not a broken pack:
 `lull-api` uses `normalizeAnswer` for corpus entry ids and this app uses it to compare typing, and
 neither calls the other.
+
+**Two cross-repo pins died with the move, and comments are all that stand where they were.** While
+the ladders were vendored, `lull-api`'s sweep read the source text of the phrazle rung test and
+pinned its restated `MAX_WORD_LETTERS = 11` against the generator's real gate — it once caught that
+literal reading `7`, four below the gate, with the rung cap derived from the wrong number. And
+`MAX_PHRAZLE_RUNG_LENGTH` and `MAX_ANAGRAM_RUNG_LENGTH` were asserted equal to `MAX_GLOSS_LENGTH` in
+one expression, so every hint the bar prints fit the same line. Neither assertion can be written in
+one repo now. Each side pins its own literal and names the other in a comment, and that is weaker.
+It is recorded here because a pin that has decayed into a comment is invisible at the place it used
+to fail.
 
 **A puzzle component gets no router, no storage, and no API client.** It receives
 `{ puzzle, progress, onProgress, onReset, onSolved, dictionary }` and nothing else. The shell owns

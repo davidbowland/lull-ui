@@ -1,4 +1,3 @@
-import { revealedCiphers } from '@rules/hint-cryptogram'
 import React, { useEffect, useRef, useState } from 'react'
 
 import { hintDataOf, revealedLetters } from './hints'
@@ -14,6 +13,7 @@ import {
   Mapping,
   withRevealed,
 } from './mapping'
+import { revealedCiphers } from './rungs'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
 import { CryptogramData, PuzzleComponentProps } from '@types'

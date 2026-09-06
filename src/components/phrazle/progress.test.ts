@@ -1,8 +1,8 @@
-import type { PhrazleSpentRung } from '@rules/hint-phrazle'
 import { splitPhrase } from '@rules/is-valid-guess'
 import { markGuess } from '@rules/mark-guess'
 
 import { attachHints, decode, decodeHints, encode } from './progress'
+import type { PhrazleSpentRung } from './rungs'
 import { phrazlePuzzle } from '@test/__mocks__'
 
 describe('phrazle progress', () => {

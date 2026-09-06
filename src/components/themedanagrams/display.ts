@@ -1,18 +1,17 @@
-import { pinnedIndices, ThemedAnagramsSpentRung } from '@rules/hint-themed-anagrams'
+import { pinnedIndices, ThemedAnagramsSpentRung } from './rungs'
 
 // HOW A PINNED ROW IS DRAWN, and whether there is anything left to draw.
 //
-// `pinnedDisplay` USED TO LIVE IN `@rules/hint-themed-anagrams` and was moved here in the same
-// sitting it was deleted from lull-api. It is not vendored and it is not shared: nothing in
-// lull-api's `src/` ever imported it and its sweep test never called it, so its whole life over there
-// was a copy travelling beside code that IS shared. What the rule still owns is which POSITIONS a
-// rung reveals -- `pinnedIndices`, which `rungFor` calls to count free positions and which is
-// therefore load-bearing in the chooser. How those positions are drawn is the board's, and that is
-// the seam.
+// `pinnedDisplay` USED TO LIVE IN THE HINT RULE and was moved here in the same sitting it was
+// deleted from lull-api. The rest of that rule has since followed it into this directory as
+// `rungs.ts`, so the seam is no longer one of vendoring -- but it is still a seam, and it is the
+// reason these two files are two. What the rule owns is which POSITIONS a rung reveals --
+// `pinnedIndices`, which `rungFor` calls to count free positions and which is therefore load-bearing
+// in the chooser. How those positions are drawn is the board's.
 //
 // The move is what lets the two decisions below exist at all. Both are about the row a player is
-// looking at rather than about which rung to sell, and neither could be made in a file that lull-api
-// executes.
+// looking at rather than about which rung to sell, so putting them in the chooser would give the
+// chooser a reason to care what the screen looks like.
 
 /**
  * The scramble to draw, with revealed letters standing in their true positions.

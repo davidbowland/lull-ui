@@ -1,6 +1,5 @@
-import { chooseThemedAnagramsRung, pinnedIndices, ThemedAnagramsSpentRung } from '@rules/hint-themed-anagrams'
-
 import { drawnRun, isGivenAway } from './display'
+import { chooseThemedAnagramsRung, pinnedIndices, ThemedAnagramsSpentRung } from './rungs'
 
 // MIN_WORD_LENGTH in lull-api's generators/themedanagrams/words.ts is 5, so LADLE is the shortest
 // entry the generator can ship and the one where a third stacked rung would leave a single position
