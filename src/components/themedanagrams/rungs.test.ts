@@ -4,7 +4,7 @@ import {
   pinnedIndices,
   themedAnagramsHintFor,
   ThemedAnagramsSpentRung,
-} from '@rules/hint-themed-anagrams'
+} from './rungs'
 
 // Deliberately NOT length-sorted, so an ordinal in a sentence cannot be mistaken for a rank.
 // Lengths: KETTLE 6, COLANDER 8, TOASTER 7, SPATULA 7.
@@ -347,6 +347,19 @@ describe('themedAnagramsHintFor', () => {
     rungs.forEach((rung) =>
       expect(themedAnagramsHintFor(ENTRIES, rung).text.length).toBeLessThanOrEqual(MAX_ANAGRAM_RUNG_LENGTH),
     )
+  })
+
+  // THE OTHER HALF OF THIS PIN IS IN THE OTHER REPO, and it is now a manual link. 80 is lull-api's
+  // MAX_GLOSS_LENGTH in generators/crypticclue/hints.ts -- one number, so that every rung the hint
+  // bar prints fits the same line as every gloss it prints. While this rule was vendored, lull-api's
+  // crypticclue hints test asserted the two equal in one expression; the rule left and the assertion
+  // could not follow, so each repo now pins its own to 80 and names the other.
+  //
+  // A ROW ABOUT A NUMBER RATHER THAN ABOUT BEHAVIOR, deliberately. The row above only asks that every
+  // rendered rung fits under the cap, which stays true at any larger cap. This is the row that turns
+  // "the caps agreed" into something a reader can find from either side.
+  it('holds the cap at the gloss length lull-api pins from its own side', () => {
+    expect(MAX_ANAGRAM_RUNG_LENGTH).toBe(80)
   })
 })
 

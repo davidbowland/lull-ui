@@ -1,9 +1,6 @@
-// Shared rule. This file is copied byte-identical into lull-ui, so it must stay pure: no AWS SDK,
-// no Node built-ins, no imports at all. It compiles in a Lambda bundle and in a Next.js bundle.
-//
-// Nothing checks that the two copies match. Change it here, then copy this file and its tests into
-// lull-ui in the same sitting. The tests travel with the rule so the copy is proved to BEHAVE
-// rather than merely to match a diff.
+// THE LETTER TABLE BEHIND PHRAZLE'S LETTER RUNGS. lull-ui owns this file outright, and `rungs.ts`
+// beside it is its only reader. It sat in src/rules/ while that directory meant "vendored from
+// lull-api", and it moved here with the one rule that ever imported it. There is no second copy.
 //
 // It lives here rather than shipping as data on the puzzle because the hint rules that read it run
 // over what a player has established at play time, which no generator can enumerate in advance.

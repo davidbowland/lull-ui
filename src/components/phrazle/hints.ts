@@ -1,11 +1,10 @@
-import { choosePhrazleRung, phrazleHintFor, PhrazleSpentRung, seededRandom } from '@rules/hint-phrazle'
-
 import { attachHints, decode, decodeHints, encode, PhrazleHintTail } from './progress'
+import { choosePhrazleRung, phrazleHintFor, PhrazleSpentRung, seededRandom } from './rungs'
 import type { HintAdapter } from '@registry'
 import { HintLadder, PhrazleData, Puzzle, PuzzleProgress } from '@types'
 
-// THE ONLY PLACE THIS TYPE'S CODEC MEETS THE VENDORED RULE. `progress.ts` stores a record it never
-// interprets and `hint-phrazle.ts` chooses and renders records it never stores; this file is the
+// THE ONLY PLACE THIS TYPE'S CODEC MEETS THE RULE. `progress.ts` stores a record it never
+// interprets and `rungs.ts` chooses and renders records it never stores; this file is the
 // join, and it is the only file that imports both. The shell reaches it through the registry and
 // learns no grammar, and the board is handed nothing at all.
 //

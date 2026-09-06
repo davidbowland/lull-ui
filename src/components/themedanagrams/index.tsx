@@ -1,9 +1,9 @@
-import { pinnedIndices } from '@rules/hint-themed-anagrams'
 import React, { useEffect, useId, useRef, useState } from 'react'
 
 import { isRight } from './answers'
 import { drawnRun, isGivenAway } from './display'
 import { decode, decodeHints, encode, Guesses, MAX_GUESS } from './progress'
+import { pinnedIndices } from './rungs'
 import { Button } from '@components/button'
 import { FloorBar } from '@components/floor-bar'
 import { AnagramEntry, PuzzleComponentProps, ThemedAnagramsData } from '@types'

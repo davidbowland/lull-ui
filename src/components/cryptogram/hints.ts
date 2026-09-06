@@ -1,3 +1,4 @@
+import { attachHints, CryptogramHintTail, decode, decodeHints, encode, Mapping, withRevealed } from './mapping'
 import {
   chooseCryptogramRung,
   CryptogramHintData,
@@ -6,14 +7,12 @@ import {
   revealedCiphers,
   seededRandom,
   trueMapping,
-} from '@rules/hint-cryptogram'
-
-import { attachHints, CryptogramHintTail, decode, decodeHints, encode, Mapping, withRevealed } from './mapping'
+} from './rungs'
 import type { HintAdapter } from '@registry'
 import { CryptogramData, HintLadder, Puzzle, PuzzleProgress } from '@types'
 
-// THE ONLY PLACE THIS TYPE'S CODEC MEETS THE VENDORED RULE. `mapping.ts` stores a record it never
-// interprets and `hint-cryptogram.ts` chooses and renders records it never stores; this file is the
+// THE ONLY PLACE THIS TYPE'S CODEC MEETS THE RULE. `mapping.ts` stores a record it never
+// interprets and `rungs.ts` chooses and renders records it never stores; this file is the
 // join. The shell reaches it through the registry and learns no grammar.
 //
 // THE BOARD READS HINT STATE, AND ON THIS BENCH THAT IS THE RULE RATHER THAN AN EXCEPTION. A board

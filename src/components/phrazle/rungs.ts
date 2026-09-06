@@ -1,16 +1,21 @@
-import { splitPhrase } from './is-valid-guess'
+import { splitPhrase } from '@rules/is-valid-guess'
+
 import { STRONGEST_FIRST, WEAKEST_FIRST } from './letter-strengths'
 
-// Shared rule, hand-copied into lull-ui like every file in this directory.
+// THE PHRAZLE HINT LADDER: which rung to sell next, and what that rung says. lull-ui owns this file
+// outright. It sat in src/rules/ while that directory meant "vendored from lull-api", but nothing in
+// lull-api's src/ ever imported it, so it moved here beside the board that does.
 //
-// THIS FILE IMPORTS TWO OTHER RULES FILES, and one of those imports a third. The copy into lull-ui
-// must carry letter-strengths.ts, is-valid-guess.ts AND normalize-answer.ts with the relative paths
-// between them intact. "Copy this file" is otherwise a correct instruction that produces a broken
-// build -- the same warning is-valid-guess.ts carries about its single import.
+// IT STILL READS ONE VENDORED RULE, and that is the expected direction rather than a leftover.
+// `splitPhrase` comes from @rules/is-valid-guess, which lull-api genuinely imports and which
+// therefore stays vendored under the rule in CLAUDE.md. An app-owned file reading a shared rule costs
+// nothing; a shared rule reading an app-owned one would put a file lull-api cannot compile into its
+// bundle. `letter-strengths.ts` is the other import and it is a sibling now -- it travelled here
+// because this was the only file that ever read it.
 //
 // It lives here rather than shipping as data on the puzzle because it runs over the guesses a player
 // invents at play time, which no generator can enumerate in advance. lull-api ships no phrazle hints
-// at all; it executes this file only in __tests__/unit/rules/hint-sweep.test.ts.
+// at all; the sweep is test/rungs-sweep.test.ts, which travelled with it.
 //
 // THE THREE RUNGS ARE ABOUT THE ALPHABET, NOT THE PHRASE'S MEANING, and that is the whole point of
 // replacing the ladder that stood here. A Phrazle player is doing letter work: which letters are in
@@ -182,8 +187,11 @@ export const choosePhrazleRung = (
 }
 
 // "A and B" on two, "A, B, and C" on three or more -- the serial comma joins a LIST, and on two
-// items it is a comma splice. The same rule lull-ui's utils/hints.ts already applies to its answer
-// sentence, restated here rather than imported because these files vendor separately.
+// items it is a comma splice. The same rule utils/hints.ts already applies to its answer sentence,
+// restated here rather than imported. The original reason was vendoring -- this file was copied into
+// lull-ui and could not reach a lull-ui utility -- and that reason left with the copy. What stands is
+// that a board directory reaching into the shell's utilities to share four lines of punctuation is a
+// worse trade than typing them twice.
 //
 // TWO IS ROUTINE, NOT AN EDGE: rung 2 draws from the present letters a player has not met, and two
 // survivors is normal after a couple of guesses; the word rung hits it on any two-letter word.

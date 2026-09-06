@@ -1,10 +1,10 @@
-import type { PhrazleSpentRung } from '@rules/hint-phrazle'
 import { everyWordInDictionary, isValidGuess, splitPhrase } from '@rules/is-valid-guess'
 import { markGuess, TileState } from '@rules/mark-guess'
 import React, { useEffect, useRef, useState } from 'react'
 
 import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, tileSize, WORD_GAP, WRAP_GAP } from './layout'
 import { decode, encode } from './progress'
+import type { PhrazleSpentRung } from './rungs'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
 import { PhrazleData, PuzzleComponentProps } from '@types'

@@ -1,14 +1,12 @@
-// Shared rule. This file is copied byte-identical into lull-ui, so it must stay pure: no AWS SDK,
-// no Node built-ins, no imports at all. It compiles in a Lambda bundle and in a Next.js bundle.
-//
-// Nothing checks that the two copies match. Change it here, then copy this file and its tests into
-// lull-ui in the same sitting. The tests travel with the rule so the copy is proved to BEHAVE
-// rather than merely to match a diff.
+// THE CRYPTOGRAM HINT LADDER: which rung to sell next, and what that rung says. lull-ui owns this
+// file outright. It sat in src/rules/ while that directory meant "vendored from lull-api", but
+// nothing in lull-api's src/ ever imported it, so it moved here beside the board that does. There is
+// no second copy and nothing to keep in step.
 //
 // It lives here rather than shipping as data on the puzzle because it runs over the board a player
 // has built at play time, which no generator can enumerate in advance. lull-api ships no cryptogram
-// hints at all; it executes this file only in __tests__/unit/rules/hint-sweep.test.ts, which is what
-// keeps a broken rule from reaching lull-ui unnoticed.
+// hints at all; the sweep that keeps a broken rule from reaching a player is test/rungs-sweep.test.ts,
+// which travelled with it.
 //
 // TWO FUNCTIONS, AND THE SPLIT IS THE WHOLE DESIGN. `chooseCryptogramRung` reads live player state
 // and picks; `cryptogramHintFor` is pure in the puzzle and renders a frozen choice. If one function
@@ -106,11 +104,13 @@ const isCorrect = (state: CryptogramPlayerState, truth: Record<string, string>, 
 /**
  * A deterministic generator: one seed, one sequence, forever.
  *
- * DUPLICATED FROM hint-phrazle.ts RATHER THAN IMPORTED, because this file takes no imports at all --
- * it compiles in a Lambda bundle and in a Next.js bundle, and it is vendored into lull-ui by hand.
- * The two copies do NOT have to agree: nothing compares a cryptogram's sequence with a phrazle's, so
- * a fix to one is free to leave the other alone. That is what makes the duplication safe here and
- * would not make it safe for a rule two callers read the same answer out of.
+ * DUPLICATED FROM PHRAZLE'S rungs.ts RATHER THAN IMPORTED. The original reason was vendoring: this
+ * file took no imports at all so that copying it into lull-ui by hand could not produce a broken
+ * build. That reason left with the copy. What stands is the reason the duplication was ever SAFE --
+ * the two copies do NOT have to agree, because nothing compares a cryptogram's sequence with a
+ * phrazle's, so a fix to one is free to leave the other alone. Sharing it now would mean one board's
+ * directory importing another's, which is a coupling to buy for nine lines that would not make it
+ * safe for a rule two callers read the same answer out of.
  */
 export const seededRandom = (seed: string): (() => number) => {
   let state = 0x6d2b79f5

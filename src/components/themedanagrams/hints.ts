@@ -1,19 +1,18 @@
+import { isRight } from './answers'
+import { isGivenAway } from './display'
+import { attachHints, decode, decodeHints, encode, Guesses, ThemedAnagramsHintTail } from './progress'
 import {
   AnagramHintEntry,
   chooseThemedAnagramsRung,
   themedAnagramsHintFor,
   ThemedAnagramsPlayerState,
   ThemedAnagramsSpentRung,
-} from '@rules/hint-themed-anagrams'
-
-import { isRight } from './answers'
-import { isGivenAway } from './display'
-import { attachHints, decode, decodeHints, encode, Guesses, ThemedAnagramsHintTail } from './progress'
+} from './rungs'
 import type { HintAdapter } from '@registry'
 import { HintLadder, Puzzle, PuzzleProgress, ThemedAnagramsData } from '@types'
 
-// THE ONLY PLACE THIS TYPE'S CODEC MEETS THE VENDORED RULE. `progress.ts` stores a record it never
-// interprets and `hint-themed-anagrams.ts` chooses and renders records it never stores; this file is
+// THE ONLY PLACE THIS TYPE'S CODEC MEETS THE RULE. `progress.ts` stores a record it never
+// interprets and `rungs.ts` chooses and renders records it never stores; this file is
 // the join. The shell reaches it through the registry and learns no grammar.
 //
 // THE BOARD READS HINT STATE AND NEVER WRITES IT. A board reads it exactly when a hint changes what

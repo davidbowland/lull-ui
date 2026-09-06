@@ -1,4 +1,4 @@
-import type { CryptogramSpentRung } from '@rules/hint-cryptogram'
+import type { CryptogramSpentRung } from './rungs'
 
 /** Cipher letter to plain letter. The direction the player thinks in: "this square is an I". */
 export type Mapping = Record<string, string>
@@ -67,9 +67,9 @@ const RUNG_SEPARATOR = ','
 // characters, so the most words a legal puzzle can hold is 40. That is a fact about the OTHER repo,
 // which is why this bound is generous rather than exact -- the exact one is `withinPuzzle`.
 const RUNG = /^(?:L[A-Z]|W\d{1,2})$/
-// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in
-// hint-cryptogram.ts, and a test that imported the bound it checks against would assert the cap
-// against itself and pass at any value.
+// The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in rungs.ts
+// beside it, and a test that imported the bound it checks against would assert the cap against
+// itself and pass at any value.
 const MAX_SPENT = 3
 
 // A FUNCTION, not a shared constant. Every refusal hands its caller an object nobody else holds a
