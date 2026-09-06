@@ -4,6 +4,7 @@ import {
   cryptogramHintFor,
   CryptogramSpentRung,
   revealedCiphers,
+  seededRandom,
   trueMapping,
 } from '@rules/hint-cryptogram'
 
@@ -80,15 +81,27 @@ export const revealedLetters = (data: CryptogramHintData, spent: CryptogramSpent
  * rule three times with the same argument: three identical calls would answer with the same letter
  * three times.
  *
- * NOTHING HERE DRAWS. Unlike Phrazle, every choice this rule makes is a total order over the
- * ciphertext's own letter counts, so the tail is stable for a given board with no seed to carry.
+ * THE LETTER RUNGS DRAW, AND THE SEED IS THE PUZZLE ID -- the arrangement Phrazle's fold is the
+ * worked case of. Every letter of a frequency tier opens the same number of squares, so which one a
+ * rung names is a coin toss rather than a judgement, and taking the first of the tier made the
+ * ladder open on the alphabetically earliest letter of it every day. What a draw must not cost is
+ * the STABILITY of the tail: this runs on every render, so an unseeded generator would re-pick the
+ * letter each pass and the rung a player SEES need not be the rung they BUY. The generator is
+ * therefore built fresh from the id on every fold -- one seed, one sequence -- and the freeze at
+ * purchase makes the choice permanent afterwards.
  */
-const grow = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpentRung[]): CryptogramSpentRung[] => {
+const grow = (
+  data: CryptogramHintData,
+  mapping: Mapping,
+  spent: CryptogramSpentRung[],
+  seed: string,
+): CryptogramSpentRung[] => {
   const state = { mapping }
+  const random = seededRandom(seed)
   const probe = [...spent]
 
   while (probe.length < MAX_RUNGS) {
-    const next = chooseCryptogramRung(data, state, probe)
+    const next = chooseCryptogramRung(data, state, probe, random)
     // ONE TO THREE RUNGS, NEVER ALWAYS THREE. Null means nothing left has anything worth saying --
     // every cipher letter either already mapped correctly or already handed over, and the word rung
     // spent -- and a rung a player does not have beats a rung that tells them what they already
@@ -103,8 +116,13 @@ const grow = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpent
 // A board with nothing filled in, which is what a solved one looks like to this rule.
 const EMPTY_BOARD: Mapping = {}
 
-const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpentRung[]): CryptogramSpentRung[] => {
-  const probe = grow(data, mapping, spent)
+const fold = (
+  data: CryptogramHintData,
+  mapping: Mapping,
+  spent: CryptogramSpentRung[],
+  seed: string,
+): CryptogramSpentRung[] => {
+  const probe = grow(data, mapping, spent, seed)
   if (probe.length > 0) return probe
 
   // A SOLVED BOARD HAS NOTHING LEFT TO CHOOSE, AND THE BAND STILL HAS TO STAND. A fully correct
@@ -125,7 +143,7 @@ const fold = (data: CryptogramHintData, mapping: Mapping, spent: CryptogramSpent
   //
   // NOTHING BOUGHT CAN BE REPLACED BY IT. A non-empty `spent` makes `grow` non-empty whatever the
   // board, so this branch is reachable only with an empty ladder in hand.
-  return grow(data, EMPTY_BOARD, [])
+  return grow(data, EMPTY_BOARD, [], seed)
 }
 
 /**
@@ -171,7 +189,7 @@ export const cryptogramHints: HintAdapter = {
     // it: a hint nobody bought, on screen, free. It also pushed `hints.length` back above `opened`,
     // which takes "Show answer" off the control and replaces it with an offer of a rung the player
     // has already paid past.
-    const probe = opened > hints.length ? hints : fold(data, mapping, hints)
+    const probe = opened > hints.length ? hints : fold(data, mapping, hints, puzzle.id)
 
     // An empty ladder is not a short ladder. The frame reads null the way it reads a malformed pack
     // ladder -- no bar at all -- which is the right answer for a pack whose ciphertext never
@@ -186,7 +204,7 @@ export const cryptogramHints: HintAdapter = {
   open: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null => {
     const data = hintDataOf(puzzle)
     const { hints, mapping, opened } = decode(progress, data.ciphertext)
-    const probe = fold(data, mapping, hints)
+    const probe = fold(data, mapping, hints, puzzle.id)
 
     // Nothing to sell on a board with no ladder, and nothing left once the answer is out. `opened`
     // exceeds the BOUGHT rung count in exactly one state -- the reveal has been taken -- which is
