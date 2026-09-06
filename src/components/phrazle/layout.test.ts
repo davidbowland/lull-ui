@@ -108,6 +108,40 @@ describe('tileSize', () => {
     expect(tileSize(AT_320, [7, 7, 7])).toEqual(39)
   })
 
+  // NO HORIZONTAL SCROLL AT THE WIDTHS THE CORPUS IS PLAYED AT, and it is arithmetic rather than
+  // layout: a line holds `longest` tiles and `longest - 1` interior gaps, so a size this function
+  // returns can be multiplied back out and checked against the width it was given. Nothing here
+  // needs a browser, which is why the surface inventory's row 77 no longer calls this half
+  // unassertable.
+  //
+  // NOT "AT ANY WIDTH", WHICH IS THE HEADING THIS ROW USED TO CARRY. The clamp runs both ways: below
+  // about 178px a nine-tile line cannot fit whatever this function returns, because MIN_TILE floors
+  // the size UP and the row overflows by arithmetic -- which the very next test pins from the other
+  // side. Two widths are checked here and they are the two that matter.
+  //
+  // IT WAS FALSE, NOT MERELY UNWATCHED. The board fed this function `plate.clientWidth` -- the
+  // PADDING box, 32px wider than the room a row has, the plate's own gutter counted once a side --
+  // so the tiles were sized against space that did not exist and .lull-board scrolled sideways.
+  //
+  // AND THIS ROW IS NOT WHAT REFUSES THAT REVERT, which the previous version of this comment claimed
+  // and could not do: it calls tileSize with a literal, so it never sees the board and stays green
+  // however the board measures. What defends the caller is index.test.tsx's `sizes from the plate
+  // content box rather than from its padding box`, which hands the observer a content width and a
+  // deliberately different padding width. This row defends the arithmetic; that one defends the
+  // number fed into it.
+  //
+  // NINE LETTERS is the longest word in the phrase this was measured overflowing on. The 390 row is
+  // an EXACT fit rather than a comfortable one -- 38 x 9 plus eight 2px gaps is 358 to the pixel --
+  // so an off-by-one anywhere in the arithmetic moves it off the box.
+  it.each<[string, number]>([
+    ['320, where the plate has 288', AT_320],
+    ['390, where the plate has 358 and the fit is exact', AT_390],
+  ])('never draws a word wider than the box it was given at %s', (_description, availableWidth) => {
+    const tile = tileSize(availableWidth, [6, 9])
+
+    expect(tile * 9 + LETTER_GAP * 8).toBeLessThanOrEqual(availableWidth)
+  })
+
   // A box that has not been laid out yet reports zero, and honoring that would size every tile to
   // a negative number the board writes straight into a px width.
   it('falls back to the floor when the box reports zero', () => {
