@@ -1145,7 +1145,7 @@ describe('PuzzleFrame', () => {
         stalePackCryptogramPack,
         cryptogramPuzzleId,
         REGISTRY.cryptogram.hints,
-        ['Every Q is an E.', 'Every Z is a T.', 'One of the words is ATE.'],
+        ['Every Q is an E.', 'Every V is an A.', 'One of the words is ATE.'],
         cryptogramStalePackLadder.map((hint) => hint.text),
       ],
       [

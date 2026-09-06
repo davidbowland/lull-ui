@@ -11,12 +11,12 @@ describe('the cryptogram hint adapter', () => {
   const DATA = { answer: cryptogramPuzzle.data.answer, ciphertext: CIPHERTEXT }
 
   // WRITTEN OUT AND NOT COMPUTED, which is what makes them assertions rather than a second copy of
-  // the rule. Every cipher letter of this fixture appears three times, so the low percentile lands on
-  // the alphabetically first candidate and the walk-up finds nothing higher and takes the last -- and
-  // the row that would catch a percentile silently becoming an index is the row that spells the
-  // answers out.
+  // the rule. Every cipher letter of this fixture appears three times, so the surviving pool is ONE
+  // frequency tier: there is no second-rarest tier for rung 1 to prefer and no higher one for rung 2
+  // to climb to, and both rungs fall to the alphabetically first candidate left. The row that would
+  // catch the tier choice silently becoming an index is the row that spells the answers out.
   const LOW_RUNG = 'Every Q is an E.'
-  const HIGH_RUNG = 'Every Z is a T.'
+  const HIGH_RUNG = 'Every V is an A.'
   const WORD_RUNG = 'One of the words is ATE.'
 
   // Every cipher letter mapped correctly, which is the state that used to empty the fold and take the
