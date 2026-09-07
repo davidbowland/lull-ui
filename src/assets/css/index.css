@@ -96,6 +96,29 @@
      The safe-area inset is ADDED to this in the floor bar, never taken out of it. */
   --lull-seam: 240px;
 
+  /* THE OTHER END OF THE SAME MEASUREMENT. --lull-seam is what the bench spends BELOW the board;
+     this is what it spends ABOVE — the breadcrumb and the title row, the two bands between the top
+     of the bench and the top of the board:
+
+       spine 44
+       title 64
+       ---------
+             108
+
+     It exists because the hint sheet is the one box on a bench that is drawn OUT OF FLOW and has to
+     be told where the board ends. Every other band is a flex item and simply cannot overrun its
+     neighbor. The sheet is absolute (or fixed) and bounded by a height expression, and that
+     expression used to subtract a flat --lull-s7 as "clearance from the top of the screen" — which
+     is not the same thing as the top of the board, and is 68px short of it. A three-rung ladder with
+     the answer under it on a 667px viewport was therefore drawn 23px INTO the title row, cutting
+     "Phrazle" and "About 5 min" in half. Naming the number is what lets the sheet's own bound read
+     as "the board's height" rather than as an arithmetic nobody can check.
+
+     It is a token rather than a literal in that one expression because TWO expressions read it — the
+     docked sheet's and the bare one's — and because a band added above the board is a change to this
+     number, which is the edit most likely to be made without ever opening hint-bar. */
+  --lull-crown: 108px;
+
   /* How tall a bench is allowed to get once the window stops being a phone. Derived, not picked:
 
        fixed chrome 408  (spine 44 + title 64 + hint bar 60 + seam 240)
@@ -299,9 +322,22 @@ body {
 
    So this is a paint-order fix for a paint-order bug, and NOT a fix for the chip: raising the strip
    is right whatever the grid happens to contain, and a grid is free to position whatever it likes
-   without having to know a header is above it. `1` because there is nothing else to rank against;
-   this stylesheet declares no other z-index, and a scale invented for one rule is a scale nobody can
-   read.
+   without having to know a header is above it.
+
+   THERE ARE NOW TWO RANKS, and this is the whole scale:
+
+     1  this strip, over the grid that scrolls under it
+     2  the hint sheet, over the board it overlays — declared as `z-2` on SHEET and SHEET_FIXED in
+        src/components/hint-bar/index.tsx, where the rest of the sheet's geometry is
+
+   The second rank arrived because `1` was written when there was nothing else to rank against, and
+   that stopped being true. The sheet is positioned and left at `z-index: auto`, and the bar it hangs
+   from is `relative` with no z-index of its own — so the bar creates NO stacking context, the sheet
+   competes in the root one, and a positive rank beats `auto` no matter which came first in the tree.
+   An open sheet was therefore sliced across by this strip: `Guess 1` and its ground, painted over the
+   middle of the hints. Raising the strip over the grid and raising the sheet over both is one
+   ordering, and the reason it is written out here rather than at either site is that a rank is
+   meaningless alone — the sheet's `z-2` says what it beats only if this list exists.
 
    NOTHING IN THE SUITE DEFENDS THIS, and that is a property of the fix rather than an omission.
    Testing standards here forbid style assertions and jsdom lays nothing out, so paint order is

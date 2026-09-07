@@ -88,22 +88,42 @@ const VARIANT = {
 // screen edge, and in landscape on a notched phone it ran under the cutout, since the instrument is
 // the only band that re-applies env(safe-area-inset-*).
 //
-// The height bound stops the sheet short of both the instrument and the top of the screen, so a
-// wordy ladder cannot be drawn off the top of the viewport where no scrollbar can bring it back.
+// THE HEIGHT BOUND IS THE BOARD'S HEIGHT, term for term, and every term is a band it must not
+// overrun. The sheet's bottom edge is the bar's top edge, so subtracting the crown (the spine and
+// the title row), the bar, the seam and the sheet's own margin from the viewport leaves exactly the
+// space between the top of the board and the top of the bar. `bottom-full` puts the sheet in it.
 //
-// CLAMPED, with a floor, and the floor is the whole fix. The bound alone is
-// 100dvh - seam - bar - clearance, which is fine in portrait and collapses in landscape: at a
-// 390dvh phone it computes to 14px, and at 320dvh it goes negative. Against the sheet's own 32px
-// of padding that leaves nothing at all -- so opening a hint relabeled the button, moved focus,
-// and displayed no text, inside a zero-height overflow-y-auto box that touch cannot scroll. A
-// component built to protect the seam became the one thing on the bench that silently did nothing.
+// It used to subtract a flat --lull-s7 in place of the crown, as "clearance from the top of the
+// screen" -- 48px where the bands above the board are 108, so the sheet was allowed 68px it did not
+// have. A three-rung ladder with the answer under it on a 667px viewport used them: the card's top
+// corners were drawn across the title row with "Phrazle" and "About 5 min" cut through the middle.
+// Clearance from the screen was never the promise worth making; the sheet overlays THE BOARD, and
+// the crown is what that sentence costs.
+//
+// --lull-kb is subtracted for the same reason .lull-bench subtracts it. A software keyboard shrinks
+// the bench, and the crown is fixed, so every pixel the keyboard takes comes out of the board -- and
+// out of the room this sheet has. Missing Vowels is the bench that can raise one, and its bar is
+// this variant.
+//
+// CLAMPED, with a floor, and the floor is the whole fix. The bound alone is fine in portrait and
+// collapses in landscape: at a 390dvh phone it computes to 14px, and at 320dvh it goes negative.
+// Against the sheet's own 32px of padding that leaves nothing at all -- so opening a hint relabeled
+// the button, moved focus, and displayed no text, inside a zero-height overflow-y-auto box that
+// touch cannot scroll. A component built to protect the seam became the one thing on the bench that
+// silently did nothing.
 //
 // clamp() with a 140px floor means the sheet is always at least readable. Where the viewport
 // genuinely cannot spare that, the frame's column has already switched from clipping to scrolling
 // -- see puzzle-frame -- so the overflow has somewhere to go.
+//
+// `z-2` is a RANK, and index.css holds the scale it is a rank in. The sign row three benches mount
+// at the top of the board is sticky at `z-index: 1`, and a positioned box left at `auto` loses to it
+// wherever they overlap -- which, now that the sheet stops at the board's top edge, is guaranteed
+// rather than incidental. Without this the strip and its ground are painted straight across the
+// open hints.
 const SHEET =
-  'absolute right-[var(--lull-gutter-right)] bottom-full left-[var(--lull-gutter-left)] mb-[var(--lull-s2)] flex ' +
-  'max-h-[clamp(140px,calc(100dvh-var(--lull-seam)-60px-var(--lull-s7)),420px)] ' +
+  'absolute right-[var(--lull-gutter-right)] bottom-full left-[var(--lull-gutter-left)] z-2 mb-[var(--lull-s2)] flex ' +
+  'max-h-[clamp(140px,calc(100dvh-var(--lull-kb)-var(--lull-crown)-var(--lull-seam)-60px-var(--lull-s2)),420px)] ' +
   'flex-col gap-[var(--lull-s3)] overflow-y-auto rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] ' +
   'bg-[var(--lull-raised)] p-[var(--lull-s4)] shadow-[0_8px_28px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.55)]'
 
@@ -139,10 +159,27 @@ const SHEET =
 // The clamp carries the same term for the same reason: without it the available height overstates
 // the viewport by the inset, on exactly the devices that have one.
 //
+// IT ALSO SUBTRACTS THE CROWN, and for the reason the docked clamp does: the bands above the board
+// are 108px and the clearance this used to leave was 48, so a long enough ladder was free to draw
+// itself over the title row. goFigure's ladder is three short rungs and an expression, so today it
+// is bounded by its own content at every viewport this app supports and the term changes nothing on
+// screen. It is here because "the sheet overlays the board" is the promise, not "the sheet usually
+// fits", and the next rung wording is the thing that would find the difference.
+//
+// The band the docked clamp subtracts for the hint bar has no counterpart here: a `bare` bar sits in
+// a row the bench already draws inside the seam, so the seam is the whole of what is below the
+// board. --lull-kb has none either -- this bench has no text input to raise a keyboard, and the
+// sheet is pinned to a viewport bottom the keyboard would cover, so a term that shortened the sheet
+// without moving it would be answering the wrong question.
+//
 // The 140px floor is carried over from the docked clamp and is the same fix for the same bug:
 // without it the height expression collapses to 14px on a 390dvh phone in landscape, and a
-// component built to protect the seam silently displayed nothing. The docked clamp also subtracts a
-// 60px band, which this path does not have, so the expression is rewritten rather than reused.
+// component built to protect the seam silently displayed nothing.
+//
+// `z-2` is the same rank the docked sheet takes, and index.css holds the scale. goFigure mounts no
+// sign row, so nothing on THIS bench currently outranks an unranked sheet -- the rank is here so
+// that the two variants of one component paint at one height, rather than one of them being a
+// latent bug waiting on a bench that grows a sticky strip.
 //
 // One caveat, and it is a trap laid for the future rather than a live condition: a transformed
 // ancestor contains a fixed box, so `position: fixed` inside one stops meaning "the viewport". No
@@ -150,9 +187,9 @@ const SHEET =
 // and nothing else -- so nothing is currently animating a transform above this sheet. Do not put
 // one there.
 const SHEET_FIXED =
-  'fixed right-[var(--lull-gutter-right)] left-[var(--lull-gutter-left)] ' +
+  'fixed right-[var(--lull-gutter-right)] left-[var(--lull-gutter-left)] z-2 ' +
   'bottom-[calc(var(--lull-seam)+env(safe-area-inset-bottom)+var(--lull-s2))] flex ' +
-  'max-h-[clamp(140px,calc(100dvh-var(--lull-seam)-env(safe-area-inset-bottom)-var(--lull-s7)),420px)] ' +
+  'max-h-[clamp(140px,calc(100dvh-var(--lull-crown)-var(--lull-seam)-env(safe-area-inset-bottom)-var(--lull-s2)),420px)] ' +
   'flex-col gap-[var(--lull-s3)] overflow-y-auto rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] ' +
   'bg-[var(--lull-raised)] p-[var(--lull-s4)] shadow-[0_8px_28px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.55)]'
 
