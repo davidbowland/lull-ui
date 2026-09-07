@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react'
 import { keepThisSession, retentionFloor, usePrefetch } from './usePrefetch'
 import { fetchPack } from '@services/lull'
 import { readHints, readPack, readProgress, writeHints, writePack, writeProgress } from '@services/storage'
-import { pack } from '@test/__mocks__'
+import { incompletePack, pack } from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked hook fires real axios
 // requests against a 35-second timeout.
@@ -12,6 +12,8 @@ jest.mock('@services/lull')
 // A pack's own `date` must match the key it is stored under -- readPack rejects a
 // mismatch as corrupt, which is what stops a poisoned entry crashing every load.
 const packFor = (date: string) => ({ ...pack, date })
+
+const partialPackFor = (date: string) => ({ ...incompletePack, date })
 
 describe('retentionFloor', () => {
   it('keeps seven days, counting back from today', () => {
@@ -67,6 +69,87 @@ describe('usePrefetch', () => {
 
       expect(mockFetchPack).toHaveBeenCalledTimes(1)
       expect(mockFetchPack).toHaveBeenCalledWith('2026-08-18')
+    })
+
+    // THE BUG THIS FUNCTION WAS ADDED FOR. A day cached while the generator was still filling it
+    // stays partial forever: nothing else in the app re-asks for a date already on the device --
+    // selectDay renders the cached pack and the month list only fetches a day it does NOT hold --
+    // so 2026-09-05 sat at two of sixteen puzzles until localStorage was cleared by hand.
+    it('re-asks for a cached pack that is still incomplete', async () => {
+      setup()
+      writePack('2026-08-16', partialPackFor('2026-08-16'))
+
+      await renderPrefetch()
+
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-16')
+    })
+
+    // The other half, and the one that keeps the cost at one request on an ordinary day: a complete
+    // pack never changes, so a device holding a week of finished days asks for today and nothing
+    // else.
+    it('leaves a complete cached pack alone', async () => {
+      setup()
+      writePack('2026-08-16', packFor('2026-08-16'))
+
+      await renderPrefetch()
+
+      expect(mockFetchPack).toHaveBeenCalledTimes(1)
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-18')
+    })
+
+    // Today is fetched by the line above the top-up and fetchPack is cache-first, so asking twice
+    // would spend a second request on the one date that was certainly just requested.
+    it("asks once for today even when today's cached pack is incomplete", async () => {
+      setup()
+      writePack('2026-08-18', partialPackFor('2026-08-18'))
+
+      await renderPrefetch()
+
+      expect(mockFetchPack).toHaveBeenCalledTimes(1)
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-18')
+    })
+
+    // Every one of them, not the newest. A player who opened the app on three thin mornings has
+    // three partial days, and healing one per open would take three days to finish.
+    it('re-asks for every incomplete pack on the device', async () => {
+      setup()
+      writePack('2026-08-16', partialPackFor('2026-08-16'))
+      writePack('2026-08-15', partialPackFor('2026-08-15'))
+
+      await renderPrefetch()
+
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-16')
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-15')
+    })
+
+    // A day whose top-up fails must not take the days behind it down with it. The loop is
+    // sequential, so one rejection propagating would abandon every date after it -- and the request
+    // most likely to fail is the one on a connection that is about to drop for all of them.
+    it('tops up the remaining days when one of them fails', async () => {
+      setup()
+      writePack('2026-08-16', partialPackFor('2026-08-16'))
+      writePack('2026-08-15', partialPackFor('2026-08-15'))
+      mockFetchPack.mockResolvedValueOnce(pack).mockRejectedValueOnce(new Error('Network Error'))
+
+      await renderPrefetch()
+
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-15')
+    })
+
+    // The top-up reads the device AFTER today's fetch has written to it, so a date that has just
+    // arrived complete is not asked for a second time. Nothing else in this file can catch that:
+    // the fetch and the scan are one function apart.
+    it('does not re-ask for a day the run just completed', async () => {
+      setup()
+      writePack('2026-08-17', partialPackFor('2026-08-17'))
+      mockFetchPack.mockImplementationOnce(async () => {
+        writePack('2026-08-17', packFor('2026-08-17'))
+        return pack
+      })
+
+      await renderPrefetch()
+
+      expect(mockFetchPack).toHaveBeenCalledTimes(1)
     })
 
     // A request against a 35-second timeout hangs for the whole timeout with no network.

@@ -65,6 +65,32 @@ const COUNT_WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 
 
 const countWord = (count: number): string => COUNT_WORDS[count] ?? `${count}`
 
+// The same word, OPENING a sentence. The array above is lower case because its other reader sits
+// mid-sentence after "All", and the fill report starts with the number -- so this capitalizes rather
+// than adding a fourth copy of a list this codebase already carries three of. A count of zero never
+// reaches it (the 'nothing' branch answers for that) and the numeric fallthrough is unaffected.
+const countWordOpening = (count: number): string => {
+  const word = countWord(count)
+  return `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`
+}
+
+// WHAT A CHECK FOR THE REST OF A DAY CAN BE, and it carries the date it is about for the reason
+// `request` carries one in the panel below: the day on screen can change under a settled report --
+// press Back through a `?d=` and the plate names another day -- and a report is a claim about one
+// day only.
+//
+// 'nothing' IS NOT A FAILURE and takes no apology and no retry primary. lull-api assembles a day
+// across four conditional writes and three Lambda invocations, so "the rest is still being made" is
+// the ordinary answer to an early check, and dressing it as an error would teach the player to
+// distrust a button that did exactly what it said.
+interface FillCheck {
+  arrived: number
+  date: PackDate | null
+  state: 'idle' | 'pending' | 'arrived' | 'nothing' | 'failed'
+}
+
+const IDLE_CHECK: FillCheck = { arrived: 0, date: null, state: 'idle' }
+
 // Where a type sits in the reading order of the benches. Two misses land at the END rather
 // than at the front, which is where indexOf's raw -1 would put them:
 //
@@ -511,6 +537,13 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
   // that came back empty or never arrived is the answer to that question changing.
   const [outcome, setOutcome] = useState<DayRequest | null>(null)
   const [pendingFocus, setPendingFocus] = useState<PanelFocus | null>(null)
+  // THE PLATE'S OWN REPORT, and deliberately not `request` above. That state describes the day
+  // PANEL and is cleared when the panel is dismissed; this one is about the day already on screen
+  // and has to survive with the plate it sits under, which is on screen whether the panel is open or
+  // not. One slot serving both would put a check on today's rows into a live region the reader may
+  // have walked away from, and a panel dismissal would erase a report about something else.
+  const [fillCheck, setFillCheck] = useState<FillCheck>(IDLE_CHECK)
+  const fillReportRef = useRef<HTMLParagraphElement>(null)
   // A GENERATED ID AND NEVER A LITERAL. DayPanel builds `${panelId}-heading` and `${panelId}-month`
   // out of it, so two panels handed one literal would put two elements on a page under one id and
   // an aria-labelledby would resolve to whichever the browser found first.
@@ -659,6 +692,22 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
     setPendingFocus(null)
   }, [pendingFocus])
 
+  // THE CHECK'S OWN SUCCESS IS WHAT TAKES ITS BUTTON AWAY. A press that completes the day unmounts
+  // the sentence and the control together -- the `!pack.complete` branch stops rendering them -- so
+  // the <button> holding the keyboard is removed and focus falls to <body>, with the next Tab
+  // restarting at the top of the document (WCAG 2.4.3). The report is where the reader was already
+  // headed: it is the sentence saying what the press did.
+  //
+  // THE GUARD IS THAT FOCUS ACTUALLY FELL, exactly as it is in DayPanel: a browser puts focus on
+  // <body> when the focused element is removed, so `activeElement === body` right after a commit is
+  // the observable form of "the control the keyboard was on is gone". A settle that leaves the
+  // button standing -- 'nothing', 'failed' -- leaves the keyboard where it is.
+  useEffect(() => {
+    if (fillCheck.state === 'idle' || fillCheck.state === 'pending') return
+    if (document.activeElement !== document.body) return
+    fillReportRef.current?.focus()
+  }, [fillCheck])
+
   // Nothing above this line may depend on the date, the clock, or the device. This
   // component is rendered in Node at build time and shipped as HTML to everyone, so a
   // date resolved there freezes at the moment of deploy and a label formatted there is
@@ -746,6 +795,23 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
   // which readPack can produce out of a poisoned key -- has zero open puzzles and is not finished.
   const isFinished = pack !== null && pack.puzzles.length > 0 && openCount === 0
 
+  // WHAT THE PLATE SAYS ABOUT ITS OWN CHECK, and it is held to the day the check was about: the day
+  // on screen changes without the device being touched -- the address bar names it -- so a report
+  // left standing over another day would be a claim about a Tuesday printed under a Saturday.
+  //
+  // "puzzle" and "puzzles" rather than a bare count, because this sentence is read aloud as often as
+  // it is seen, and "1 more puzzles" is the tell that nobody read it.
+  const fillReport =
+    pack === null || fillCheck.date !== pack.date
+      ? ''
+      : {
+          arrived: `${countWordOpening(fillCheck.arrived)} more ${fillCheck.arrived === 1 ? 'puzzle' : 'puzzles'} arrived.`,
+          failed: 'They didn’t arrive. Try again while you’re online.',
+          idle: '',
+          nothing: 'Nothing new yet. The rest of the day is still being made.',
+          pending: 'Checking for the rest of this day…',
+        }[fillCheck.state]
+
   const openPanel = (focus: PanelFocus): void => {
     const active = document.activeElement
     // <body> IS RECORDED AS NO OPENER AT ALL. Safari does not focus a <button> on click, so the
@@ -788,6 +854,36 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
     const opener = openerRef.current
     const target = opener !== null && opener.isConnected ? opener : plateControlRef.current
     target?.focus()
+  }
+
+  // THE PRESS FOR A PLAYER LOOKING AT THE GAP. usePrefetch tops up every incomplete pack on the
+  // device on open, reconnect and resume, so this is not the only thing standing between a partial
+  // day and a whole one -- but the automatic pass runs when the app wakes, not when the player is
+  // sitting in front of a three-row Tuesday wondering where the rest went.
+  //
+  // COUNTED, NOT ASSERTED. "More puzzles arrived" over a day that gained nothing is the kind of
+  // cheerful lie that makes a reader stop reading, and the count is free: fetchPack answers the pack
+  // it stored, so the difference against what was on screen at the moment of the press is exactly
+  // what turned up.
+  //
+  // No `keepThisSession` here, unlike requestDay. The prune runs on every open and this control only
+  // ever names the day the plate is showing -- which is either inside the retention window or a day
+  // already exempted by the selectDay or requestDay that reached it.
+  const checkForMore = async (date: PackDate, before: number): Promise<void> => {
+    setFillCheck({ arrived: 0, date, state: 'pending' })
+    try {
+      const filled = await fetchPack(date)
+      const arrived = filled.puzzles.length - before
+      setFillCheck({ arrived, date, state: arrived > 0 ? 'arrived' : 'nothing' })
+    } catch (error: unknown) {
+      // NO 404 BRANCH, unlike requestDay. That handler separates "this date holds nothing" from "the
+      // connection dropped" because it is asking for a day the device does not have. This press asks
+      // about a day whose pack is on screen, so a 404 would mean the server had lost a day it
+      // already served -- and the honest report for it is the same one a dropped connection gets:
+      // nothing came back, try again.
+      console.error('check for more failed', { date, error })
+      setFillCheck({ arrived: 0, date, state: 'failed' })
+    }
   }
 
   const selectDay = (date: PackDate): void => {
@@ -1069,9 +1165,63 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
             {/* A partial day is served on purpose and everything in it is playable now.
                 Saying so is the difference between "this is all there is" and "there is
                 more coming". Below the rows, because it is a fact about the list rather
-                than about the day. */}
-            {!pack.complete && (
-              <p className="text-[var(--lull-muted)]">More puzzles for this day are still on the way.</p>
+                than about the day.
+
+                A GROUP, so the sentence, the control and the report on it are one thing a screen
+                reader can enter and leave. The name is an aria-label rather than an IDREF, and that
+                is decided rather than defaulted: the only visible text that could have named it is
+                the "still on the way" sentence, which is exactly the element that goes away when a
+                check completes the day -- so an aria-labelledby here would leave the group nameless
+                at the one moment the reader is being sent into it.
+
+                IT OUTLIVES THE SENTENCE THAT OPENED IT. The block is rendered while the day is
+                filling in OR while there is a report about this day, because the success case
+                completes the pack and would otherwise destroy the live region in the same commit
+                that gave it something to say -- which announces nothing, and is the failure this
+                codebase documents in three places. */}
+            {(!pack.complete || fillReport !== '') && (
+              <div aria-label="The rest of this day" className="flex flex-col gap-[var(--lull-s3)]" role="group">
+                {!pack.complete && (
+                  <p className="text-[var(--lull-muted)]">More puzzles for this day are still on the way.</p>
+                )}
+
+                {/* WITHHELD OFFLINE, on the rule this file states twice about the day panel: a
+                    control that cannot do the thing it names is worse than no control. With no
+                    connection the press round-trips to the identical failure in milliseconds, and
+                    the status line at the top of this region is already saying why.
+
+                    A `default` and not a `primary`. The accent is spent in three places
+                    product-wide, and on this screen it belongs to Up Next's offer.
+
+                    The visible words are contained in the name (WCAG 2.5.3), so speech input keeps
+                    its handle on the control while the name says what pressing it is for. */}
+                {!pack.complete && isOnline && (
+                  <Button
+                    aria-label="Check now for the rest of this day."
+                    className="self-start"
+                    onClick={() => void checkForMore(pack.date, pack.puzzles.length)}
+                    size="sm"
+                  >
+                    Check now
+                  </Button>
+                )}
+
+                {/* Mounted with the group and never hidden, so the region a screen reader is
+                    watching exists before it has anything to say. empty:h-0 rather than
+                    empty:hidden: `hidden` is display:none, which takes the element out of the
+                    accessibility tree entirely -- the exact case this is written to avoid.
+
+                    tabIndex={-1} is not a tab stop. It is what lets the effect above put the
+                    keyboard here when a successful check takes the button out from under it. */}
+                <p
+                  className="text-[var(--lull-muted)] empty:h-0 empty:overflow-hidden"
+                  ref={fillReportRef}
+                  role="status"
+                  tabIndex={-1}
+                >
+                  {fillReport}
+                </p>
+              </div>
             )}
           </>
         )}

@@ -1369,6 +1369,130 @@ describe('Shelf, choosing a day', () => {
     })
   })
 
+  // A DAY THE DEVICE ALREADY HOLDS IS THE ONE DAY NOTHING USED TO RE-ASK FOR. selectDay renders the
+  // cached pack and the month list only fetches a day it does not hold, so a morning cached while
+  // lull-api was still filling it stayed partial until the key aged out or localStorage was cleared
+  // by hand. usePrefetch now tops those days up on its own; this is the press for a player who is
+  // looking at the gap and does not want to wait for the next open.
+  describe('a day still filling in', () => {
+    const setupPartialDay = (): ReturnType<typeof render> => setupShelf({ packs: [incompletePack] })
+
+    // The pack that arrives when the check lands: the same day, complete, with one more puzzle in it.
+    const filledDay: Pack = { ...pack, complete: true }
+
+    const check = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: 'Check now for the rest of this day.' }))
+    }
+
+    it('offers a check while the day is still filling in', () => {
+      setupPartialDay()
+
+      expect(screen.getByRole('button', { name: 'Check now for the rest of this day.' })).toBeInTheDocument()
+    })
+
+    // Nothing is coming, so there is nothing to check for -- and this file says twice that a control
+    // which cannot do the thing it names is worse than no control.
+    it('offers no check once the day is complete', () => {
+      setupShelf()
+
+      expect(screen.queryByRole('button', { name: 'Check now for the rest of this day.' })).not.toBeInTheDocument()
+    })
+
+    // Withheld offline on the same rule the day panel's month face and standing offer are withheld
+    // on. The offline status line above the plate is already saying why.
+    //
+    // Driven by LOSING the connection rather than by starting without one, because that is the
+    // transition a player on a phone actually meets, and it is the one that can take a control out
+    // from under a keyboard.
+    it('takes the check away when the connection drops', async () => {
+      setupPartialDay()
+
+      await act(async () => {
+        Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false, writable: true })
+        window.dispatchEvent(new Event('offline'))
+      })
+
+      expect(screen.queryByRole('button', { name: 'Check now for the rest of this day.' })).not.toBeInTheDocument()
+    })
+
+    it('asks for the day again when the check is pressed', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockFetchPack.mockResolvedValueOnce(filledDay)
+      setupPartialDay()
+
+      await check(user)
+
+      expect(mockFetchPack).toHaveBeenCalledWith('2026-08-18')
+    })
+
+    it('says how many puzzles arrived', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockFetchPack.mockImplementationOnce(async () => {
+        // Written through storage the way the real fetchPack writes, so the new rows reach the
+        // screen by the route they reach it by in the app.
+        writePack(filledDay.date, filledDay)
+        return filledDay
+      })
+      setupPartialDay()
+
+      await check(user)
+
+      expect(await screen.findByText('One more puzzle arrived.')).toBeInTheDocument()
+    })
+
+    // The honest answer when the day genuinely has not moved. "Nothing new" is a fact about the
+    // server, not a failure, so it takes neither an apology nor a retry primary.
+    it('says when nothing new has arrived', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockFetchPack.mockResolvedValueOnce(incompletePack)
+      setupPartialDay()
+
+      await check(user)
+
+      expect(await screen.findByText('Nothing new yet. The rest of the day is still being made.')).toBeInTheDocument()
+    })
+
+    it('says when the check could not reach the server', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockFetchPack.mockRejectedValueOnce(new Error('Network Error'))
+      setupPartialDay()
+
+      await check(user)
+
+      expect(await screen.findByText('They didn’t arrive. Try again while you’re online.')).toBeInTheDocument()
+    })
+
+    // A live region inserted with its message already in it is routinely missed -- the failure this
+    // codebase documents in three places. The node has to be the SAME node across the press, which
+    // is what holding a reference across the re-render proves.
+    it('announces through a region that was already on the page', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockFetchPack.mockResolvedValueOnce(incompletePack)
+      setupPartialDay()
+      const region = within(screen.getByRole('group', { name: 'The rest of this day' })).getByRole('status')
+
+      await check(user)
+
+      expect(region).toHaveTextContent('Nothing new yet. The rest of the day is still being made.')
+    })
+
+    // The check's own success is what takes its button away: the day goes complete, the sentence and
+    // the control go with it, and the keyboard falls to <body> with the next Tab restarting at the
+    // top of the document -- WCAG 2.4.3, and the same failure the day panel moves focus to avoid.
+    it('catches the keyboard when the check completes the day', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockFetchPack.mockImplementationOnce(async () => {
+        writePack(filledDay.date, filledDay)
+        return filledDay
+      })
+      setupPartialDay()
+
+      await check(user)
+
+      expect(await screen.findByText('One more puzzle arrived.')).toHaveFocus()
+    })
+  })
+
   describe('up next', () => {
     // A recommendation parked above unsolved rows competes with the screen it sits on, which is
     // the one idea in this design most likely to be lost in a build.

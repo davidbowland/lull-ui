@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { fetchPack } from '@services/lull'
-import { cachedPackDates, removePack } from '@services/storage'
+import { cachedPackDates, readPack, removePack } from '@services/storage'
 import { PackDate } from '@types'
 import { toPackDate } from '@utils/pack-dates'
 
@@ -106,6 +106,48 @@ const pruneOutsideWindow = (localToday: PackDate): void => {
     .forEach(removePack)
 }
 
+// THE DAYS ON THIS DEVICE THAT ARE STILL MISSING PUZZLES, today excluded because the line above the
+// call site has just asked for it.
+//
+// A pack is written the moment it arrives, complete or not, because a partial day is playable and
+// that is the whole reason lull-api serves one. fetchPack already re-requests an incomplete pack
+// rather than answering it from the device -- but only for a date somebody asks about, and until
+// this existed the only date anybody asked about was today. Nothing else in the app re-asks for a
+// day it already holds: selectDay renders the cached pack, and the month list's monthRowSelect
+// fetches only when `here === undefined`.
+//
+// So a day cached while the generators were still filling it froze at whatever had landed. Open Lull
+// at 03:40 UTC, when the nightly run has written goFigure and the slow lanes are still going, and
+// that morning is three puzzles of sixteen until the key ages out of the retention window a week
+// later or localStorage is cleared by hand. That is what happened to 2026-09-05, and it is not a
+// corner: the whole point of a daily habit is opening the app early.
+//
+// READ AFTER THE FETCH ABOVE HAS WRITTEN, so a date that just arrived complete is not asked for
+// twice. `=== false` and not `!pack.complete`: readPack answers null for a key it just discarded as
+// malformed, and a day with no pack is not a day to top up -- it is a day the device does not have,
+// which is the day panel's job and not this one's.
+const incompleteCachedDates = (except: PackDate): PackDate[] =>
+  cachedPackDates().filter((date) => date !== except && readPack(date)?.complete === false)
+
+// ONE AT A TIME, and each failure kept to its own day. Sequential because these are background
+// requests against a 35-second timeout on a connection the player is also using, and a Promise.all
+// over seven of them is a stampede on the one screen this product is named for. Guarded
+// individually because the loop would otherwise abandon every day behind the first rejection --
+// and a dropped connection rejects the first one.
+//
+// The count bounds itself: the prune above has already run, so this walks the retention window plus
+// whatever days this session went and got, and only the ones still short. On an ordinary day it is
+// empty and costs nothing.
+const topUpIncomplete = async (except: PackDate): Promise<void> => {
+  for (const date of incompleteCachedDates(except)) {
+    try {
+      await fetchPack(date)
+    } catch (error: unknown) {
+      console.error('top-up failed', { date, error })
+    }
+  }
+}
+
 export const usePrefetch = (now = Date.now): void => {
   const inFlight = useRef(false)
   const abandoned = useRef(false)
@@ -155,6 +197,11 @@ export const usePrefetch = (now = Date.now): void => {
       // Nobody is left to receive a write for a screen that is gone.
       if (abandoned.current) return
       pruneOutsideWindow(localToday)
+
+      // AFTER the prune, so no request is spent on a day that is about to be deleted -- and below
+      // the `abandoned` guard with it, which costs nothing: run() fires again on the next open, and
+      // these are background requests nobody is waiting on.
+      await topUpIncomplete(localToday)
     } catch (error: unknown) {
       // The clock, the date arithmetic and the pruning pass all sit outside the per-pack
       // guard above. run is called bare and registered as a listener, so neither call site

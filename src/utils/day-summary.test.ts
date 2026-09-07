@@ -11,6 +11,8 @@ const puzzleFixture = (id: string, difficulty: Difficulty = 1): Puzzle => ({
 
 const packFixture = (date: string, puzzles: Puzzle[]): Pack => ({ complete: true, date, puzzles })
 
+const partialPackFixture = (date: string, puzzles: Puzzle[]): Pack => ({ complete: false, date, puzzles })
+
 describe('summarizeDay', () => {
   // The whole reason this function exists. Solved ids carry a date prefix and are kept forever;
   // packs are dropped after seven days. So the count is answerable for any date on the calendar and
@@ -41,6 +43,19 @@ describe('summarizeDay', () => {
     const solved = new Set(['2026-08-25:gofigure:aa', '2026-08-25:gofigure:bb'])
 
     expect(summarizeDay('2026-08-25', pack, solved).status).toEqual('allSolved')
+  })
+
+  // 'allSolved' IS A CLAIM ABOUT THE WHOLE DAY, and a day that is not all here cannot support it.
+  // The status decides whether the row is a control -- allSolved rows are drawn as dead <div>s in
+  // both of the panel's lists -- so a partial day whose arrivals were all solved became a day the
+  // player could no longer open, on a pack that still had puzzles coming to it. That is the trap
+  // that shut behind 2026-09-05: two puzzles landed, both were solved, and the day went dead with
+  // fourteen more sitting on the server.
+  it('does not report an incomplete day as all solved', () => {
+    const pack = partialPackFixture('2026-08-25', [puzzleFixture('2026-08-25:gofigure:aa')])
+    const solved = new Set(['2026-08-25:gofigure:aa'])
+
+    expect(summarizeDay('2026-08-25', pack, solved).status).toEqual('hasUnsolved')
   })
 
   it('reports a partly solved day as having something to open', () => {

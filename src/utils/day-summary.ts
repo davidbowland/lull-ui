@@ -26,10 +26,26 @@ export const summarizeDay = (date: PackDate, pack: Pack | null, solved: Readonly
   // allSolved rows are not controls, so the day would go unpressable with nothing behind it. An
   // empty pack should not reach here (get-pack-by-date answers 404 on zero puzzles) but a poisoned
   // localStorage key can produce one, and readPack validates shape rather than emptiness.
+  //
+  // `pack.complete` IS THE SECOND HALF OF THAT SAME GUARD, and it was missing. 'allSolved' is a
+  // claim about the whole day, and a day still filling in cannot support one: lull-api assembles a
+  // pack across four conditional writes and three Lambda invocations, so a device that opened Lull
+  // while the slow lanes were running holds a genuine fragment of the day. Solve the fragment and
+  // the row went dead in both of the panel's lists -- unpressable, labeled "All solved", with the
+  // rest of the day sitting on the server and no way left to reach it. That is what shut behind
+  // 2026-09-05.
+  //
+  // The count beside it then reads "3 solved" rather than "All solved", which is the honest word:
+  // three is what arrived and three is what was solved, and the day is not finished.
+  //
+  // A `complete: true` pack short of only its cryptic clues is still allSolved, and that is correct
+  // rather than a hole. lull-api grades crypticclue `bestEffort` and filters it out of the flag on
+  // purpose, so complete means "as much of this day as is coming" -- which is exactly the question
+  // this line is asking.
   const status: DayStatus =
     pack === null || pack.puzzles.length === 0
       ? 'notHere'
-      : pack.puzzles.every((puzzle) => solved.has(puzzle.id))
+      : pack.complete && pack.puzzles.every((puzzle) => solved.has(puzzle.id))
         ? 'allSolved'
         : 'hasUnsolved'
 
