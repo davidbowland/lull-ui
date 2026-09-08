@@ -207,32 +207,43 @@ export const stalePackCryptogramPack: Pack = {
 
 // Cryptic Clue
 //
-// Built from the wire example so the fixture and the contract cannot drift. `Dance hidden in instant
-// angora` is 30 characters: [0, 5) is `Dance` and [16, 30) is `instant angora`, inside which
-// `instanT ANGOra` hides TANGO. Every offset here was checked against the string it indexes, which
-// is the whole discipline this type needs -- a span that is valid and wrong renders a confident lie.
+// Built from the wire example so the fixture and the contract cannot drift, and REBUILT when the
+// type traded its two substring devices for three synonym ones. It was a hidden word -- `Dance
+// hidden in instant angora`, inside which `instanT ANGOra` hides TANGO -- and a hidden word is no
+// longer a device this type ships, so keeping it would have left the whole suite exercising a shape
+// the backend cannot produce.
+//
+// It is now a CHARADE, and the parts were checked against the answer the way the old offsets were
+// checked against the clue: TAN (brown) + GO (leave) spells TANGO, and neither part is a substring
+// of the clue, which is precisely the property that killed `fodderSpan`. `answer` and `enumeration`
+// are deliberately unchanged -- puzzle-frame's suite closes this ladder on `The answer is TANGO.`
+// and counts three rungs, and neither fact is about the device.
+//
+// THE EXPLANATION IS SELF-CONSISTENT WITH THE CLUE, and that is worth a line because a fixture is
+// the only place the two strings can be checked against each other at all. The wire format now
+// leads with the definition in quotes, and `a dance` is genuinely the definition half of
+// `Brown and leave for a dance` -- so a reader who takes this fixture as the worked example of the
+// format learns the true one. A quoted definition that did not appear in the clue would still pass
+// every assertion in the suite, which is exactly why it is stated here rather than assumed.
 export const crypticCluePuzzleId = '2026-08-18:crypticclue:abcd1234'
 
-// Text only, no `metadata`. Rungs of this type carry prose and nothing else, and the wire example's
-// order is device, then the quoted definition, then the enumeration and initial -- naming the
-// device first because for a hidden clue, naming which half is the definition hands the solver the
-// wordplay half by elimination.
+// Text only, no `metadata`. Rungs of this type carry prose and nothing else. Rung 1 names the device
+// without naming its parts, rung 2 quotes the definition, and rung 3 is the letter reveal -- the
+// escalation the type's own hint rules ask for, weakest first.
 export const crypticClueHints: HintLadder = [
   {
-    text: "The wordplay is a hidden word: the answer's letters sit consecutively inside the clue, spanning a word break.",
+    text: 'The wordplay is a charade: two shorter words, each clued separately, written one after the other.',
   },
-  { text: 'The definition is "Dance".' },
+  { text: 'The definition is "a dance".' },
   { text: 'Five letters, beginning with T.' },
 ]
 
 export const crypticCluePuzzle: Puzzle<CrypticClueData> = {
   data: {
     answer: 'TANGO',
-    clue: 'Dance hidden in instant angora',
-    definitionSpan: { end: 5, start: 0 },
-    device: 'hidden',
+    clue: 'Brown and leave for a dance',
     enumeration: [5],
-    fodderSpan: { end: 30, start: 16 },
+    explanation: '"a dance" = TAN (brown) + GO (leave)',
     hints: crypticClueHints,
   },
   difficulty: 3,
@@ -241,41 +252,11 @@ export const crypticCluePuzzle: Puzzle<CrypticClueData> = {
   type: 'crypticclue',
 }
 
-// The only way to cover the second wordplay line. `device` is what the reveal reads, and it is the
-// field's only reader in the whole app.
-export const anagramCrypticClue: Puzzle<CrypticClueData> = {
-  ...crypticCluePuzzle,
-  data: { ...crypticCluePuzzle.data, device: 'anagram' },
-}
-
-// THREE broken-span fixtures rather than one with a parameter, so each names the state it exists
-// for and a test that stops covering one fails by leaving an unused export rather than by quietly
-// sharing a fixture with the test next to it.
-//
-// An end past the clue: the degradation path a real pack could produce. State 8 -- no mark, the
-// heading and the wordplay line only.
-export const brokenSpanCrypticClue: Puzzle<CrypticClueData> = {
-  ...crypticCluePuzzle,
-  data: { ...crypticCluePuzzle.data, definitionSpan: { end: 99, start: 0 } },
-}
-
-// The mirror case, and the only fixture that can reach state 9 -- mark, heading and the definition
-// line, with no wordplay line.
-export const brokenFodderCrypticClue: Puzzle<CrypticClueData> = {
-  ...crypticCluePuzzle,
-  data: { ...crypticCluePuzzle.data, fodderSpan: { end: 99, start: 16 } },
-}
-
-// Both past the end, and the only fixture that can reach state 10, where the reveal does not render
-// at all. A landmark named "How the clue worked" containing nothing is worse than silence.
-export const brokenSpansCrypticClue: Puzzle<CrypticClueData> = {
-  ...crypticCluePuzzle,
-  data: {
-    ...crypticCluePuzzle.data,
-    definitionSpan: { end: 99, start: 0 },
-    fodderSpan: { end: 99, start: 16 },
-  },
-}
+// NO DEGENERATE-EXPLANATION FIXTURE, and its absence is deliberate. The three broken-span exports
+// that used to sit here covered three degradation states, because two independent spans could fail
+// independently; one string has one failure, and the shapes that reach it -- absent, null, a number,
+// all spaces -- are shapes the type system does not admit, so they are cast inline at the single
+// test that drives them, exactly as the absent-enumeration row already is.
 
 // State 14: the one branch in this board that a well-formed pack never takes. Without the guard an
 // empty array paints a bare "()" beside the clue and an sr-only " letters." with a leading space.

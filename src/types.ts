@@ -249,21 +249,20 @@ export interface ThemedAnagramsData {
 
 // Cryptic Clue
 
-// Half-open [start, end) UTF-16 code-unit offsets into CrypticClueData.clue.
+// NO `ClueSpan` AND NO `device`, AND THEIR ABSENCE IS THE POINT OF THIS SECTION. Both existed to
+// serve one reader -- the post-solve reveal -- back when the type shipped two devices whose parts
+// were literal substrings of the clue: a hidden word and an anagram. `definitionSpan` and
+// `fodderSpan` were half-open offsets into `clue`, and `device` was the two-member union the reveal
+// switched on to pick a sentence.
 //
-// COMPUTED IN CODE by locating the model's part strings and then discarding them. NEVER returned by
-// the model: a model that miscounts one character would ship a hint quoting the wrong words. The
-// clue's charset is [A-Za-z ], so code unit, code point and grapheme all coincide -- which is said
-// out loud because a client slicing by grapheme would otherwise highlight the wrong span.
-export interface ClueSpan {
-  end: number
-  start: number
-}
-
-// CLOSED HERE AND NOWHERE ELSE -- never in the tool schema. The predicate table in
-// generators/crypticclue/verify.ts is exhaustive on this union, so a third device cannot be added
-// without the compiler naming the site that must prove it.
-export type CrypticDevice = 'anagram' | 'hidden'
+// THE SYNONYM DEVICES CANNOT BE DESCRIBED THAT WAY, and no widening of the span shape rescues them.
+// A charade is assembled from 2-3 parts and the letters `CAR` never appear in the clue -- the word
+// `Vehicle` does. A deletion's source word `BRANDY` is not in the clue at all. A double definition
+// has two definitions and no wordplay half to point at, so there is nothing for a `fodderSpan` to
+// index and nothing for a one-mark convention to mark. `explanation` below is what replaced all
+// three, and it is one string rather than a structure for exactly the reason those three failed:
+// the decomposition differs per device, and a client that reassembled it into a sentence would be
+// authoring the wording of a game rule it does not own.
 
 // HintedPuzzleData, not PhrasePuzzleData: `answer` here is a single English word drawn from the
 // source corpus, and it is deliberately outside PHRASE_CORPUS_TYPES (utils/exclusions.ts) -- a list
@@ -279,17 +278,29 @@ export interface CrypticClueData extends HintedPuzzleData {
   // parenthetical: every character the cover tolerates as residue is a character a model can hide
   // content in.
   clue: string
-  definitionSpan: ClueSpan
-  device: CrypticDevice
   // Word lengths, derived in code from `answer`, so it cannot disagree with it. Always length 1 in
   // Phase 1, and guaranteed so rather than assumed: the answer is a single-token lemma. An array
   // rather than a number because the WIRE SHAPE is the expensive thing to change -- a data-shape
   // change requires the hand-run delete-and-rebuild runbook endpoints.rest documents -- and the
   // derivation is split().map() either way.
   enumeration: number[]
-  fodderSpan: ClueSpan
-  // NO indicatorSpan. It is verified and not shipped: nothing renders it, the `device` literal
-  // already names what the indicator signals, and a field with no reader is a field that rots.
+  // How the clue worked, in words, at most 100 characters, GATED AND RENDERED VERBATIM. It is
+  // composed by the backend from a decomposition it proved -- `"a dance" = TAN (brown) + GO
+  // (leave)`, `"a mark" = BRANDY (spirit) minus its last letter`, `Two definitions: "Departed" and
+  // "still remaining"` -- so the punctuation, the capitalization and the quotation marks all arrive
+  // with it.
+  //
+  // IT NAMES THE DEFINITION, in quotes, on every device, and that is a property of the format
+  // rather than a habit of it. The retired `<mark>` was the only thing that ever told a player
+  // which words of the clue were the definition, and a format that merely decomposed the wordplay
+  // dropped that fact for everyone rather than only for the accent. Quoting it here puts it back in
+  // words, which reaches a listener as well -- a screen reader gives no signal for `<mark>` in most
+  // configurations, so the underline never carried it to one.
+  //
+  // The board adds nothing of its own: wrapping this in quotes or appending a period would be the
+  // client editing a sentence the verifier signed off on, and the first device whose format did not
+  // fit the decoration would render a lie in good type.
+  explanation: string
 }
 
 // Phrase puzzles

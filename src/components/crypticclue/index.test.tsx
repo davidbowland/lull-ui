@@ -3,19 +3,12 @@ import userEvent from '@testing-library/user-event'
 import React from 'react'
 
 import { CrypticClueBoard } from './index'
-import {
-  anagramCrypticClue,
-  brokenFodderCrypticClue,
-  brokenSpanCrypticClue,
-  brokenSpansCrypticClue,
-  crypticCluePuzzle,
-  noEnumerationCrypticClue,
-} from '@test/__mocks__'
-import { CrypticClueData, CrypticDevice, Puzzle } from '@types'
+import { crypticCluePuzzle, noEnumerationCrypticClue } from '@test/__mocks__'
+import { CrypticClueData, Puzzle } from '@types'
 
 describe('CrypticClueBoard', () => {
-  const CLUE = 'Dance hidden in instant angora'
-  const INSTRUCTION = 'Every cryptic clue says the answer twice — once as a definition, once as wordplay.'
+  const CLUE = 'Brown and leave for a dance'
+  const INSTRUCTION = 'Every cryptic clue says the answer twice — a definition, and a second way to the same word.'
 
   const onProgress = jest.fn()
   const onReset = jest.fn()
@@ -53,11 +46,14 @@ describe('CrypticClueBoard', () => {
     return user
   }
 
-  // The clue's paragraph, found by POSITION rather than by its text. The <mark> spliced into it on
-  // the win breaks the string across three text nodes, so a text query would stop finding it at
-  // exactly the moment this helper matters most. It is the first <p> in the board band -- the
-  // plate -- and the reveal's two lines come after it in document order. A structural DOM
-  // assertion, not a style one: it says where an element sits, never how it looks.
+  // The clue's paragraph, found by POSITION rather than by its text. It was written this way when a
+  // <mark> spliced into the clue on the win broke the string across three text nodes and a text
+  // query stopped finding it; the splice is gone, but the helper stays positional, because the
+  // assertions that matter most here are the ones that pin the paragraph's ENTIRE text by value,
+  // and a query that found the element by its text could not fail on the text being wrong. It is
+  // the first <p> in the board band -- the plate -- and the reveal comes after it in document
+  // order. A structural DOM assertion, not a style one: it says where an element sits, never how it
+  // looks.
   const cluePlate = (container: HTMLElement): Element | null => container.querySelector('.lull-board p')
 
   // A ROLE query, never getByLabelText. The label test below resolves the htmlFor by hand and
@@ -68,10 +64,12 @@ describe('CrypticClueBoard', () => {
 
   describe('the clue', () => {
     // `toHaveTextContent` is a SUBSTRING match on whitespace-NORMALIZED text, so it would go on
-    // passing if someone added a `clue.trim()` or collapsed runs of spaces -- and byte-exactness is
-    // the premise `spans.ts` and the reveal's <mark> both stand on, since the pack's offsets index
-    // this string. So the whole paragraph is pinned by value instead, which also nails the single
-    // space before the parenthetical and the run-on of the sr-only twin.
+    // passing if someone added a `clue.trim()` or collapsed runs of spaces. Byte-exactness used to
+    // be load-bearing because the pack's offsets indexed this string; the offsets are gone and it is
+    // load-bearing anyway, for the reason the wire gives it -- the clue is stored byte-identical to
+    // the string the verifier proved, so a clue needing a trim is one the backend REJECTED rather
+    // than one this board tidies. So the whole paragraph is pinned by value, which also nails the
+    // single space before the parenthetical and the run-on of the sr-only twin.
     it('renders the clue exactly as the pack wrote it', () => {
       const { container } = setup()
 
@@ -98,7 +96,7 @@ describe('CrypticClueBoard', () => {
       expect(screen.getByText('(5)')).toHaveAttribute('aria-hidden', 'true')
     })
 
-    // Spoken, "(5)" is the bare word "five" at the end of a sentence about angora -- a number with
+    // Spoken, "(5)" is the bare word "five" at the end of a sentence about dancing -- a number with
     // no unit attached. The sr-only sibling is not a duplicate, it is the translation of a
     // typographic convention into words.
     it('says how many letters, in words, for a listener', () => {
@@ -154,6 +152,33 @@ describe('CrypticClueBoard', () => {
 
       expect(cluePlate(container)).toHaveProperty('textContent', CLUE)
       expect(screen.queryByText('letters.', { exact: false })).toBeNull()
+    })
+
+    // THE CLUE ITSELF OFF THE NETWORK, and these rows document rather than defend. `isValidPuzzle`
+    // leaves `data` opaque and `{clue}` renders with no guard at all, so a pack missing the field
+    // reaches the plate -- and what it does there was, until now, simply unobserved: the rows that
+    // used to exercise a malformed clue indexed it with span offsets, and they went with the spans.
+    //
+    // NO GUARD IS BEING ASKED FOR HERE. Every board in this repo renders its pack's strings the same
+    // way, so guarding this one is a decision about all of them and is not made in a test file. What
+    // a test can do is stop the behavior being a surprise: absent and null render as nothing at all
+    // and leave the enumeration's leading space exposed, and a number renders as its digits. Each
+    // row pins the plate's ENTIRE text, so the leading space is visible in the expectation rather
+    // than normalized away by a substring matcher.
+    //
+    // AN OBJECT CLUE IS DELIBERATELY NOT A ROW. React refuses an object as a child, so it does not
+    // render badly -- it throws inside commit and the root error boundary swaps in "Lull got stuck"
+    // for every load of that day, offline included. That is the same failure `explanation` and
+    // `answer` are each guarded against one field over, and the asymmetry is real; it is recorded
+    // here so the next person weighs it, rather than pinned as though a crash were the intent.
+    it.each<[string, unknown, string]>([
+      ['left out of the pack', undefined, ' (5)5 letters.'],
+      ['null', null, ' (5)5 letters.'],
+      ['a number', 5, '5 (5)5 letters.'],
+    ])('draws the plate when the clue arrived %s', (_description, clue, text) => {
+      const { container } = setup({ ...crypticCluePuzzle, data: { ...crypticCluePuzzle.data, clue: clue as string } })
+
+      expect(cluePlate(container)).toHaveProperty('textContent', text)
     })
 
     // No sign row: `category` is absent by design for this type, because the definition half of the
@@ -411,6 +436,12 @@ describe('CrypticClueBoard', () => {
     // Says what to DO about the trick rather than restating the standing line, and deliberately
     // does not name the length: the enumeration is on screen beside the clue at all times, so a
     // message restating it would spend the ribbon to say nothing new.
+    //
+    // PINNED BY VALUE because the wording is load-bearing, not decorative. It carries no "wordplay"
+    // -- a double definition has no wordplay half, and this is the message a player reads on the
+    // way to one, so a line telling them to look for one would send them hunting for a thing that
+    // day's clue does not contain. A consistency pass that copied the phrase back from an older
+    // sibling bench fails here.
     it('tells the player what to do when a checked answer is wrong', async () => {
       const { user } = setup()
 
@@ -418,7 +449,7 @@ describe('CrypticClueBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Check' }))
 
       expect(screen.getByRole('status')).toHaveTextContent(
-        'Not it. Read the clue twice — once for the definition, once for the wordplay.',
+        'Not it. Read the clue twice — it says the answer two different ways.',
       )
     })
 
@@ -464,6 +495,14 @@ describe('CrypticClueBoard', () => {
 
       expect(answerBox()).toHaveValue('')
     })
+
+    // THE STATE NUMBERS ARE THE DESIGN DOC'S AND THEY NOW SKIP, which is a fact about the doc and
+    // not about a lost test. States 6 through 10 were RETIRED with the spans: 6 and 7 were the
+    // anagram and unrecognized-`device` reveals, and 8, 9 and 10 were the three ways two independent
+    // span offsets could fail to slice. This type ships neither a `device` nor offsets any more, and
+    // one string has one failure -- the table in `the reveal` below is all of what replaced them.
+    // The surviving numbers are deliberately not renumbered, so a reader following one into the doc
+    // still lands on the row it names.
 
     // State 12. A pack can be pruned and refetched, so a stored guess may be half-typed -- and a
     // half-typed guess is not a wrong one, so nothing may arrive in the live region as though it
@@ -632,66 +671,101 @@ describe('CrypticClueBoard', () => {
     })
   })
 
-  // The payoff of the type, and the only reader `definitionSpan`, `fodderSpan` and `device` have.
-  // Two halves that cover each other's failure: a <mark> spliced into the clue for people who can
-  // see it, and prose beneath the plate that carries the meaning for everyone else.
+  // The payoff of the type, and the only reader `explanation` has. It used to be two halves that
+  // covered each other's failure -- a <mark> spliced into the clue for people who could see it, and
+  // prose beneath the plate for everyone else -- and it is now one sentence the backend composed,
+  // for the reason its comment in index.tsx gives: none of the three synonym devices has a part
+  // that is a substring of the clue, so there is nothing left to mark.
   describe('the reveal', () => {
     const REGION = 'How the clue worked'
-    const DEFINITION_LINE = '“Dance” is the definition.'
-    const HIDDEN_LINE = '“instant angora” hides TANGO.'
+    const EXPLANATION = '"a dance" = TAN (brown) + GO (leave)'
 
-    // <mark> is the correct element -- "text marked or highlighted for reference purposes, due to
-    // its relevance in another context" is a description of a solver's pencil underline. What is
-    // asserted is that the element exists and what it contains, which is observable DOM, and never
-    // a class or a computed style. The MARK constant's bg-transparent is stated in a comment beside
-    // the code rather than tested, because the only available assertion would be a style one.
-    it('marks nothing before the win', () => {
+    // The reveal's own paragraph, resolved through the landmark rather than by its text, so the
+    // assertions below can pin that paragraph's ENTIRE text by value. A `getByText` would find the
+    // element by the very string under test and could not fail on an added period or an added pair
+    // of quotes, which is the failure this block exists to catch.
+    const revealLine = (): Element | null => screen.getByRole('region', { name: REGION }).querySelector('p')
+
+    it('draws no reveal before the win', () => {
       const { container } = setup()
 
       // Led with the clue, because two absence assertions alone cannot tell "not solved yet" from
       // "board rendered nothing at all".
       expect(cluePlate(container)).toHaveTextContent(CLUE)
-      expect(container.querySelector('mark')).toBeNull()
       expect(screen.queryByRole('region')).not.toBeInTheDocument()
+      expect(screen.queryByText(EXPLANATION)).toBeNull()
     })
 
-    // TWO ROWS, because one span is not enough to prove the mark comes from the pack. Every fixture
-    // with a usable definition span uses [0, 5), so a board that hardcoded `Dance` -- still gated on
-    // the span slicing -- passes the whole suite. The second row moves the span to the fodder's
-    // offsets and asserts the mark follows it, which no constant can satisfy.
-    it.each<[string, Puzzle<CrypticClueData>, string]>([
-      ['the span the pack sent', crypticCluePuzzle, 'Dance'],
-      [
-        'a span somewhere else in the clue',
-        {
-          ...crypticCluePuzzle,
-          data: { ...crypticCluePuzzle.data, definitionSpan: { end: 30, start: 16 } },
-        },
-        'instant angora',
-      ],
-    ])('underlines %s once the board is solved', async (_description, puzzle, marked) => {
-      const { container, user } = setup(puzzle)
+    // TWO ROWS, because one string is not enough to prove the sentence comes from the pack. A board
+    // that hardcoded the charade line -- still gated on `solved` -- passes every other test in this
+    // block. The second row is a DELETION, which is a different device with a different sentence
+    // shape, and no constant can satisfy both.
+    //
+    // BOTH OPEN WITH THE DEFINITION IN QUOTES, and so does the double-definition row below. That is
+    // the format's promise rather than these two fixtures' habit: it is the whole of what tells a
+    // player which words of the clue were the definition, now that no offsets arrive and no <mark>
+    // is drawn. Rows that quoted nothing would still pass a verbatim assertion, which is why the
+    // three rows here are written from the three shapes the wire actually sends.
+    //
+    // PINNED BY VALUE, which is the whole point of the row rather than a stylistic choice. The
+    // string is gated upstream and rendered verbatim, so the assertion has to be able to fail on a
+    // board that wrapped it in quotes, appended a period, or sentence-cased it -- decorations that
+    // would be wrong for one of the three device formats the day they shipped.
+    it.each<[string, string]>([
+      ['a charade', EXPLANATION],
+      ['a deletion', '"a mark" = BRANDY (spirit) minus its last letter'],
+    ])('renders the explanation for %s exactly as the pack sent it', async (_description, explanation) => {
+      const { user } = setup({ ...crypticCluePuzzle, data: { ...crypticCluePuzzle.data, explanation } })
 
       await user.type(answerBox(), 'TANGO')
 
-      expect(container.querySelector('mark')).toHaveTextContent(marked)
-      expect(screen.getByText(`“${marked}” is the definition.`)).toBeInTheDocument()
+      expect(revealLine()).toHaveProperty('textContent', explanation)
     })
 
-    // The splice changes the paragraph's CHILDREN and must not change its text. Pinned by value for
-    // the same reason the fresh-board version of this assertion is: `toHaveTextContent` normalizes
-    // whitespace, so a splice that dropped the space before `hidden` or doubled the one after
-    // `Dance` would go on passing, and byte-exactness is the premise the pack's offsets stand on.
+    // THE ONE CLASS ASSERTION IN THIS FILE, and it is here because the failure it defends cannot be
+    // reached any other way. The band holding this line is `overflow-x-hidden`, so an explanation
+    // carrying one unbroken run wider than a 320 viewport is clipped outright -- no scrollbar, no
+    // ellipsis, and nothing on screen admitting text was cut. jsdom performs no layout, so a
+    // narrow-viewport test would be green on the clipping board too; the class is the only part of
+    // this that can actually be observed. The clue's own paragraph has carried `break-words` since
+    // it shipped, for exactly this reason, and this line is the same arbitrary network text.
+    it('lets a long explanation wrap rather than be clipped', () => {
+      setup(crypticCluePuzzle, 'TANGO')
+
+      expect(revealLine()).toHaveClass('break-words')
+    })
+
+    // The double definition, given its own row because it is the shape that punishes a board with
+    // opinions: the string arrives carrying STRAIGHT quotation marks of its own, so a board that
+    // added curly ones would render two nested pairs, and a board that "tidied" the quotes would
+    // rewrite a sentence the verifier signed off on.
+    it('leaves the explanation’s own punctuation alone', async () => {
+      const explanation = 'Two definitions: "Departed" and "still remaining"'
+      const { user } = setup({ ...crypticCluePuzzle, data: { ...crypticCluePuzzle.data, explanation } })
+
+      await user.type(answerBox(), 'TANGO')
+
+      expect(revealLine()).toHaveProperty('textContent', explanation)
+    })
+
+    // The win used to change the clue paragraph's CHILDREN, splicing a <mark> into it. It no longer
+    // changes anything about that paragraph, and this is the assertion that says so. Pinned by value
+    // for the same reason the fresh-board version of it is: `toHaveTextContent` normalizes
+    // whitespace, so a board that trimmed the clue or collapsed a run of spaces on the win would go
+    // on passing a substring match.
     it('leaves the clue’s text exactly as it was', async () => {
       const { container, user } = setup()
 
       await user.type(answerBox(), 'TANGO')
 
-      // The splice has to have HAPPENED for this to mean anything: textContent reads identically
-      // with and without the <mark>, so without this line the test is green on a board that never
-      // spliced at all.
-      expect(container.querySelector('mark')).not.toBeNull()
+      // The win has to have HAPPENED for this to mean anything, and the clue paragraph looks
+      // identical either way -- so the reveal is what proves the board reached the state this test
+      // is named for.
+      expect(screen.getByRole('region', { name: REGION })).toBeInTheDocument()
       expect(cluePlate(container)).toHaveProperty('textContent', `${CLUE} (5)5 letters.`)
+      // No element boundary is spliced into the clue in either state, so the plate holds one text
+      // node plus the enumeration's two spans. A returning <mark> would be caught here.
+      expect(container.querySelector('mark')).toBeNull()
     })
 
     // A role query, so this IS the accessible-name assertion for the aria-labelledby. <section>
@@ -717,14 +791,6 @@ describe('CrypticClueBoard', () => {
       const target = screen.getByRole('region').getAttribute('aria-labelledby')
 
       expect(document.getElementById(target ?? '')).toBe(screen.getByRole('heading', { level: 2, name: REGION }))
-    })
-
-    it('names the definition in words', async () => {
-      const { user } = setup()
-
-      await user.type(answerBox(), 'TANGO')
-
-      expect(screen.getByText(DEFINITION_LINE)).toBeInTheDocument()
     })
 
     // Nothing is announced and nothing takes focus, deliberately. The win happens on a keystroke IN
@@ -759,97 +825,65 @@ describe('CrypticClueBoard', () => {
       )
     })
 
-    // Three devices, and the third is the one that matters: `device` is a two-member union arriving
-    // as JSON off the network, and lull-api can ship a third before this build knows about it. A
-    // lookup returning undefined would render `“instant angora” .` -- a sentence with a hole in it.
-    // The unknown row is cast here rather than exported, because a pack is JSON and this shape is
-    // not one the type system admits.
-    it.each<[string, Puzzle<CrypticClueData>, string]>([
-      ['a hidden word', crypticCluePuzzle, HIDDEN_LINE],
-      ['an anagram', anagramCrypticClue, '“instant angora” is an anagram of TANGO.'],
-      [
-        'a device this build has never heard of',
-        {
-          ...crypticCluePuzzle,
-          data: { ...crypticCluePuzzle.data, device: 'reversal' as unknown as CrypticDevice },
-        },
-        '“instant angora” is the wordplay.',
-      ],
-    ])('explains %s', async (_description, puzzle, line) => {
-      const { user } = setup(puzzle)
-
-      await user.type(answerBox(), 'TANGO')
-
-      expect(screen.getByText(line)).toBeInTheDocument()
-    })
-
-    // State 8. A span whose end is past the clue underlines nothing, and the line it belongs to
-    // goes with it -- but the other half of the reveal is still true and still worth saying.
-    it('drops the mark and the definition line when the definition span does not slice', async () => {
-      const { container, user } = setup(brokenSpanCrypticClue)
-
-      await user.type(answerBox(), 'TANGO')
-
-      expect(container.querySelector('mark')).toBeNull()
-      expect(screen.getByRole('region', { name: REGION })).toBeInTheDocument()
-      expect(screen.getByText(HIDDEN_LINE)).toBeInTheDocument()
-      expect(screen.queryByText(DEFINITION_LINE)).toBeNull()
-    })
-
-    // State 9, the mirror case.
-    it('keeps the mark and drops the wordplay line when the fodder span does not slice', async () => {
-      const { container, user } = setup(brokenFodderCrypticClue)
-
-      await user.type(answerBox(), 'TANGO')
-
-      expect(container.querySelector('mark')).toHaveTextContent('Dance')
-      expect(screen.getByRole('region', { name: REGION })).toBeInTheDocument()
-      expect(screen.getByText(DEFINITION_LINE)).toBeInTheDocument()
-      expect(screen.queryByText(HIDDEN_LINE)).toBeNull()
-    })
-
-    // State 10, and it is not "an empty section". A landmark named `How the clue worked` containing
-    // nothing is worse than silence, and the player still gets the ribbon's sentence -- which is
-    // what the last assertion is for: without it this passes on a board that never solves at all.
-    it('draws no reveal when neither span slices', async () => {
-      const { container, user } = setup(brokenSpansCrypticClue)
+    // AND IT IS NOT "AN EMPTY SECTION". One string has one failure where two independent spans had
+    // three, so the three broken-span fixtures this block used to import collapse into one table --
+    // but the decision they encoded is unchanged: a landmark named `How the clue worked` containing
+    // nothing is worse than silence, because the player goes looking for text that was never sent.
+    //
+    // The wire types this field `string` and `isValidPuzzle` leaves `data` opaque, so every row here
+    // is a pack a real network can deliver. The object row is the one that would take the WHOLE APP
+    // down rather than merely render badly -- React refuses an object as a child, and the root error
+    // boundary answers a throw inside commit by swapping in "Lull got stuck" for every load of that
+    // day, offline included. The rows are cast inline because none of these shapes is one the type
+    // system admits.
+    //
+    // The last assertion is what stops these passing on a board that never solves at all.
+    it.each<[string, unknown]>([
+      ['left out of the pack', undefined],
+      ['null', null],
+      ['a number', 5],
+      ['an object', {}],
+      ['an empty string', ''],
+      ['nothing but spaces', '   '],
+    ])('draws no reveal when the explanation arrived %s', async (_description, explanation) => {
+      const { user } = setup({
+        ...crypticCluePuzzle,
+        data: { ...crypticCluePuzzle.data, explanation: explanation as string },
+      })
 
       await user.type(answerBox(), 'TANGO')
 
       expect(screen.queryByRole('region')).not.toBeInTheDocument()
       expect(screen.queryByRole('heading')).not.toBeInTheDocument()
-      expect(container.querySelector('mark')).toBeNull()
       expect(screen.getByRole('status')).toHaveTextContent('Solved. The answer is TANGO.')
     })
 
-    // State 11, at mount and with no keystroke. The reveal is rendered off `solved`, which is
-    // DERIVED from the guess, exactly as the solved message and Play again already are -- so a
-    // stored winning answer draws the mark and the landmark with nothing having happened.
+    // At mount and with no keystroke. The reveal is rendered off `solved`, which is DERIVED from the
+    // guess, exactly as the solved message and Play again already are -- so a stored winning answer
+    // draws the landmark with nothing having happened.
     it('is already there when a stored winning answer restores the board', () => {
-      const { container } = setup(crypticCluePuzzle, 'TANGO')
+      setup(crypticCluePuzzle, 'TANGO')
 
-      expect(container.querySelector('mark')).toHaveTextContent('Dance')
       expect(screen.getByRole('region', { name: REGION })).toBeInTheDocument()
-      expect(screen.getByText(DEFINITION_LINE)).toBeInTheDocument()
-      expect(screen.getByText(HIDDEN_LINE)).toBeInTheDocument()
+      expect(revealLine()).toHaveProperty('textContent', EXPLANATION)
     })
 
     // It disappears the way it appeared. `solved` is derived from the guess, so Play again's empty
-    // string takes the reveal, the mark and the solved message on one press with no teardown. A
-    // reveal held in its own useState would survive the reset and sit under an empty board.
+    // string takes the reveal and the solved message on one press with no teardown. A reveal held in
+    // its own useState would survive the reset and sit under an empty board.
     //
     // The two assertions BEFORE the press are what stop this being an absence-only pair: without
     // them a board that gated the reveal on a latched win EVENT -- and therefore revealed nothing at
-    // all on a restored board -- would pass this test while shipping state 11 broken.
+    // all on a restored board -- would pass this test while shipping the restored state broken.
     it('leaves on the same press that empties the box', async () => {
-      const { container, user } = setup(crypticCluePuzzle, 'TANGO')
-      expect(container.querySelector('mark')).not.toBeNull()
+      const { user } = setup(crypticCluePuzzle, 'TANGO')
       expect(screen.getByRole('region', { name: REGION })).toBeInTheDocument()
+      expect(revealLine()).toHaveProperty('textContent', EXPLANATION)
 
       await user.click(screen.getByRole('button', { name: 'Play again' }))
 
-      expect(container.querySelector('mark')).toBeNull()
       expect(screen.queryByRole('region')).not.toBeInTheDocument()
+      expect(screen.queryByText(EXPLANATION)).toBeNull()
     })
   })
 
