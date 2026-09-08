@@ -32,10 +32,10 @@ describe('themed anagrams progress', () => {
     // that exceeds it either splits into something other than four parts or contains a part longer
     // than MAX_GUESS -- there is no fourth arrangement. Delete `progress.length > 4 * MAX_GUESS + 3`
     // outright and this row stays green, caught one line later. The guard is unfalsifiable through
-    // this function in the same way `splitAt`'s `start >= end` is, and it is kept for the same two
-    // reasons: it states the intent where a reader is thinking about size, and it is asked BEFORE
-    // the split, so a megabyte of valid-looking text is refused without first being cut into a
-    // million pieces. That ordering is a performance property and no assertion can observe it.
+    // this function, and it is kept for two reasons anyway: it states the intent where a reader is
+    // thinking about size, and it is asked BEFORE the split, so a megabyte of valid-looking text is
+    // refused without first being cut into a million pieces. That ordering is a performance property
+    // and no assertion can observe it.
     //
     // What DOES defend the bound is the boundary round trip at the bottom of this file, from the
     // accepting side: tighten the constant and a board the writer can legitimately produce stops
