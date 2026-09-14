@@ -5,6 +5,7 @@ import {
   themedAnagramsHintFor,
   ThemedAnagramsSpentRung,
 } from './rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // Deliberately NOT length-sorted, so an ordinal in a sentence cannot be mistaken for a rank.
 // Lengths: KETTLE 6, COLANDER 8, TOASTER 7, SPATULA 7.
@@ -15,12 +16,25 @@ const fresh = { solved: [false, false, false, false] }
 // generator can ship and the one where a third stacked rung would leave a single position free.
 const SHORTEST = [{ answer: 'KETTLE' }, { answer: 'LADLE' }, { answer: 'GRATER' }, { answer: 'SKILLET' }]
 
-const foldLadder = (entries: { answer: string }[], state: { solved: boolean[] }): ThemedAnagramsSpentRung[] => {
+// A fresh deterministic stream per call, so no test body reaches for Math.random and two rows that
+// ask the same question get the same answer. The chooser now draws among the unsolved entries with
+// the fewest rungs aimed at them, so every row below has to supply one.
+//
+// SEEDED RATHER THAN A CANNED LIST OF NUMBERS, unlike phrazle's `fixedRandom`. The shuffle here
+// consumes one number per entry per call, and a short cycling list would line up with that period
+// and pin an order by accident -- which is how a row that cannot fail gets written.
+const stream = (): (() => number) => seededRandom('themedanagrams-fixture')
+
+const foldLadder = (
+  entries: { answer: string }[],
+  state: { solved: boolean[] },
+  random: () => number = stream(),
+): ThemedAnagramsSpentRung[] => {
   const spent: ThemedAnagramsSpentRung[] = []
-  let next = chooseThemedAnagramsRung(entries, state, spent)
+  let next = chooseThemedAnagramsRung(entries, state, spent, random)
   while (next !== null && spent.length < 3) {
     spent.push(next)
-    next = chooseThemedAnagramsRung(entries, state, spent)
+    next = chooseThemedAnagramsRung(entries, state, spent, random)
   }
   return spent
 }
@@ -46,13 +60,48 @@ const LADDERS: [string, { answer: string }[], boolean[]][] = [
 ]
 
 describe('chooseThemedAnagramsRung', () => {
-  it('opens with an initial on the longest unsolved entry', () => {
-    expect(chooseThemedAnagramsRung(ENTRIES, fresh, [])).toStrictEqual({ entryIndex: 1, kind: 'initial' })
+  it('opens with an initial on an unsolved entry', () => {
+    const rung = chooseThemedAnagramsRung(ENTRIES, fresh, [], stream()) as ThemedAnagramsSpentRung
+    expect(rung.kind).toBe('initial')
+    expect([0, 1, 2, 3]).toContain(rung.entryIndex)
+  })
+
+  // THE ROW THAT USED TO SAY "the longest unsolved entry", AND THE REASON IT HAD TO GO. The old
+  // ranking was longest answer first with the index breaking the tie, so rung 1 on this fixture was
+  // always COLANDER and rung 1 on a board of four equal-length answers was always entry 0. Over a
+  // catalog that is one row collecting every first hint -- deterministic, and invisible until you
+  // play enough of them to notice.
+  //
+  // ASSERTED AS A DISTRIBUTION, WHICH IS THE ONLY WAY THIS CAN FAIL HONESTLY. A single seed proves
+  // nothing about a draw; the old implementation would pass any one-seed assertion that happened to
+  // name entry 1. Over 200 fixed seeds every unsolved entry has to come up at least once, which the
+  // old total order fails on all four counts but one.
+  it('spreads rung 1 across every unsolved entry', () => {
+    const picked = new Set(
+      Array.from(
+        { length: 200 },
+        (_value, index) =>
+          (chooseThemedAnagramsRung(ENTRIES, fresh, [], seededRandom(`spread-${index}`)) as ThemedAnagramsSpentRung)
+            .entryIndex,
+      ),
+    )
+    expect([...picked].sort()).toStrictEqual([0, 1, 2, 3])
+  })
+
+  // THE TIER IS STILL AN ORDER, and it is the half of the old ranking that survived. An entry with a
+  // rung already aimed at it is worth less than one with none, so rung 2 can only stack onto rung 1's
+  // entry when nothing else is unsolved -- which the row below this one covers.
+  it('never stacks a second rung while another entry has none', () => {
+    const spent: ThemedAnagramsSpentRung[] = [{ entryIndex: 1, kind: 'initial' }]
+    const stacked = Array.from({ length: 200 }, (_value, index) =>
+      chooseThemedAnagramsRung(ENTRIES, fresh, spent, seededRandom(`tier-${index}`)),
+    ).filter((rung) => rung?.entryIndex === 1)
+    expect(stacked).toHaveLength(0)
   })
 
   it('follows with bookends on a different entry', () => {
     const spent: ThemedAnagramsSpentRung[] = [{ entryIndex: 1, kind: 'initial' }]
-    const rung = chooseThemedAnagramsRung(ENTRIES, fresh, spent) as ThemedAnagramsSpentRung
+    const rung = chooseThemedAnagramsRung(ENTRIES, fresh, spent, stream()) as ThemedAnagramsSpentRung
     expect(rung.kind).toBe('bookends')
     expect(rung.entryIndex).not.toBe(1)
   })
@@ -62,7 +111,7 @@ describe('chooseThemedAnagramsRung', () => {
       { entryIndex: 1, kind: 'initial' },
       { entryIndex: 2, kind: 'bookends' },
     ]
-    const rung = chooseThemedAnagramsRung(ENTRIES, fresh, spent) as ThemedAnagramsSpentRung
+    const rung = chooseThemedAnagramsRung(ENTRIES, fresh, spent, stream()) as ThemedAnagramsSpentRung
     expect(rung.kind).toBe('prefix3')
     expect([1, 2]).not.toContain(rung.entryIndex)
   })
@@ -73,16 +122,16 @@ describe('chooseThemedAnagramsRung', () => {
       { entryIndex: 2, kind: 'bookends' },
       { entryIndex: 3, kind: 'prefix3' },
     ]
-    expect(chooseThemedAnagramsRung(ENTRIES, fresh, spent)).toBeNull()
+    expect(chooseThemedAnagramsRung(ENTRIES, fresh, spent, stream())).toBeNull()
   })
 
   it('never names an entry the player has already solved', () => {
     const solved = { solved: [false, true, false, false] }
-    expect(chooseThemedAnagramsRung(ENTRIES, solved, [])?.entryIndex).not.toBe(1)
+    expect(chooseThemedAnagramsRung(ENTRIES, solved, [], stream())?.entryIndex).not.toBe(1)
   })
 
   it('offers nothing when every entry is solved', () => {
-    expect(chooseThemedAnagramsRung(ENTRIES, { solved: [true, true, true, true] }, [])).toBeNull()
+    expect(chooseThemedAnagramsRung(ENTRIES, { solved: [true, true, true, true] }, [], stream())).toBeNull()
   })
 
   // THE STACKED LADDER, WHICH IS THE ROUTINE ENDGAME RATHER THAN A CORNER. Three rows in and one to
@@ -92,7 +141,7 @@ describe('chooseThemedAnagramsRung', () => {
   it("names only what is new when a rung stacks onto rung 1's entry", () => {
     const solved = { solved: [true, false, true, true] }
     const spent: ThemedAnagramsSpentRung[] = [{ entryIndex: 1, kind: 'initial' }]
-    expect(chooseThemedAnagramsRung(ENTRIES, solved, spent)).toStrictEqual({ entryIndex: 1, kind: 'final' })
+    expect(chooseThemedAnagramsRung(ENTRIES, solved, spent, stream())).toStrictEqual({ entryIndex: 1, kind: 'final' })
   })
 
   it('drops to the inner pair once both ends of an entry are pinned', () => {
@@ -101,16 +150,28 @@ describe('chooseThemedAnagramsRung', () => {
       { entryIndex: 1, kind: 'initial' },
       { entryIndex: 1, kind: 'final' },
     ]
-    expect(chooseThemedAnagramsRung(ENTRIES, solved, spent)).toStrictEqual({ entryIndex: 1, kind: 'inner2' })
+    expect(chooseThemedAnagramsRung(ENTRIES, solved, spent, stream())).toStrictEqual({ entryIndex: 1, kind: 'inner2' })
   })
 
-  it("falls back to rung 1's entry when only two entries are unsolved", () => {
+  // IT USED TO SAY "falls back to rung 1's entry", pinning a preference that has been removed. Both
+  // survivors carry one rung, so they share the first tier and the draw decides between them -- and
+  // the preference bought nothing, because the free-position count it was arguing from is enforced by
+  // `rungFor` itself: a candidate with no room answers null and the next one is tried.
+  //
+  // WHAT IS STILL GUARANTEED is the kind. Rung 3 is the prefix step, and both entries already have
+  // position 0 pinned, so `prefix3` overlaps on either and the residual `inner2` is what both produce.
+  it('stacks rung 3 onto either survivor when only two entries are unsolved', () => {
     const solved = { solved: [true, false, true, false] }
     const spent: ThemedAnagramsSpentRung[] = [
       { entryIndex: 1, kind: 'initial' },
       { entryIndex: 3, kind: 'bookends' },
     ]
-    expect(chooseThemedAnagramsRung(ENTRIES, solved, spent)).toStrictEqual({ entryIndex: 1, kind: 'inner2' })
+    const picked = new Set(
+      Array.from({ length: 200 }, (_value, index) =>
+        chooseThemedAnagramsRung(ENTRIES, solved, spent, seededRandom(`survivor-${index}`)),
+      ).map((rung) => `${rung?.entryIndex}:${rung?.kind}`),
+    )
+    expect([...picked].sort()).toStrictEqual(['1:inner2', '3:inner2'])
   })
 
   // TWO POSITIONS FREE, COUNTING THE UNION. On LADLE the third rung would pin {0, 1, 2, 4}, leaving
@@ -122,7 +183,7 @@ describe('chooseThemedAnagramsRung', () => {
       { entryIndex: 1, kind: 'initial' },
       { entryIndex: 1, kind: 'final' },
     ]
-    expect(chooseThemedAnagramsRung(SHORTEST, solved, spent)).toBeNull()
+    expect(chooseThemedAnagramsRung(SHORTEST, solved, spent, stream())).toBeNull()
   })
 
   it('ships two rungs rather than three when only the shortest entry is unsolved', () => {
@@ -138,7 +199,7 @@ describe('chooseThemedAnagramsRung', () => {
       { entryIndex: 0, kind: 'initial' },
       { entryIndex: 0, kind: 'final' },
     ]
-    expect(chooseThemedAnagramsRung(SHORTEST, solved, spent)).toStrictEqual({ entryIndex: 0, kind: 'inner2' })
+    expect(chooseThemedAnagramsRung(SHORTEST, solved, spent, stream())).toStrictEqual({ entryIndex: 0, kind: 'inner2' })
   })
 
   it.each(LADDERS)('leaves at least two positions of every entry free with %s', (_case, entries, solved) => {
@@ -415,13 +476,13 @@ describe('pinnedIndices', () => {
 
 describe('totality', () => {
   it('never throws, however malformed the input', () => {
-    expect(() => chooseThemedAnagramsRung([], { solved: [] }, [])).not.toThrow()
-    expect(() => chooseThemedAnagramsRung([{ answer: '' }], { solved: [false] }, [])).not.toThrow()
+    expect(() => chooseThemedAnagramsRung([], { solved: [] }, [], stream())).not.toThrow()
+    expect(() => chooseThemedAnagramsRung([{ answer: '' }], { solved: [false] }, [], stream())).not.toThrow()
     expect(() => themedAnagramsHintFor([], { entryIndex: 9, kind: 'initial' })).not.toThrow()
     expect(() => themedAnagramsHintFor([], { entryIndex: 9, kind: 'inner2' })).not.toThrow()
   })
 
   it('offers nothing on an entry with no answer', () => {
-    expect(chooseThemedAnagramsRung([{ answer: '' }], { solved: [false] }, [])).toBeNull()
+    expect(chooseThemedAnagramsRung([{ answer: '' }], { solved: [false] }, [], stream())).toBeNull()
   })
 })

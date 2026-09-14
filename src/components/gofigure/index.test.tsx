@@ -1356,15 +1356,37 @@ describe('GoFigureBoard', () => {
 
       // TEXT ONLY. The squares the player has not filled stay empty, because revealing an answer is
       // not solving a puzzle -- the board never reports a solve it did not evaluate.
-      it('puts nothing on the squares and reports no solve', async () => {
+      // IT USED TO ASSERT THE OPPOSITE -- "puts nothing on the squares and reports no solve" -- and
+      // the reversal is the point of this change rather than a relaxation of it. A player who has
+      // spent every rung and pressed Show answer is not asking to READ the answer; leaving the tray
+      // empty made the last step of the puzzle transcribing seven tiles off a sentence.
+      //
+      // THE SOLVE IS STILL NOT THIS BOARD'S DECISION, which is what the old assertion was really
+      // protecting. `commit` reaches `onSolved` through the same `accepted.has(expressionOf(...))`
+      // lookup every other press goes through, so the board is filled with a string the pack shipped
+      // and then adjudicated exactly as if the player had built it by hand.
+      it('fills the squares in and reports the solve', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard()
         await spendTheLadder(user)
 
         await user.click(screen.getByRole('button', { name: 'Show answer' }))
 
-        expect(screen.getByRole('button', { name: 'Square 1, number, empty' })).toBeInTheDocument()
-        expect(onSolved).not.toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Square 1, number, 6' })).toBeInTheDocument()
+        expect(onSolved).toHaveBeenCalled()
+      })
+
+      // THE BANNER IS THE NEWS, not the fill, which is the same split `place` makes on the write that
+      // fills the last square: the notice is read ahead of the ribbon's standing line, so a sentence
+      // about the press would mask the outcome of it.
+      it('lets the solved banner speak for the fill', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+        await spendTheLadder(user)
+
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+
+        expect(screen.getByText('Solved. 6 + 7 + 9 × 7 = 154')).toBeInTheDocument()
       })
 
       // ONE PAST THE LADDER, in the progress string the rungs already ride in. That is what makes the
@@ -1377,7 +1399,7 @@ describe('GoFigureBoard', () => {
 
         await user.click(screen.getByRole('button', { name: 'Show answer' }))
 
-        expect(onProgress).toHaveBeenLastCalledWith('_+_+_*_|4|012')
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|4|012')
       })
 
       it('offers the answer back to a player who reloads on it', async () => {

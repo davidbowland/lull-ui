@@ -10,8 +10,15 @@ import { STRONGEST_FIRST, WEAKEST_FIRST } from './letter-strengths'
 // `splitPhrase` comes from @rules/is-valid-guess, which lull-api genuinely imports and which
 // therefore stays vendored under the rule in CLAUDE.md. An app-owned file reading a shared rule costs
 // nothing; a shared rule reading an app-owned one would put a file lull-api cannot compile into its
-// bundle. `letter-strengths.ts` is the other import and it is a sibling now -- it travelled here
-// because this was the only file that ever read it.
+// bundle. `letter-strengths.ts` is the other local import and it is a sibling now -- it travelled
+// here because this was the only file that ever read it.
+//
+// `seededRandom` USED TO BE DECLARED IN THIS FILE and is now @utils/seeded-random. It was copied
+// byte-for-byte into cryptogram's rungs.ts and then into themedanagrams', and three copies of nine
+// lines is a pattern rather than a duplication -- the argument for keeping them apart, and why it
+// stopped holding, is recorded on the shared file. Nothing about the sequence changed: all three
+// copies were identical on the day they merged, so every golden fixture in this suite still reads
+// what it always did.
 //
 // It lives here rather than shipping as data on the puzzle because it runs over the guesses a player
 // invents at play time, which no generator can enumerate in advance. lull-api ships no phrazle hints
@@ -41,6 +48,34 @@ const LETTERS_PER_RUNG = 3
 // letter set, which is the variety this change exists to add.
 const ABSENT_WINDOW = 10
 
+// The letters this rung will not spend more than one of its three slots on.
+//
+// IT IS A CEILING ON THE RUNG, NOT A FLOOR UNDER THE POOL, and the difference is the whole design. A
+// frequency floor was the obvious fix and is the wrong one: it takes the rung away in exactly the
+// state where the player has ruled out everything above the floor, and "no Q" alongside two letters
+// they might actually have tried is a fair third of a hint. What is not a hint is all three at once.
+//
+// WHY THE POOL GETS HERE AT ALL. `ABSENT_WINDOW` is applied AFTER the player's own guesses are
+// filtered out, so it does not hold the ten strongest absent letters for long -- it holds the ten
+// strongest SURVIVORS. Measured on TOE HOLD, one guess at a time, the pool runs ARINSCUPMG,
+// RINCUPMGBF, UPMGBFYWKV, UGBFYWKVXZ, FYWKVXZJQ. By the fourth guess -- about when a player reaches
+// for a hint -- every letter left is under 2%, and the draw over it is uniform and always was: 82 of
+// the 84 possible three-letter draws appeared across 400 puzzle ids, per-letter hits 122 to 142
+// against an expectation of 133. From a nine-letter pool, P(a draw of three contains Q, Z or X) is
+// 1 - C(6,3)/C(9,3) = 76%, so a WORKING shuffle strikes one of them three times out of four. The
+// shuffle was never the defect; the pool having nothing else in it was.
+//
+// J IS NOT IN THIS SET AND IS THE RAREST LETTER IN THE TABLE -- 0.1965 against Q's 0.1962, a
+// difference of three ten-thousandths. It is left out because the set is the one named in the
+// request, not because the arithmetic distinguishes them. Adding it is one entry here and nothing
+// else; the two rows in rungs.test.ts that pin the cap read the set through this constant's
+// behavior rather than restating it.
+const RARE_LETTERS: ReadonlySet<string> = new Set(['Q', 'X', 'Z'])
+
+// How many of the rung's letters are drawn before the rare ones are let in. Two of three, so a rung
+// carries at most one rare letter whenever the pool holds two that are not.
+const COMMON_PER_RUNG = 2
+
 // This type's own cap, and it is derived rather than asserted. The longest rung this composer can
 // produce is the word sentence: a 42-character frame -- "Word 1 uses these letters, alphabetized: "
 // and the closing period -- plus the letter list. MAX_WORD_LETTERS in
@@ -57,28 +92,6 @@ const ABSENT_WINDOW = 10
 // Asserted in the test rather than enforced here: a composer that cannot reach anything unbounded
 // has nothing to reject, and a clamp would truncate a letter list into a false hint.
 export const MAX_PHRAZLE_RUNG_LENGTH = 80
-
-/**
- * A deterministic number source from a string seed -- mulberry32 over a cheap string hash.
- *
- * IT EXISTS FOR REPRODUCIBILITY, NOT FOR STABILITY. A rung is frozen into the board's progress the
- * moment it is bought, so re-opening it never re-draws and does not depend on this. What the seed
- * buys is a fixture sweep whose failures are repeatable and a caller that behaves the same on two
- * machines. The caller seeds it from the puzzle id.
- */
-export const seededRandom = (seed: string): (() => number) => {
-  let state = 0x6d2b79f5
-  for (const character of seed) {
-    state = Math.imul(state ^ character.charCodeAt(0), 2654435761)
-    state >>>= 0
-  }
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let value = Math.imul(state ^ (state >>> 15), 1 | state)
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 const lettersOf = (words: string[]): Set<string> => new Set(words.join(''))
 
@@ -102,6 +115,33 @@ const draw = (pool: readonly string[], count: number, random: () => number): str
 // Sorted so the stored record has ONE spelling per choice, which is what lets a frozen rung compare
 // equal to itself across a reload. The draw stays random; only the way it is written down is fixed.
 const canonical = (letters: readonly string[]): string => [...letters].sort().join('')
+
+/**
+ * The letters one absent rung names: two drawn with the rare letters held back, then the rest drawn
+ * from the whole pool.
+ *
+ * TWO DRAWS RATHER THAN A FILTER AND A TOP-UP BY LENGTH, because the second draw has to be able to
+ * reach a rare letter even when the first found two common ones -- that is the third slot, and it is
+ * the reason this is a ceiling rather than a ban. `rest` is the WHOLE pool minus what was already
+ * taken, not the rare letters alone, so the third slot is a fair draw over everything left.
+ *
+ * THE SHORTFALL CASE IS THE SAME EXPRESSION. `draw` takes `min(count, pool.length)`, so a common pool
+ * of one yields one letter and `LETTERS_PER_RUNG - common.length` asks for two from the rest -- which
+ * is how "if the first two have nothing but Q, Z and X to offer, they may use them" falls out without
+ * a branch. A common pool of none yields none, and all three slots come from the rest.
+ *
+ * It never returns more than `LETTERS_PER_RUNG`, and that holds by arithmetic rather than by a clamp:
+ * `common.length` is at most `COMMON_PER_RUNG`, which is less than `LETTERS_PER_RUNG`.
+ */
+const drawAbsent = (pool: readonly string[], random: () => number): string[] => {
+  const common = draw(
+    pool.filter((letter) => !RARE_LETTERS.has(letter)),
+    COMMON_PER_RUNG,
+    random,
+  )
+  const rest = pool.filter((letter) => !common.includes(letter))
+  return [...common, ...draw(rest, LETTERS_PER_RUNG - common.length, random)]
+}
 
 /**
  * The next rung, or null when the ladder is spent or no kind has anything left worth saying.
@@ -154,7 +194,7 @@ export const choosePhrazleRung = (
       0,
       ABSENT_WINDOW,
     )
-    if (pool.length > 0) return { kind: 'absent', letters: canonical(draw(pool, LETTERS_PER_RUNG, random)) }
+    if (pool.length > 0) return { kind: 'absent', letters: canonical(drawAbsent(pool, random)) }
   }
 
   if (!used.has('present')) {

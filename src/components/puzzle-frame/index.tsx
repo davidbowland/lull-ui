@@ -319,6 +319,57 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
 
   const hints = adapter ? adapter.ladder(puzzle, boardState) : hintsOf(puzzle)
 
+  // A NONCE, like `resetNonce` above and for a reason this frame already had to learn once: every
+  // board reads its own portion of `progress` ONCE, in a lazy initializer, and owns it from then on.
+  // So the finished board written below is invisible to the board that is already mounted -- the
+  // store would hold the answer and the screen would hold the empty squares, which is worse than the
+  // sentence-only reveal it replaces.
+  //
+  // Changing the board's `key` is React's instruction to build a new one, and here that is exactly
+  // what is wanted: the new board restores from the string that was just written. The two costs this
+  // file records for a remount are both paid by somebody else here. FOCUS is on the hint bar's
+  // control, which is outside the subtree being rebuilt -- the player pressed it -- so nothing is
+  // dropped to <body>; that is the whole reason the bar is signaled with `resetSignal` instead of
+  // being keyed. And the bar's `role="status"` region is likewise untouched, so a reader watching it
+  // goes on watching it.
+  //
+  // It counts rather than toggles for the reason `resetNonce` does: Play again can put a revealed
+  // board back to empty, and the answer can then be revealed a second time in one sitting.
+  //
+  // KNOWN GAP, RECORDED RATHER THAN HALF-FIXED. Every board announces through its own FloorBar
+  // `role="status"`, and that region is INSIDE this subtree -- so a rebuilt board's solved line sits
+  // in a freshly inserted region with its message already in it, which is the arrangement this
+  // codebase documents NVDA and JAWS as missing. A reader still hears the ANSWER, because the bar's
+  // own region is a sibling and is not rebuilt; what they are not told is that the board has been
+  // filled in for them.
+  //
+  // Every way of closing it here is worse than the gap. HintBar cannot say it -- it does not know
+  // whether its caller wrote a board, so a bench whose `solve` answered null would announce a fill
+  // that never happened. This frame cannot say it without a live region of its own, which is another
+  // band on a screen whose band order is the thing index.css exists to hold. The real fix is boards
+  // that READ a reveal rather than being rebuilt under one, and that is a change to the six-prop
+  // contract -- worth making on its own rather than inside this one.
+  const [revealNonce, setRevealNonce] = useState(0)
+
+  // The finished board for this bench, or null when there is none to write. `goFigure` is the one
+  // entry with no `solve` -- it renders its own bar and fills its own tray -- and a pack whose answer
+  // never arrived is the other way this is null.
+  const solvedBoard = entry.solve?.(puzzle, boardState) ?? null
+
+  // What the reveal does on EVERY bench once the board portion is stored: the puzzle counts as
+  // solved, and the board is rebuilt so it reads what was written.
+  //
+  // `markSolved` IS THE SHELL'S HERE AND NOT THE BOARD'S, which is a fact about the boards rather
+  // than a shortcut. All six deliberately decline to report a win they arrive already holding --
+  // cryptogram, phrazle and themedanagrams seed a `reported` ref from their mount-time solved state,
+  // and the other three only ever call `onSolved` inside a keystroke handler. That is right: a board
+  // restoring yesterday's finished puzzle should not announce it again. It also means the remount
+  // below will not report this one, so the shell says it.
+  const finishReveal = useCallback(() => {
+    onSolved()
+    setRevealNonce((nonce) => nonce + 1)
+  }, [onSolved])
+
   // The count and the purchase, and both are the ADAPTER's answers rather than this frame's. The bar
   // is handed a number and a callback and learns no grammar either.
   //
@@ -338,11 +389,39 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           // `commit`, NOT `onProgress`. This string is the adapter's own -- it already carries both
           // the board's portion and the tail it just extended -- so merging it would hand the
           // adapter its own write back and ask it to re-attach a tail that is already there.
-          if (next !== null) commit(next)
+          if (next === null) return
+
+          // THE REVEAL IS DETECTED HERE RATHER THAN REPORTED BY THE BAR, and the decline above is
+          // why. The bar offers a count and this owner is allowed to refuse it; a signal fired from
+          // out there would announce a sale this branch had just declined. `adapter.opened` reads the
+          // string that was actually composed, so the test is on the write rather than on the offer.
+          //
+          // Measured against `hints.length`, which is the ladder the bar is standing on -- the same
+          // number `controlLabel` crosses to reach "Show answer", so the two cannot disagree about
+          // which press this is.
+          const revealing = adapter.opened(next) > (hints?.length ?? 0)
+
+          // ONE COMMIT AND NOT TWO, which is the whole reason the finished board is folded in here
+          // instead of written by a second handler. `boardState` is this render's reading and React
+          // has not applied `setProgress` yet, so a second write in the same press would re-attach a
+          // tail from a string one write out of date -- and this file already records that hazard on
+          // `onProgress`. `merge` puts the board portion against the tail `open` just wrote, so the
+          // rung and the answer land in one string.
+          commit(revealing && solvedBoard !== null ? adapter.merge(solvedBoard, next) : next)
+          if (revealing && solvedBoard !== null) finishReveal()
         },
         opened: adapter.opened(boardState),
       }
     : undefined
+
+  // The reveal for a bench with NO adapter, where the bar owns its own count in `lull:hints:` and
+  // this frame cannot see the press any other way. There is no tail to preserve: the whole progress
+  // string is the board portion on both of these benches, so the finished board is written straight.
+  const onReveal = useCallback(() => {
+    if (solvedBoard === null) return
+    commit(solvedBoard)
+    finishReveal()
+  }, [commit, finishReveal, solvedBoard])
 
   // The end of the ladder, and still the shell's business rather than the board's. The board never
   // learns that hints exist and it does not learn that an answer does either -- both come off the
@@ -434,6 +513,7 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
             on a render and keeps this to ONE mount site a reviewer or a grep can find. */}
         <Component
           dictionary={words ?? undefined}
+          key={revealNonce}
           onProgress={onProgress}
           onReset={onReset}
           onSolved={onSolved}
@@ -475,7 +555,14 @@ const PuzzleView = ({ entry, puzzle }: PuzzleViewProps): React.ReactNode => {
           MOUNTED bar to shut its sheet and stop announcing yesterday's rungs, since the bar reads its
           own count once, at mount, and subscribes to nothing. */}
       {hasHintBar && hints !== null && (
-        <HintBar control={control} hints={hints} puzzleId={puzzle.id} resetSignal={resetNonce} solution={solution} />
+        <HintBar
+          control={control}
+          hints={hints}
+          onReveal={onReveal}
+          puzzleId={puzzle.id}
+          resetSignal={resetNonce}
+          solution={solution}
+        />
       )}
     </>
   )

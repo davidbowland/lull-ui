@@ -1,5 +1,6 @@
 import { drawnRun, isGivenAway } from './display'
 import { chooseThemedAnagramsRung, pinnedIndices, ThemedAnagramsSpentRung } from './rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // MIN_WORD_LENGTH in lull-api's generators/themedanagrams/words.ts is 5, so LADLE is the shortest
 // entry the generator can ship and the one where a third stacked rung would leave a single position
@@ -8,10 +9,13 @@ const SHORTEST = [{ answer: 'KETTLE' }, { answer: 'LADLE' }, { answer: 'GRATER' 
 
 const foldLadder = (entries: { answer: string }[], state: { solved: boolean[] }): ThemedAnagramsSpentRung[] => {
   const spent: ThemedAnagramsSpentRung[] = []
-  let next = chooseThemedAnagramsRung(entries, state, spent)
+  // One stream for the whole fold, seeded, so these rows stay deterministic now that the chooser
+  // draws among the unsolved entries with the fewest rungs aimed at them.
+  const random = seededRandom('themedanagrams-display-fixture')
+  let next = chooseThemedAnagramsRung(entries, state, spent, random)
   while (next !== null && spent.length < 3) {
     spent.push(next)
-    next = chooseThemedAnagramsRung(entries, state, spent)
+    next = chooseThemedAnagramsRung(entries, state, spent, random)
   }
   return spent
 }
