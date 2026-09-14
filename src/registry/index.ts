@@ -1,12 +1,17 @@
 import { CrypticClueBoard } from '@components/crypticclue'
+import { crypticClueSolve } from '@components/crypticclue/solve'
 import { CryptogramBoard } from '@components/cryptogram'
 import { cryptogramHints } from '@components/cryptogram/hints'
+import { cryptogramSolve } from '@components/cryptogram/solve'
 import { GoFigureBoard } from '@components/gofigure'
 import { MissingVowelsBoard } from '@components/missingvowels'
+import { missingVowelsSolve } from '@components/missingvowels/solve'
 import { PhrazleBoard } from '@components/phrazle'
 import { phrazleHints } from '@components/phrazle/hints'
+import { phrazleSolve } from '@components/phrazle/solve'
 import { ThemedAnagramsBoard } from '@components/themedanagrams'
 import { themedAnagramsHints } from '@components/themedanagrams/hints'
+import { themedAnagramsSolve } from '@components/themedanagrams/solve'
 import { HintLadder, Puzzle, PuzzleComponent, PuzzleProgress, PuzzleType } from '@types'
 
 // The surface a type is played on, named for the input it is shaped around rather than for
@@ -150,6 +155,36 @@ export interface RegistryEntry {
   // that is not a link, and PuzzleFrame reads it to decide whether to paint a dead end. A board
   // never sees it.
   needsDictionary: boolean
+  /**
+   * The BOARD PORTION that shows this puzzle finished, or null when the pack cannot supply one.
+   *
+   * IT IS THE END OF THE LADDER MADE REAL. "Show answer" used to print a sentence into the hint sheet
+   * and leave the board exactly as the player left it, so a player who had given up was handed the
+   * answer and then asked to type it in themselves -- the one step of a puzzle that is pure
+   * transcription. PuzzleFrame writes this instead, marks the puzzle solved, and rebuilds the board so
+   * it restores from the string.
+   *
+   * IT IS NOT A GAME RULE AND IT DECIDES NOTHING, which is what keeps `CLAUDE.md`'s display-only line
+   * intact. Every one of these is a transcription of what the pack already shipped into the grammar
+   * the board already stores: an answer string, a substitution the ciphertext and the answer jointly
+   * determine, four answers into four rows. Nothing here judges a guess, and no board is told that an
+   * answer exists -- the board reads its own progress at mount and cannot tell this write from the
+   * player's.
+   *
+   * IT TAKES THE CURRENT PROGRESS because one bench needs it: Phrazle APPENDS the answer to the rows
+   * the player committed rather than replacing them, since a committed guess is a record of the game
+   * and a board that suddenly showed one row would read as having lost the session. The other three
+   * ignore the argument. It is the BOARD portion in and the BOARD portion out -- an adapter's `merge`
+   * re-attaches the hint tail, so this is never the second writer of a hint field.
+   *
+   * OPTIONAL, and its absence is a real state rather than a gap to fill. `goFigure` sets nothing here
+   * and is the only entry that does not: it renders its own HintBar, owns its own board state, and
+   * fills its own tray on the reveal press, so a string handed to the shell would be a second path to
+   * a thing that bench already does for itself. Absence means "this bench has no finished board for
+   * the shell to write", which is exactly what HintBar's optional `solution` already means one layer
+   * up.
+   */
+  solve?: (puzzle: Puzzle<unknown>, progress: PuzzleProgress) => PuzzleProgress | null
 }
 
 // Everything a type contributes to the shell. Adding a type is adding a line here and a
@@ -181,6 +216,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     icon: 'M4 7h5l4 5h7M4 17h5l4-5',
     label: 'Cryptic Clue',
     needsDictionary: false,
+    solve: crypticClueSolve,
   },
   cryptogram: {
     bench: 'cipher',
@@ -207,6 +243,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     icon: 'M4 12h9m0 0-3-3m3 3-3 3M18 5v14',
     label: 'Cryptogram',
     needsDictionary: false,
+    solve: cryptogramSolve,
   },
   gofigure: {
     bench: 'tile',
@@ -236,6 +273,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     icon: 'M5 7V5h14v2M12 5v14M9 19h6',
     label: 'Missing Vowels',
     needsDictionary: false,
+    solve: missingVowelsSolve,
   },
   phrazle: {
     bench: 'guess',
@@ -273,6 +311,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     label: 'Phrazle',
     // The only true one in the file.
     needsDictionary: true,
+    solve: phrazleSolve,
   },
   themedanagrams: {
     bench: 'writing',
@@ -310,6 +349,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     icon: 'M4 9h13m0 0-3.5-3.5M17 9l-3.5 3.5M20 15H7m0 0 3.5-3.5M7 15l3.5 3.5',
     label: 'Themed Anagrams',
     needsDictionary: false,
+    solve: themedAnagramsSolve,
   },
 }
 

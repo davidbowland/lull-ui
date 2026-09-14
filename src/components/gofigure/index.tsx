@@ -792,22 +792,53 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       return
     }
 
-    // ONE PAST THE LADDER IS THE ANSWER, and it touches the squares as little as a rung touches them
-    // on a solved board. Text only: the sheet prints a sentence and the board stays exactly as the
-    // player left it.
+    // ONE PAST THE LADDER IS THE ANSWER, AND IT NOW FILLS THE TRAY IN. A player who has spent every
+    // rung and asked for the answer is not asking to read it; the last step of this puzzle would
+    // otherwise be transcribing seven tiles off a sentence, which is the one part of the game that
+    // is not the game.
     //
-    // Filling in the answer is the tempting version and it is wrong twice over. It would make this
-    // component decide a puzzle was finished, which is the one thing `CLAUDE.md` says a board never
-    // does -- a solve here is a set lookup against the expressions the backend shipped, and nothing
-    // else. And it would have to guess which bank tile wrote each digit: the bank 6,9,7,7 has two
-    // tiles that spell "7", so a filled-in answer would rebuild the tile-identity bug `board.ts`
-    // stores INDICES to prevent.
+    // THIS COMMENT USED TO ARGUE THE OPPOSITE, on two grounds, and both are answered rather than
+    // overruled. The first was that filling in the answer would make this component decide a puzzle
+    // was finished. It does not: the expression comes off `acceptedSolutions`, which the backend
+    // shipped, and `commit` below reaches `onSolved` through the same `accepted.has(...)` set lookup
+    // that every other press goes through. Nothing here judges anything -- the board is filled with a
+    // string the pack supplied and then adjudicated exactly as if the player had built it.
+    //
+    // The second was that filling in an answer would have to GUESS WHICH BANK TILE wrote each digit,
+    // rebuilding the tile-identity bug `board.ts` stores indices to prevent. That is a real hazard and
+    // `decode` already answers it: a bare expression takes the legacy `migrate` path, which binds by
+    // first-unspent match, and migrate's own comment says why that binding is correct exactly here --
+    // the string carries digits and not tiles, so which of two identical 7s was spent is not something
+    // it ever held, and no tile is under a finger for the choice to contradict. The bug that comment
+    // warns about is guessing when the string COULD have said; this string cannot.
+    //
+    // `matchingSolution` AND NOT `acceptedSolutions[0]`, which is the whole correctness of the fill. A
+    // pack can accept several expressions spanning different operator tuples, and `locked` holds the
+    // squares the spent rungs wrote -- so an arbitrary accepted solution can contradict a locked sign
+    // and produce a board the player cannot reach or undo. The matching one is the solution this
+    // ladder's tuple describes, which is the same string the sheet's sentence is drawn from, so the
+    // filled board and the printed answer cannot disagree.
+    //
+    // `locked` and `opened` are carried over rather than taken from `decode`, which hardcodes both to
+    // empty for a legacy string. Losing them would relabel the bar and unlock squares the player paid
+    // for.
     //
     // This branch has to come before the read below, because `hints[3]` is undefined and `applyHint`
     // destructures its metadata -- a reveal would throw inside a click handler with no error
     // boundary between here and the root.
     if (nextOpened > puzzle.data.hints.length) {
-      commit({ ...state, opened: nextOpened })
+      const expression = matchingSolution(puzzle.data.hints, acceptedSolutions)
+      // Null is the malformed-pack case the `solution` memo above already declines on, in which case
+      // the bar has no answer to offer and this press cannot happen -- so the fallback is the old
+      // behavior rather than a second story about what a reveal is.
+      const filled = expression === null ? null : decode(expression, puzzle.data)
+      // SILENT, like the placement that fills the last square, and for the reason stated there: the
+      // notice is read ahead of the ribbon's standing line, so a sentence here would mask the solved
+      // banner. On the write that finishes the board the outcome is the news, not the write.
+      commit(
+        filled === null ? { ...state, opened: nextOpened } : { ...filled, locked: state.locked, opened: nextOpened },
+        null,
+      )
       return
     }
 

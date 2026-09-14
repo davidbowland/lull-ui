@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent, { UserEvent } from '@testing-library/user-event'
 import React from 'react'
 
 import { PuzzleFrame } from './index'
@@ -53,34 +53,45 @@ describe('PuzzleFrame', () => {
   // The two elements every puzzle component renders, marked the way the band order in
   // index.css expects to find them. The buttons stand in for whatever a real board would do
   // to reach the three callbacks it is handed.
-  const Board = jest.fn(({ onProgress, onReset, onSolved, puzzle }: PuzzleComponentProps) => (
-    <>
-      <section aria-label="Board" className="lull-board">
-        <h2>{puzzle.id}</h2>
-        <button onClick={() => onProgress('kept')} type="button">
-          Record progress
-        </button>
-        {/* The OTHER half of a real board's Play again, and it is a second button rather than part
-            of Start over below so the two can be driven independently. Every board spells "there is
-            nothing on this board" as `onProgress('')` -- goFigure, cryptogram's cleared mapping,
-            Phrazle's Again -- and for an adapter type that empty string is also what takes the
-            ladder with it, so it has to be reachable on its own. */}
-        <button onClick={() => onProgress('')} type="button">
-          Clear progress
-        </button>
-        <button onClick={onSolved} type="button">
-          Record a win
-        </button>
-        {/* Stands in for whatever a real board calls Play again. It is pressed with `?.()` because
-            the prop is optional on the type, and a recorder that assumed otherwise would be
-            asserting a contract the shell does not make. */}
-        <button onClick={() => onReset?.()} type="button">
-          Start over
-        </button>
-      </section>
-      <div className="lull-instrument" />
-    </>
-  ))
+  const Board = jest.fn(({ onProgress, onReset, onSolved, progress, puzzle }: PuzzleComponentProps) => {
+    // READ ONCE, AT MOUNT, which is the one property of a real board this double has to model. All
+    // six read their own portion of `progress` in a lazy state initializer and own it from then on
+    // -- so a string the shell writes underneath a mounted board is invisible to it, and the only
+    // way a board shows one is to be built again. Rendering the live prop instead would make the
+    // reveal's remount untestable: the text would update either way, and a frame that had lost the
+    // `key` entirely would still pass.
+    const [restored] = React.useState(() => progress ?? '')
+
+    return (
+      <>
+        <section aria-label="Board" className="lull-board">
+          <h2>{puzzle.id}</h2>
+          <p>{`Restored at mount: ${restored}`}</p>
+          <button onClick={() => onProgress('kept')} type="button">
+            Record progress
+          </button>
+          {/* The OTHER half of a real board's Play again, and it is a second button rather than part
+              of Start over below so the two can be driven independently. Every board spells "there is
+              nothing on this board" as `onProgress('')` -- goFigure, cryptogram's cleared mapping,
+              Phrazle's Again -- and for an adapter type that empty string is also what takes the
+              ladder with it, so it has to be reachable on its own. */}
+          <button onClick={() => onProgress('')} type="button">
+            Clear progress
+          </button>
+          <button onClick={onSolved} type="button">
+            Record a win
+          </button>
+          {/* Stands in for whatever a real board calls Play again. It is pressed with `?.()` because
+              the prop is optional on the type, and a recorder that assumed otherwise would be
+              asserting a contract the shell does not make. */}
+          <button onClick={() => onReset?.()} type="button">
+            Start over
+          </button>
+        </section>
+        <div className="lull-instrument" />
+      </>
+    )
+  })
 
   const lastProps = (): PuzzleComponentProps => Board.mock.calls[Board.mock.calls.length - 1][0]
 
@@ -637,6 +648,159 @@ describe('PuzzleFrame', () => {
     // `HINTS_PREFIX` is private to storage.ts and the string is written out here on purpose: a test
     // that built the key from the same constant the code builds it from would pass whatever that
     // constant became, which is the one thing a storage-key test is for.
+    // THE END OF THE LADDER, MADE REAL. "Show answer" used to print a sentence into the sheet and
+    // leave the board as the player left it, so someone who had given up was told the answer and
+    // then asked to type it in -- the one step of a puzzle that is pure transcription.
+    //
+    // These rows drive a bench with NO hint adapter, which is the half the shell cannot see any other
+    // way: the bar owns its count in `lull:hints:` and reports the sale through `onReveal`. The
+    // adapter half is driven in `a bench whose type carries a hint adapter`, where the finished board
+    // arrives merged with the rung tail in one string.
+    describe('revealing the answer', () => {
+      const spendTheLadder = async (user: UserEvent): Promise<void> => {
+        await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Show answer' }))
+      }
+
+      it('writes the finished board the type composed', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        await spendTheLadder(user)
+
+        expect(readProgress(missingVowelsPuzzleId)).toEqual('The Empire Strikes Back')
+      })
+
+      // THE ROW THAT CATCHES THE REAL BUG, and it is a different assertion from the one above rather
+      // than a restatement of it. Every board reads its own portion of `progress` ONCE, in a lazy
+      // state initializer, so a string the shell writes underneath a mounted board is invisible to
+      // it -- the store would hold the answer and the screen would hold the empty line, which is
+      // worse than the sentence-only reveal this replaces. The board's `key` is what rebuilds it, and
+      // the double models the mount-time read so this can fail.
+      it('rebuilds the board so the player can see the answer in it', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        await spendTheLadder(user)
+
+        expect(screen.getByText('Restored at mount: The Empire Strikes Back')).toBeInTheDocument()
+      })
+
+      // THE SHELL SAYS IT, BECAUSE NO BOARD WILL. All six deliberately decline to report a win they
+      // arrive already holding -- three seed a `reported` ref from their mount-time solved state and
+      // the other three only call `onSolved` inside a keystroke handler -- which is right, and which
+      // means the remount above reports nothing.
+      it('marks the puzzle solved', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        await spendTheLadder(user)
+
+        expect(readMeta().solved).toContain(missingVowelsPuzzleId)
+      })
+
+      // WHAT A SCREEN READER ACTUALLY GETS, which is the half of this press that is not on screen.
+      // The bar's `role="status"` region is mounted empty at the bar's own mount and is NEVER
+      // remounted -- the reveal rebuilds the BOARD and the bar is a sibling -- so the answer is
+      // inserted into a region a reader is already watching, which is the arrangement this app
+      // documents as the only one NVDA and JAWS reliably announce.
+      //
+      // Scoped THROUGH the bar's own region rather than asserted as loose text, because loose text
+      // would pass with the sentence sitting anywhere on the page, including inside the board that
+      // was just rebuilt -- which is exactly the placement that would NOT be announced.
+      it('announces the answer through a live region the remount does not touch', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        await spendTheLadder(user)
+
+        const bar = screen.getByRole('region', { name: 'Hints' })
+        expect(within(within(bar).getByRole('status')).getByText(/The answer is/)).toBeInTheDocument()
+      })
+
+      // A KNOWN GAP, recorded rather than half-fixed, and it is the cost of the remount. Every board
+      // announces through its own FloorBar `role="status"`, and that region is INSIDE the subtree the
+      // reveal rebuilds -- so the board's solved line arrives in a freshly inserted region with its
+      // message already in it, which is the case this codebase documents NVDA and JAWS as missing.
+      //
+      // What a reader does hear is the sentence above: the answer itself, through the bar's region,
+      // which is the news. What they are not told is that the board has been filled in for them.
+      //
+      // It is left because every way of closing it is worse than the gap. The bar cannot say it -- it
+      // does not know whether its caller wrote a board, and a bench whose `solve` came back null
+      // would then be announcing a fill that never happened. The frame cannot say it either without
+      // growing a live region of its own, which is a seventh band on a screen whose band order is the
+      // thing `index.css` exists to hold. Closing it properly means the boards reading a reveal
+      // rather than being rebuilt under one, which is a change to the six-prop contract and belongs
+      // on its own rather than inside this one.
+      it('leaves the board’s own live region rebuilt, which is the cost of the remount', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        const before = screen.getByRole('region', { name: 'Board' })
+        await spendTheLadder(user)
+
+        expect(screen.getByRole('region', { name: 'Board' })).not.toBe(before)
+      })
+
+      // THE REMOUNT MUST NOT COST FOCUS (WCAG 2.4.3), and this file already records what happens when
+      // one does: a changed `key` is React's instruction to destroy a subtree, React ships no focus
+      // handling with it, and the focused element simply stops existing -- focus falls to <body> and
+      // the next Tab restarts at the top of the page. That is why the hint bar is handed a
+      // `resetSignal` instead of being keyed.
+      //
+      // The reveal is safe for a reason rather than by luck: what is rebuilt is the BOARD, and the
+      // element holding focus is the bar's own control, which is outside that subtree. The reason is
+      // the kind that stops being true quietly -- move the key up one element and nothing else in
+      // this suite notices -- so it is asserted rather than left in a comment.
+      //
+      // Driven with the KEYBOARD, because jsdom emulates Chrome, which focuses a <button> on a
+      // pointer press; Safari and Firefox on macOS do not. A click would leave this passing for the
+      // browsers that do not have the bug.
+      it('leaves focus on the hint control it was pressed from', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+
+        const control = screen.getByRole('button', { name: 'Show answer' })
+        control.focus()
+        await user.keyboard('{Enter}')
+
+        // NAMED "Hide hints" BY THE TIME THIS RUNS, and that is the control behaving correctly rather
+        // than a second button: the press opens the sheet, and with the ladder spent and the answer
+        // out there is nothing left for the control to offer, so it becomes the sheet's toggle. The
+        // element is the same one -- `toHaveFocus` on the node found under its new name is what says
+        // focus rode through the board's remount AND through the relabeling.
+        expect(screen.getByRole('button', { name: 'Hide hints' })).toHaveFocus()
+      })
+
+      // NOT ON A RUNG. Two presses in, the board is still the player's and the puzzle is not solved
+      // -- a frame that filled it in on rung 2 would hand over the whole puzzle for the price of one
+      // hint.
+      it('leaves the board alone while a rung is still unspent', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(phrasePack)
+
+        renderFrame(missingVowelsPuzzleId)
+        await user.click(await screen.findByRole('button', { name: 'Open hint 1 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 2 of 3' }))
+
+        expect(readProgress(missingVowelsPuzzleId)).toBeNull()
+        expect(readMeta().solved).not.toContain(missingVowelsPuzzleId)
+      })
+    })
+
     it('forgets the hints the player opened when the board starts over', async () => {
       const user = userEvent.setup({ delay: null })
       setupPack(phrasePack)
@@ -909,7 +1073,17 @@ describe('PuzzleFrame', () => {
       await user.click(screen.getByRole('button', { name: 'Show answer' }))
 
       expect(screen.getByText('The answer is Ate ate tea.')).toBeInTheDocument()
-      expect(readProgress(cryptogramPuzzleId)).toEqual('####')
+      // `QEVAZT` IS THE FINISHED BOARD AND `####` IS THE STUB'S TAIL, which is the whole seam in one
+      // string: the reveal press writes the board portion this type's `solve` composed, merged
+      // against the tail the adapter's own `open` had just extended, in ONE commit. The board portion
+      // used to be untouched here -- the assertion read `'####'` -- so a player was handed the answer
+      // in a sentence and left to type it in themselves.
+      //
+      // The stub's `merge` appends one `#` per opened step, so the tail is the adapter's and the
+      // prefix is the registry's. What `QEVAZT` says (Q is E, V is A, Z is T) is cryptogram's own
+      // business and is pinned in cryptogram/solve.test.ts; what this row pins is that the two halves
+      // met.
+      expect(readProgress(cryptogramPuzzleId)).toEqual('QEVAZT####')
     })
 
     // WHERE THE RUNG IS NOT. `lull:hints:<puzzleId>` is the uncontrolled bar's own store, and an
@@ -993,7 +1167,9 @@ describe('PuzzleFrame', () => {
       await user.click(screen.getByRole('button', { name: 'Show answer' }))
 
       expect(screen.getByText('The answer is Ate ate tea.')).toBeInTheDocument()
-      expect(readProgress(cryptogramPuzzleId)).toEqual('###')
+      // The finished board against a THREE-character tail rather than a four-character one, because
+      // this ladder is two rungs and the reveal is its third step. Same seam, shorter ladder.
+      expect(readProgress(cryptogramPuzzleId)).toEqual('QEVAZT###')
     })
 
     // A DECLINE, which is the adapter answering null while the ladder still looks unspent. Nothing

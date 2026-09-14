@@ -310,6 +310,96 @@ describe('HintBar', () => {
 
     const answerOnScreen = (): boolean => screen.queryByText(solution) !== null
 
+    // WHAT THE CALLER DOES WITH THE ANSWER, which is the half this bar cannot do itself. The sheet's
+    // sentence is the end of the ladder; the finished board is the shell's, and without a signal the
+    // shell has no way to know this press happened -- an uncontrolled bar keeps its count in
+    // `lull:hints:` and tells nobody.
+    describe('reporting the sale', () => {
+      const renderReporting = (opened: number, onReveal: () => void): ReturnType<typeof render> => {
+        jest.mocked(readHints).mockReturnValueOnce(opened)
+        return render(<HintBar hints={hints} onReveal={onReveal} puzzleId={puzzleId} solution={solution} />)
+      }
+
+      it('reports the press that sells the answer', async () => {
+        const user = userEvent.setup({ delay: null })
+        const onReveal = jest.fn()
+        renderReporting(3, onReveal)
+
+        await press(user, 'Show 3 hints')
+        await press(user, 'Show answer')
+
+        expect(onReveal).toHaveBeenCalledTimes(1)
+      })
+
+      // ONLY that press. A rung is not an answer, and a caller that filled the board in on rung 2
+      // would hand the whole puzzle over for the price of one hint.
+      it('reports nothing on a press that opens a rung', async () => {
+        const user = userEvent.setup({ delay: null })
+        const onReveal = jest.fn()
+        renderReporting(1, onReveal)
+
+        await press(user, 'Show 1 hint')
+        await press(user, 'Open hint 2 of 3')
+
+        expect(onReveal).not.toHaveBeenCalled()
+      })
+
+      // NOR ON THE PRESSES AFTER IT. Once the answer is out the control is the sheet's toggle, and a
+      // second report would mark the puzzle solved again and rebuild the board under the player for
+      // a press that only shut a sheet.
+      it('reports nothing when the answer is already out', async () => {
+        const user = userEvent.setup({ delay: null })
+        const onReveal = jest.fn()
+        renderReporting(4, onReveal)
+
+        await press(user, 'Show answer')
+        await press(user, 'Hide hints')
+
+        expect(onReveal).not.toHaveBeenCalled()
+      })
+
+      // A BENCH WITH NO ANSWER HAS NOTHING TO SELL. Without `solution` the last press is the ladder
+      // running out and the control becoming a toggle, so the count still climbs and nothing is
+      // reported -- which is what stops `next > hints.length` being read as a reveal on its own.
+      it('reports nothing on a bar with no answer to give', async () => {
+        const user = userEvent.setup({ delay: null })
+        const onReveal = jest.fn()
+        jest.mocked(readHints).mockReturnValueOnce(3)
+        render(<HintBar hints={hints} onReveal={onReveal} puzzleId={puzzleId} />)
+
+        await press(user, 'Show 3 hints')
+        await press(user, 'Hide hints')
+
+        expect(onReveal).not.toHaveBeenCalled()
+      })
+
+      // A CONTROLLED OWNER IS NEVER TOLD THIS WAY, and the asymmetry is deliberate rather than an
+      // omission. Such an owner is offered the next count through `control.onOpen` and may DECLINE
+      // it -- the count then stays put, which this component documents and goFigure relies on -- and
+      // this bar cannot see a decline. Reporting from here would announce a sale the owner had just
+      // refused. An owner detects its own reveal, because it is the one that said yes.
+      it('leaves a controlled owner to notice its own sale', async () => {
+        const user = userEvent.setup({ delay: null })
+        const onReveal = jest.fn()
+        const onOpen = jest.fn()
+        render(
+          <HintBar
+            control={{ onOpen, opened: 3 }}
+            hints={hints}
+            onReveal={onReveal}
+            puzzleId={puzzleId}
+            solution={solution}
+          />,
+        )
+
+        await press(user, 'Show 3 hints')
+        await press(user, 'Show answer')
+
+        expect(onOpen).toHaveBeenCalledWith(4)
+        expect(onReveal).not.toHaveBeenCalled()
+      })
+    })
+
     it('offers the answer once every rung is spent', async () => {
       const user = userEvent.setup({ delay: null })
       renderWithAnswer(3)

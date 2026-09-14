@@ -27,6 +27,23 @@ export interface HintBarProps {
   // else's. It says nothing about what a rung touches.
   control?: { onOpen: (nextOpened: number) => void; opened: number }
   hints: HintLadder
+  // "This bar just sold the answer." Fired on the press that carries `opened` past the ladder, and on
+  // no other press, so a caller can put the finished board on screen instead of leaving the player to
+  // copy the answer out of the sheet.
+  //
+  // UNCONTROLLED CALLERS ONLY, AND THAT ASYMMETRY IS THE POINT rather than an omission. A controlled
+  // owner is handed the next count through `control.onOpen` and is ALLOWED TO DECLINE -- the count
+  // then stays where it is, which this file documents and goFigure relies on. This bar cannot see a
+  // decline, so a signal fired from here would tell an owner the answer was sold on a press the owner
+  // itself refused. An owner already knows: it holds the ladder, it holds the count, and it is the one
+  // that said yes. So it detects its own reveal inside `onOpen`, and this exists for the bar that owns
+  // the count -- where the write has already happened by the time it fires, and there is nothing left
+  // to refuse.
+  //
+  // It carries no argument and names no destination, which is the line `onReset` drew on
+  // `PuzzleComponentProps` and the same line this stays on: the caller learns THAT the answer went
+  // out, never what it was or where to put it.
+  onReveal?: () => void
   puzzleId: string
   // A COUNT the shell raises when the player starts the puzzle over, not a boolean and not a
   // handler. The bar reads its stored count once, in a state initializer, and subscribes to
@@ -362,6 +379,7 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
 export const HintBar = ({
   control,
   hints,
+  onReveal,
   puzzleId,
   resetSignal = 0,
   solution,
@@ -579,6 +597,15 @@ export const HintBar = ({
     } else {
       setStoredOpened(next)
       writeHints(puzzleId, next)
+      // AFTER the count is written, and only on the press that crosses the ladder. `next` is one past
+      // `hints.length` exactly when this press is the reveal, which is the same test `controlLabel`
+      // and `isRevealed` above both make -- said here as arithmetic on `next` rather than read off
+      // `isRevealed`, because that flag describes the state BEFORE this press and is false on the
+      // very press being reported.
+      //
+      // Guarded on `hasSolution` as well, because without one the advance below is just the ladder
+      // running out and the control becoming the sheet's toggle. There is no answer to have sold.
+      if (hasSolution && next > hints.length) onReveal?.()
     }
     // Asking for a hint is asking to see it. A rung that opened inside a shut sheet would read as a
     // button that did nothing.
