@@ -21,12 +21,20 @@
  * duplication actually bought was three places for a reader to discover the same algorithm and three
  * places where the next correction has to be remembered.
  *
- * THE IMPORT DIRECTION IS THE COST, AND IT IS SMALL. Nothing in src/components/<game>/ imported
- * @utils before this, so a board now reaches the shell's utilities for the first time. That is a
- * weaker line than the one it replaces: `src/utils/` is this app's own code with no cross-repo
- * contract on it, unlike `src/rules/`, which is vendored from lull-api and holds exactly three files
- * -- this could not live there, and nothing about it is a game rule in any case. It computes a number
- * and knows nothing about puzzles.
+ * WHY HERE AND NOT src/rules/: that directory means "vendored from lull-api" and holds exactly three
+ * files by the rule in CLAUDE.md. Nothing about this is a game rule in any case -- it computes a
+ * number and knows nothing about puzzles.
+ *
+ * THE IMPORT COSTS A BOARD NOTHING, and an earlier version of this comment claimed otherwise. It said
+ * no game directory had imported @utils before, so a board was "reaching the shell's utilities for the
+ * first time" -- literally true of that one folder and worthless as a boundary, because a board
+ * reaching shared code is routine. All six already import @components/* (button, enclosure, floor-bar,
+ * keypad, hint-bar), four import @rules/*, and cryptogram, phrazle and themedanagrams import @registry
+ * itself. A pure function is the lightest thing on that list.
+ *
+ * The line that IS real is about a board's PROPS -- six of them, no router, no storage, no API client,
+ * a FACT and never a CAPABILITY -- and importing a module does not touch it. `seededRandom` reads
+ * nothing, writes nothing, and names no destination; a board that calls it learns a number.
  *
  * NOT FOR ANYTHING THAT MUST BE UNGUESSABLE. It is a small, fast, fully reversible PRNG seeded from a
  * value that ships in the pack, so anyone can reproduce any sequence it will ever produce. That is
