@@ -78,19 +78,81 @@ const positionsOf = (kind: ThemedAnagramsSpentRung['kind'], answerLength: number
   new Set(POSITIONS[kind](answerLength - 1).filter((index) => index >= 0 && index < answerLength))
 
 /**
- * Unsolved entry indices, longest answer first, ties broken by position.
+ * A deterministic generator: one seed, one sequence, forever.
  *
- * LONGEST FIRST because the largest permutation space is the only "hardest" ranking code owns, and a
- * player opening a rung is stuck. Applied to the UNSOLVED set rather than to all four, which is the
- * whole difference from the ladder this replaced: a rung spent on a word already on the board is a
- * rung spent on nothing.
+ * THE THIRD COPY IN THIS REPO, after phrazle's and cryptogram's, and duplicated on the argument
+ * cryptogram/rungs.ts already sets out rather than in ignorance of it: the copies do NOT have to
+ * agree, because nothing compares one board's sequence with another's, so a fix to one is free to
+ * leave the others alone. Sharing it would mean either one board's directory importing another's or
+ * the first board-to-shell-utils import in the app, and neither is worth buying for nine lines.
  */
-const ranked = (entries: AnagramHintEntry[], state: ThemedAnagramsPlayerState): number[] =>
-  entries
-    .map((entry, index) => ({ index, length: entry.answer.length }))
-    .filter(({ index }) => !state.solved[index])
-    .sort((left, right) => right.length - left.length || left.index - right.index)
-    .map(({ index }) => index)
+export const seededRandom = (seed: string): (() => number) => {
+  let state = 0x6d2b79f5
+  for (const character of seed) {
+    state = Math.imul(state ^ character.charCodeAt(0), 2654435761)
+    state >>>= 0
+  }
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let value = Math.imul(state ^ (state >>> 15), 1 | state)
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** A full Fisher-Yates shuffle. Returns a new array; the input is not touched. */
+const shuffle = (indices: readonly number[], random: () => number): number[] => {
+  const order = [...indices]
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1))
+    const held = order[index]
+    order[index] = order[swap]
+    order[swap] = held
+  }
+  return order
+}
+
+/**
+ * Unsolved entry indices, least-hinted first, SHUFFLED WITHIN EACH TIER.
+ *
+ * THE TIERS ARE THE WHOLE ORDER NOW, and they replace two separate rules that used to sit on top of
+ * one another. The first was LONGEST ANSWER FIRST -- the largest permutation space being the only
+ * "hardest" ranking code owns -- and it made the ladder fully deterministic: four entries of equal
+ * length always took rung 1 on entry 0, and an unequal set always took the longest. Over a whole
+ * catalog that is one entry getting every first hint, which is the defect this replaces.
+ *
+ * The second was rung 3's preference for rung 1's entry over rung 2's, argued from the union of
+ * pinned positions: {0,1,2} on rung 1's entry against {0,1,2,last} on rung 2's, so one more position
+ * stays free. That argument is sound and the preference is still unnecessary, because `rungFor`
+ * ENFORCES the free-position count itself -- a candidate with no room returns null and the `find`
+ * below moves to the next one. The preference was a hint at an invariant that is already checked.
+ *
+ * WHAT SURVIVES IS THE TIER, and it is the one part of the order that is about the player rather
+ * than about the words: an entry the ladder has already spent a rung on is worth less than one it
+ * has not, so every entry with the fewest rungs aimed at it goes in the first tier and the draw is
+ * uniform inside it. With three rungs over four entries the first tier is normally every unsolved
+ * entry, which is exactly the pool the variety was asked for.
+ *
+ * Applied to the UNSOLVED set, which is unchanged and is the difference from the ladder that shipped
+ * on the wire: a rung spent on a word already on the board is a rung spent on nothing.
+ */
+const candidates = (
+  entries: AnagramHintEntry[],
+  state: ThemedAnagramsPlayerState,
+  spent: ThemedAnagramsSpentRung[],
+  random: () => number,
+): number[] => {
+  const tiers = new Map<number, number[]>()
+  entries.forEach((_entry, index) => {
+    if (state.solved[index]) return
+    const aimed = spent.filter((rung) => rung.entryIndex === index).length
+    tiers.set(aimed, [...(tiers.get(aimed) ?? []), index])
+  })
+
+  return [...tiers.keys()]
+    .sort((left, right) => left - right)
+    .flatMap((aimed) => shuffle(tiers.get(aimed) ?? [], random))
+}
 
 /**
  * Which positions of one entry's answer the spent rungs have revealed.
@@ -184,7 +246,8 @@ const rungFor = (
  * escalates in how much of one word it gives rather than in how many words it touches. WHICH KIND
  * that step spells out is decided per ENTRY, against what is already pinned there -- see STEP_KINDS.
  *
- * EACH RUNG PREFERS AN ENTRY THE LADDER HAS NOT USED, so three rungs normally light up three of the
+ * EACH RUNG PREFERS AN ENTRY THE LADDER HAS NOT USED -- see `candidates`, where that preference is
+ * now the first tier rather than a separate list -- so three rungs normally light up three of the
  * four rows. When only one entry is left unsolved -- routine, once two of the four are in -- they
  * stack on it, and stacking is where both of this ladder's historical defects lived. The BOARD one is
  * fixed by the invariant in `rungFor`: the union of pinned indices used to reach {0, 1, 2, last}, so
@@ -199,30 +262,26 @@ const rungFor = (
  * would not is not emitted and the ladder shortens, which is this repo's stated rule -- a rung you
  * do not have beats a bad one.
  *
- * RUNG 3 STILL PREFERS RUNG 1'S ENTRY over rung 2's, and the old reason for it was wrong: a prefix
- * adds positions 1 and 2 on EITHER entry, never "one the bookends rung already implied". The real
- * reason is the union. On rung 1's entry the union comes to {0, 1, 2}; on rung 2's it comes to
- * {0, 1, 2, last}. One more position stays free, which is exactly what decides whether the rung
- * clears the invariant above and can be emitted at all.
+ * `random` IS REQUIRED, and it has no honest default for the reason phrazle's chooser states: a
+ * module that never sees a puzzle id cannot seed itself, and defaulting to Math.random would hand a
+ * caller who forgot it a speculative rung that re-draws on every render -- so the rung a player SEES
+ * in the tail need not be the rung they BUY. A required parameter makes that a compile error instead
+ * of a play-time surprise. `hints.ts` seeds it from the puzzle id.
+ *
+ * THERE IS NO `available.length === 0` GUARD any more and none is needed: an empty candidate list
+ * maps to an empty array, `find` answers undefined, and the `??` below returns null. A board with
+ * every entry solved and a board with no entries at all both take that path.
  */
 export const chooseThemedAnagramsRung = (
   entries: AnagramHintEntry[],
   state: ThemedAnagramsPlayerState,
   spent: ThemedAnagramsSpentRung[],
+  random: () => number,
 ): ThemedAnagramsSpentRung | null => {
   if (spent.length >= RUNG_COUNT) return null
 
-  const available = ranked(entries, state)
-  if (available.length === 0) return null
-
-  const used = spent.map((rung) => rung.entryIndex)
-  const unused = available.filter((index) => !used.includes(index))
-  // Rung 3 falls back to rung 1's entry before the rest of the ranking; rungs 1 and 2 have no such
-  // second preference, and on rung 1 `unused` is the whole ranking anyway.
-  const preferred = spent.length === 2 && available.includes(used[0]) ? [used[0]] : []
-
   return (
-    [...new Set([...unused, ...preferred, ...available])]
+    candidates(entries, state, spent, random)
       .map((entryIndex) => rungFor(entries, spent, entryIndex, spent.length))
       .find((rung): rung is ThemedAnagramsSpentRung => rung !== null) ?? null
   )

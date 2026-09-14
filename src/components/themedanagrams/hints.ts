@@ -4,6 +4,7 @@ import { attachHints, decode, decodeHints, encode, Guesses, ThemedAnagramsHintTa
 import {
   AnagramHintEntry,
   chooseThemedAnagramsRung,
+  seededRandom,
   themedAnagramsHintFor,
   ThemedAnagramsPlayerState,
   ThemedAnagramsSpentRung,
@@ -74,18 +75,35 @@ const solvedIn = (entries: AnagramHintEntry[], guesses: Guesses): boolean[] =>
  * feed each speculative rung back in rather than calling the rule three times with the same
  * argument: three identical calls would answer "initial on the longest unsolved entry" three times.
  *
- * NOTHING HERE DRAWS. Every choice the rule makes is a total order over answer length and index, so
- * the tail is stable for a given board with no seed to carry.
+ * THIS DRAWS, AND THE SEED IS WHAT MAKES THE TAIL STABLE ANYWAY. The rule used to be a total order
+ * over answer length and index, so there was nothing to carry; it now picks at random among the
+ * unsolved entries with the fewest rungs aimed at them, which is a draw on every step. A fresh
+ * stream is built per call from the puzzle id, so this function is pure in its arguments: `ladder`
+ * and `open` fold the same spent list in the same render and must agree about which rung is next,
+ * and an unseeded draw would let the bar show one rung and sell another.
+ *
+ * ONE STREAM PER STEP, KEYED ON THE STEP, NOT ONE STREAM FOR THE WHOLE FOLD. Both are deterministic
+ * and only this one makes the tail HONEST. A single stream advances as the loop runs, so the draw at
+ * position 2 depends on how many numbers positions 0 and 1 consumed -- and a fold that starts from a
+ * spent list of one begins at zero again. The rung shown speculatively at position 2 was therefore
+ * not the rung eventually sold there. Nothing on screen was wrong, because HintBar draws
+ * `slice(0, opened)` and the tail is never rendered, but "the tail is the ladder you will get" is
+ * cheap to make true and confusing to leave false.
+ *
+ * Keyed on `probe.length`, so the draw at step k is a function of the puzzle id, k, and the spent
+ * list -- and the spent list at step k is itself reproduced by the same rule. A player who buys three
+ * rungs one at a time gets exactly the ladder a fresh fold predicted.
  */
 const grow = (
   entries: AnagramHintEntry[],
   state: ThemedAnagramsPlayerState,
   spent: ThemedAnagramsSpentRung[],
+  seed: string,
 ): ThemedAnagramsSpentRung[] => {
   const probe = [...spent]
 
   while (probe.length < MAX_RUNGS) {
-    const next = chooseThemedAnagramsRung(entries, state, probe)
+    const next = chooseThemedAnagramsRung(entries, state, probe, seededRandom(`${seed}:${probe.length}`))
     // ONE TO THREE RUNGS, NEVER ALWAYS THREE. Null means every entry is solved, or that no entry has
     // room left for this rung without pinning all but one of its positions -- and a rung a player
     // does not have beats a rung that spells the answer onto the board. The tail stops rather than
@@ -125,8 +143,8 @@ const settle = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnag
     isGivenAway(entries[index]?.answer, spent, index) ? entries[index].answer : guess,
   ) as Guesses
 
-const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagramsSpentRung[]) => {
-  const probe = grow(entries, { solved: solvedIn(entries, guesses) }, spent)
+const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagramsSpentRung[], seed: string) => {
+  const probe = grow(entries, { solved: solvedIn(entries, guesses) }, spent, seed)
   if (probe.length > 0) return probe
 
   // A WON BOARD HAS NOTHING LEFT TO CHOOSE, AND THE BAND STILL HAS TO STAND. All four rows right is
@@ -146,7 +164,7 @@ const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagra
   //
   // NOTHING BOUGHT CAN BE REPLACED BY IT. A non-empty `spent` makes `grow` non-empty whatever the
   // state, so this branch is reachable only with an empty ladder in hand.
-  return grow(entries, NOTHING_SOLVED, [])
+  return grow(entries, NOTHING_SOLVED, [], seed)
 }
 
 /**
@@ -205,7 +223,7 @@ export const themedAnagramsHints: HintAdapter = {
     // nobody bought, on screen, free. It also pushed `hints.length` back above `opened`, which takes
     // "Show answer" off the control and replaces it with an offer of a rung the player has already
     // paid past.
-    const probe = opened > hints.length ? hints : fold(entries, guesses, hints)
+    const probe = opened > hints.length ? hints : fold(entries, guesses, hints, puzzle.id)
 
     // An empty ladder is not a short ladder. The frame reads null the way it reads a malformed pack
     // ladder -- no bar at all -- which is the right answer for a pack this board would refuse to
@@ -219,7 +237,7 @@ export const themedAnagramsHints: HintAdapter = {
   open: (puzzle: Puzzle<unknown>, progress: PuzzleProgress): PuzzleProgress | null => {
     const entries = entriesOf(puzzle)
     const { guesses, hints, opened } = decode(progress)
-    const probe = fold(entries, guesses, hints)
+    const probe = fold(entries, guesses, hints, puzzle.id)
 
     // Nothing to sell on a board with no ladder, and nothing left once the answer is out. `opened`
     // exceeds the BOUGHT rung count in exactly one state -- the reveal has been taken -- which is

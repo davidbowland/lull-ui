@@ -1154,7 +1154,7 @@ describe('PuzzleFrame', () => {
         phrazlePuzzleId,
         REGISTRY.phrazle.hints,
         [
-          'The phrase has no A, no G, and no S.',
+          'The phrase has no G, no M, and no S.',
           'The phrase contains D, H, and L.',
           'Word 2 uses these letters, alphabetized: D, H, L, and O.',
         ],
@@ -1166,8 +1166,8 @@ describe('PuzzleFrame', () => {
         themedAnagramsPuzzleId,
         REGISTRY.themedanagrams.hints,
         [
-          'The 2nd answer starts with S.',
-          'The 3rd answer starts with S and ends with T.',
+          'The 1st answer starts with K.',
+          'The 2nd answer starts with S and ends with N.',
           'The 4th answer starts with SPA.',
         ],
         themedAnagramsStalePackLadder.map((hint) => hint.text),

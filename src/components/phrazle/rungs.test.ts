@@ -91,6 +91,67 @@ describe('choosePhrazleRung', () => {
     expect(choosePhrazleRung(DATA, fresh, spent, fixedRandom())).toBeNull()
   })
 
+  // WHAT A LATE-GAME ABSENT POOL ACTUALLY HOLDS, and the reason these three rows exist. The window is
+  // applied AFTER the player's own guesses are filtered out, so it does not hold the ten strongest
+  // absent letters for long -- it holds the ten strongest SURVIVORS, and by four guesses in those are
+  // the bottom of the table. Measured on TOE HOLD, one guess at a time: ARINSCUPMG, RINCUPMGBF,
+  // UPMGBFYWKV, UGBFYWKVXZ, then FYWKVXZJQ, at which point every letter left is under 2%.
+  //
+  // The draw over that pool is uniform and always was -- 82 of the 84 possible three-letter draws
+  // appeared across 400 puzzle ids, per-letter hits 122 to 142 against an expectation of 133 -- which
+  // is exactly why the rung read as broken: from a nine-letter pool, P(a draw of three contains Q, Z
+  // or X) is 1 - C(6,3)/C(9,3) = 76%. A working shuffle over a pool with nothing else in it strikes
+  // Q, Z or X three times out of four, and "the phrase has no X, no Y, and no Z" is a press spent on
+  // letters no player was going to try.
+  //
+  // So the fix is a CEILING on the rare letters rather than a floor under the pool: two slots drawn
+  // with Q, Z and X held back, the third drawn from everything.
+  // OVER MANY STREAMS, NOT ONE, and that is what makes these three rows able to fail. A single
+  // `fixedRandom()` draw from a nine-letter pool lands on one rare letter about half the time by
+  // chance, so all three rows below passed against the UNCAPPED draw when they were first written --
+  // a test that cannot tell the two implementations apart is not testing the cap. `seededRandom` over
+  // a list of fixed seeds is still deterministic (no Math.random, same result on every machine) and
+  // samples the distribution instead of one point of it.
+  //
+  // The uncapped draw puts two or three rare letters in 19 of 84 draws, so each row below fails
+  // loudly on a regression rather than intermittently.
+  const streams = Array.from({ length: 200 }, (_, index) => seededRandom(`rare-${index}`))
+
+  it('spends at most one of its three slots on Q, Z or X', () => {
+    // Covers every common letter, leaving the pool as F, Y, W, K, V, X, Z, J and Q.
+    const played = { guesses: ['SALT RAIN COMB PUCE GIN'] }
+    const counts = streams.map((random) => {
+      const rung = choosePhrazleRung(DATA, played, [], random) as { letters: string }
+      return [...rung.letters].filter((letter) => 'QXZ'.includes(letter)).length
+    })
+    expect(counts.filter((count) => count > 1)).toHaveLength(0)
+    // And the cap is a ceiling rather than a ban: the third slot still reaches them.
+    expect(counts.filter((count) => count === 1).length).toBeGreaterThan(0)
+  })
+
+  it('falls back to Q, Z and X when the pool holds nothing else', () => {
+    // Covers all 23 other letters, so the pool is exactly the three the rung would rather not name.
+    const played = { guesses: ['JACK FUNNY BIG PROMS WAVE'] }
+    const drawn = streams.map((random) => {
+      const rung = choosePhrazleRung(DATA, played, [], random) as { letters: string }
+      return [...rung.letters].sort().join('')
+    })
+    expect([...new Set(drawn)]).toEqual(['QXZ'])
+  })
+
+  it('tops up from the rare letters when the common pool is short of two', () => {
+    // Leaves F alone above the rare three, so the one common letter is always spent and two rare ones
+    // fill the rest. Under the uncapped draw F is merely one of four and is missed outright in a
+    // quarter of draws.
+    const played = { guesses: ['JACK BUNNY BIG PROMS WAVE'] }
+    const drawn = streams.map((random) => {
+      const rung = choosePhrazleRung(DATA, played, [], random) as { letters: string }
+      return [...rung.letters].sort().join('')
+    })
+    expect(drawn.filter((letters) => !letters.includes('F'))).toHaveLength(0)
+    expect(new Set(drawn).size).toBeGreaterThan(1)
+  })
+
   it('skips absent letters the player has already ruled out', () => {
     // Guessing SIR proves S, I and R are absent, so rung 1 must not spend itself on them.
     const played = { guesses: ['SIR RAIN'] }

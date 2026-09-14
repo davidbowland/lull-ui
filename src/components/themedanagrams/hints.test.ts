@@ -5,17 +5,22 @@ import { Puzzle } from '@types'
 
 describe('the themed anagrams hint adapter', () => {
   // KETTLE, SAUCEPAN, SKILLET, SPATULA -- off the fixture rather than retyped, so this suite and the
-  // board's cannot drift on the four words both are built around. Lengths run 6, 8, 7, 7, which is
-  // deliberately not sorted: the ranking is longest-first with ties by index, and a fixture already
-  // in that order could not tell a rank from a passthrough.
+  // board's cannot drift on the four words both are built around.
   const PUZZLE = themedAnagramsPuzzle as Puzzle<unknown>
 
   // WRITTEN OUT AND NOT COMPUTED, which is what makes them assertions rather than a second copy of
-  // the rule. The three rungs escalate over three DIFFERENT rows -- the longest unsolved entry, then
-  // one the ladder has not used, then a third -- and the ordinals are 1-based over 0-based indices,
-  // which is the pairing a computed expectation would silently agree with however it was wrong.
-  const INITIAL_RUNG = 'The 2nd answer starts with S.'
-  const BOOKENDS_RUNG = 'The 3rd answer starts with S and ends with T.'
+  // the rule. The three rungs escalate over three DIFFERENT rows, and the ordinals are 1-based over
+  // 0-based indices -- the pairing a computed expectation would silently agree with however it was
+  // wrong.
+  //
+  // WHICH THREE ROWS IS A DRAW NOW, seeded from the puzzle id, so these are what the shipped seed
+  // produces for this id rather than a ranking spelled out. They used to read 2nd / 3rd / 4th because
+  // the chooser took the longest unsolved entry and then the next unused one by length; that order is
+  // gone -- see `spreads rung 1 across every unsolved entry` in rungs.test.ts -- and what these rows
+  // still pin is the SHAPE the ordinals cannot fake: three distinct rows, escalating initial then
+  // bookends then prefix3, each rendered from its frozen record.
+  const INITIAL_RUNG = 'The 1st answer starts with K.'
+  const BOOKENDS_RUNG = 'The 2nd answer starts with S and ends with N.'
   const PREFIX_RUNG = 'The 4th answer starts with SPA.'
 
   // Every row right, which is the state that used to empty the fold and take the hint bar with it.
@@ -48,10 +53,12 @@ describe('the themed anagrams hint adapter', () => {
       expect(texts('')).toEqual([INITIAL_RUNG, BOOKENDS_RUNG, PREFIX_RUNG])
     })
 
-    // THE WHOLE POINT OF COMPUTING THE LADDER AT PLAY TIME. The old ladder ranked its three targets
-    // by answer length once, at generate time, so a player who had already solved the longest entry
-    // still got a rung spent on it. SAUCEPAN is the longest and is now on the board, so rung 1 moves
-    // to the longest entry the player still owes.
+    // THE WHOLE POINT OF COMPUTING THE LADDER AT PLAY TIME. The ladder that shipped on the wire
+    // ranked its three targets once, at generate time, so a player who had already solved the target
+    // still got a rung spent on it. A solved row leaves the candidate set entirely -- see
+    // `candidates` in rungs.ts -- so rung 1 moves to one of the three the player still owes. WHICH of
+    // the three is a draw seeded from the puzzle id, so this row names what the shipped seed gives
+    // rather than a rank.
     it('does not aim a rung at a row the player has already got', () => {
       expect(texts(draft('', 'SAUCEPAN'))[0]).toEqual('The 3rd answer starts with S.')
     })
@@ -68,10 +75,21 @@ describe('the themed anagrams hint adapter', () => {
       expect(texts(draft('', 'SAUCEPAN'))[0]).not.toEqual(INITIAL_RUNG)
     })
 
-    // Nothing here draws, so the tail is stable for a given board with no seed to carry -- every
-    // choice the rule makes is a total order over answer length and index.
+    // THIS DRAWS NOW, so the row means something it did not before. The choice used to be a total
+    // order over answer length and index, and two identical calls could not have disagreed; it is a
+    // shuffle among the unsolved entries with the fewest rungs aimed at them, and what keeps the tail
+    // still is the seed. Unseeded, the bar would show one rung and sell another.
     it('draws the same speculative rung twice running', () => {
       expect(texts('')).toEqual(texts(''))
+    })
+
+    // AND THE TAIL IS THE LADDER THE PLAYER ACTUALLY GETS, which is what the per-step seed in `grow`
+    // buys over one stream for the whole fold. Under a single advancing stream the fresh fold's
+    // position 2 was drawn at a different point in the sequence than the purchase reached it at, so
+    // the two disagreed -- invisibly, since HintBar renders `slice(0, opened)`, but a speculative
+    // ladder that is not the ladder is a trap for whoever reads it next.
+    it('sells the tail it predicted, rung for rung', () => {
+      expect(texts(buy(3))).toEqual(texts(''))
     })
 
     // A WON BOARD KEEPS ITS BAND. Every row is right, so the fold has nothing left to choose -- and
@@ -130,10 +148,10 @@ describe('the themed anagrams hint adapter', () => {
     // beside it, and the four drafts untouched. A BLANK BOARD WITH A RUNG SPENT is `|1|I1`, which is
     // exactly the state the field exists to represent and emphatically not ''.
     it('freezes the rung it sold into the board’s own progress', () => {
-      expect(buy(1)).toEqual('|1|I1')
+      expect(buy(1)).toEqual('|1|I0')
       expect(decode(buy(1))).toStrictEqual({
         guesses: ['', '', '', ''],
-        hints: [{ entryIndex: 1, kind: 'initial' }],
+        hints: [{ entryIndex: 0, kind: 'initial' }],
         opened: 1,
       })
     })
@@ -252,7 +270,7 @@ describe('the themed anagrams hint adapter', () => {
 
       expect(decode(merged)).toStrictEqual({
         guesses: ['KET', '', '', ''],
-        hints: [{ entryIndex: 1, kind: 'initial' }],
+        hints: [{ entryIndex: 0, kind: 'initial' }],
         opened: 1,
       })
     })
@@ -284,8 +302,8 @@ describe('the themed anagrams hint adapter', () => {
       expect(decode(merged)).toStrictEqual({
         guesses: ['', '', '', ''],
         hints: [
-          { entryIndex: 1, kind: 'initial' },
-          { entryIndex: 2, kind: 'bookends' },
+          { entryIndex: 0, kind: 'initial' },
+          { entryIndex: 1, kind: 'bookends' },
         ],
         opened: 2,
       })

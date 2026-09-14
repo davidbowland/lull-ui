@@ -15,6 +15,7 @@ import {
 } from '@components/phrazle/rungs'
 import {
   chooseThemedAnagramsRung,
+  seededRandom as themedAnagramsSeededRandom,
   MAX_ANAGRAM_RUNG_LENGTH,
   themedAnagramsHintFor,
   ThemedAnagramsSpentRung,
@@ -142,10 +143,13 @@ const foldPhrazle = (answer: string, guesses: string[] = []): string[] => {
 const foldAnagrams = (answers: string[], solved: boolean[] = answers.map(() => false)): string[] => {
   const entries = answers.map((answer) => ({ answer }))
   const spent: ThemedAnagramsSpentRung[] = []
-  let next = chooseThemedAnagramsRung(entries, { solved }, spent)
+  // One seeded stream for the whole fold. The chooser draws among the unsolved entries with the
+  // fewest rungs aimed at them, and a sweep whose ladder moved between runs could not pin a cap.
+  const random = themedAnagramsSeededRandom(answers.join('|'))
+  let next = chooseThemedAnagramsRung(entries, { solved }, spent, random)
   while (next !== null && spent.length <= MAX_LADDER) {
     spent.push(next)
-    next = chooseThemedAnagramsRung(entries, { solved }, spent)
+    next = chooseThemedAnagramsRung(entries, { solved }, spent, random)
   }
   return spent.map((rung) => themedAnagramsHintFor(entries, rung).text)
 }
@@ -275,10 +279,11 @@ describe('themed anagrams sweep', () => {
     const spent: ThemedAnagramsSpentRung[] = []
     const entries = ['KETTLE', 'COLANDER', 'TOASTER', 'SPATULA'].map((answer) => ({ answer }))
     const state = { solved: [false, false, false, false] }
-    let next = chooseThemedAnagramsRung(entries, state, spent)
+    const random = themedAnagramsSeededRandom('spread')
+    let next = chooseThemedAnagramsRung(entries, state, spent, random)
     while (next !== null && spent.length < 3) {
       spent.push(next)
-      next = chooseThemedAnagramsRung(entries, state, spent)
+      next = chooseThemedAnagramsRung(entries, state, spent, random)
     }
     expect(new Set(spent.map((rung) => rung.entryIndex)).size).toBe(3)
   })

@@ -13,7 +13,7 @@ describe('the phrazle hint adapter', () => {
   // re-ran the chooser to build its expectation would pass on any draw at all -- including one that
   // re-drew on every render, which is the exact failure the seed exists to prevent. These strings
   // are what the shipped seed produces for this id and this phrase.
-  const ABSENT_RUNG = 'The phrase has no A, no G, and no S.'
+  const ABSENT_RUNG = 'The phrase has no G, no M, and no S.'
   const PRESENT_RUNG = 'The phrase contains D, H, and L.'
   const WORD_RUNG = 'Word 2 uses these letters, alphabetized: D, H, L, and O.'
 
@@ -144,7 +144,7 @@ describe('the phrazle hint adapter', () => {
     it('freezes the rung it sold into the board’s own progress', () => {
       expect(decode(buy(1), phrazlePuzzle.data.answer)).toStrictEqual({
         guesses: [],
-        hints: [{ kind: 'absent', letters: 'AGS' }],
+        hints: [{ kind: 'absent', letters: 'GMS' }],
         opened: 1,
       })
     })
@@ -230,7 +230,7 @@ describe('the phrazle hint adapter', () => {
 
       expect(decode(merged, phrazlePuzzle.data.answer)).toStrictEqual({
         guesses: ['HOT HAND'],
-        hints: [{ kind: 'absent', letters: 'AGS' }],
+        hints: [{ kind: 'absent', letters: 'GMS' }],
         opened: 1,
       })
     })
@@ -257,7 +257,7 @@ describe('the phrazle hint adapter', () => {
       expect(decode(phrazleHints.merge('', buy(2)), phrazlePuzzle.data.answer)).toStrictEqual({
         guesses: [],
         hints: [
-          { kind: 'absent', letters: 'AGS' },
+          { kind: 'absent', letters: 'GMS' },
           { kind: 'present', letters: 'DHL' },
         ],
         opened: 2,
