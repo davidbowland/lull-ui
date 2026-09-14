@@ -4,9 +4,9 @@ import {
   cryptogramHintFor,
   MAX_CRYPTOGRAM_RUNG_LENGTH,
   revealedCiphers,
-  seededRandom,
   trueMapping,
 } from './rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // TIME FLIES LIKE AN ARROW under a fixed cipher. Letter counts in the answer:
 // A 3, E 3, I 3, L 2, R 2, N 2, O 2, T 1, M 1, F 1, S 1, K 1, W 1.

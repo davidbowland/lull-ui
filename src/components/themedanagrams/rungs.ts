@@ -7,6 +7,11 @@
 // answers the player has already got, which no generator can enumerate in advance. lull-api ships no
 // themed anagram hints at all; the fixture sweep is test/rungs-sweep.test.ts, which travelled with it.
 //
+// `seededRandom` IS NOT DECLARED HERE ANY MORE. This file held a byte-identical copy of phrazle's,
+// kept apart on an argument that file and this one both carried; it is @utils/seeded-random now, and
+// the reasoning for the merge lives there. The sequence is unchanged, so every golden fixture in this
+// suite still reads what it always did.
+//
 // THE REVEAL AXIS IS POSITION AND NOTHING ELSE. The scramble is on screen, so its length and its
 // letter multiset are already known to the player -- a rung that named either would spend a hint on
 // something they can read off their own board. The only thing left to give is WHICH LETTER GOES
@@ -76,29 +81,6 @@ const POSITIONS: Record<ThemedAnagramsSpentRung['kind'], (last: number) => numbe
  */
 const positionsOf = (kind: ThemedAnagramsSpentRung['kind'], answerLength: number): Set<number> =>
   new Set(POSITIONS[kind](answerLength - 1).filter((index) => index >= 0 && index < answerLength))
-
-/**
- * A deterministic generator: one seed, one sequence, forever.
- *
- * THE THIRD COPY IN THIS REPO, after phrazle's and cryptogram's, and duplicated on the argument
- * cryptogram/rungs.ts already sets out rather than in ignorance of it: the copies do NOT have to
- * agree, because nothing compares one board's sequence with another's, so a fix to one is free to
- * leave the others alone. Sharing it would mean either one board's directory importing another's or
- * the first board-to-shell-utils import in the app, and neither is worth buying for nine lines.
- */
-export const seededRandom = (seed: string): (() => number) => {
-  let state = 0x6d2b79f5
-  for (const character of seed) {
-    state = Math.imul(state ^ character.charCodeAt(0), 2654435761)
-    state >>>= 0
-  }
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let value = Math.imul(state ^ (state >>> 15), 1 | state)
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /** A full Fisher-Yates shuffle. Returns a new array; the input is not touched. */
 const shuffle = (indices: readonly number[], random: () => number): number[] => {

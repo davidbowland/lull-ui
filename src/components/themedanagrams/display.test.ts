@@ -1,5 +1,6 @@
 import { drawnRun, isGivenAway } from './display'
-import { chooseThemedAnagramsRung, pinnedIndices, seededRandom, ThemedAnagramsSpentRung } from './rungs'
+import { chooseThemedAnagramsRung, pinnedIndices, ThemedAnagramsSpentRung } from './rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // MIN_WORD_LENGTH in lull-api's generators/themedanagrams/words.ts is 5, so LADLE is the shortest
 // entry the generator can ship and the one where a third stacked rung would leave a single position

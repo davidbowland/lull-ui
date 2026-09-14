@@ -8,6 +8,11 @@
 // hints at all; the sweep that keeps a broken rule from reaching a player is test/rungs-sweep.test.ts,
 // which travelled with it.
 //
+// `seededRandom` IS NOT DECLARED HERE ANY MORE. This file held a byte-identical copy of phrazle's,
+// kept apart on an argument that file and this one both carried; it is @utils/seeded-random now, and
+// the reasoning for the merge lives there. The sequence is unchanged, so every golden fixture in this
+// suite still reads what it always did.
+//
 // TWO FUNCTIONS, AND THE SPLIT IS THE WHOLE DESIGN. `chooseCryptogramRung` reads live player state
 // and picks; `cryptogramHintFor` is pure in the puzzle and renders a frozen choice. If one function
 // did both, a ladder recomputed on every render would let a player open rung 1, learn something, and
@@ -100,31 +105,6 @@ export const revealedCiphers = (data: CryptogramHintData, spent: CryptogramSpent
 
 const isCorrect = (state: CryptogramPlayerState, truth: Record<string, string>, cipher: string): boolean =>
   state.mapping[cipher] === truth[cipher]
-
-/**
- * A deterministic generator: one seed, one sequence, forever.
- *
- * DUPLICATED FROM PHRAZLE'S rungs.ts RATHER THAN IMPORTED. The original reason was vendoring: this
- * file took no imports at all so that copying it into lull-ui by hand could not produce a broken
- * build. That reason left with the copy. What stands is the reason the duplication was ever SAFE --
- * the two copies do NOT have to agree, because nothing compares a cryptogram's sequence with a
- * phrazle's, so a fix to one is free to leave the other alone. Sharing it now would mean one board's
- * directory importing another's, which is a coupling to buy for nine lines that would not make it
- * safe for a rule two callers read the same answer out of.
- */
-export const seededRandom = (seed: string): (() => number) => {
-  let state = 0x6d2b79f5
-  for (const character of seed) {
-    state = Math.imul(state ^ character.charCodeAt(0), 2654435761)
-    state >>>= 0
-  }
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let value = Math.imul(state ^ (state >>> 15), 1 | state)
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /**
  * The next rung, or null when the ladder is spent or nothing left has anything to say.

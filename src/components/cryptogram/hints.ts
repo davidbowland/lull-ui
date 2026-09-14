@@ -5,11 +5,11 @@ import {
   cryptogramHintFor,
   CryptogramSpentRung,
   revealedCiphers,
-  seededRandom,
   trueMapping,
 } from './rungs'
 import type { HintAdapter } from '@registry'
 import { CryptogramData, HintLadder, Puzzle, PuzzleProgress } from '@types'
+import { seededRandom } from '@utils/seeded-random'
 
 // THE ONLY PLACE THIS TYPE'S CODEC MEETS THE RULE. `mapping.ts` stores a record it never
 // interprets and `rungs.ts` chooses and renders records it never stores; this file is the

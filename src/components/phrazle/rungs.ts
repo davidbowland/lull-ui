@@ -10,8 +10,15 @@ import { STRONGEST_FIRST, WEAKEST_FIRST } from './letter-strengths'
 // `splitPhrase` comes from @rules/is-valid-guess, which lull-api genuinely imports and which
 // therefore stays vendored under the rule in CLAUDE.md. An app-owned file reading a shared rule costs
 // nothing; a shared rule reading an app-owned one would put a file lull-api cannot compile into its
-// bundle. `letter-strengths.ts` is the other import and it is a sibling now -- it travelled here
-// because this was the only file that ever read it.
+// bundle. `letter-strengths.ts` is the other local import and it is a sibling now -- it travelled
+// here because this was the only file that ever read it.
+//
+// `seededRandom` USED TO BE DECLARED IN THIS FILE and is now @utils/seeded-random. It was copied
+// byte-for-byte into cryptogram's rungs.ts and then into themedanagrams', and three copies of nine
+// lines is a pattern rather than a duplication -- the argument for keeping them apart, and why it
+// stopped holding, is recorded on the shared file. Nothing about the sequence changed: all three
+// copies were identical on the day they merged, so every golden fixture in this suite still reads
+// what it always did.
 //
 // It lives here rather than shipping as data on the puzzle because it runs over the guesses a player
 // invents at play time, which no generator can enumerate in advance. lull-api ships no phrazle hints
@@ -85,28 +92,6 @@ const COMMON_PER_RUNG = 2
 // Asserted in the test rather than enforced here: a composer that cannot reach anything unbounded
 // has nothing to reject, and a clamp would truncate a letter list into a false hint.
 export const MAX_PHRAZLE_RUNG_LENGTH = 80
-
-/**
- * A deterministic number source from a string seed -- mulberry32 over a cheap string hash.
- *
- * IT EXISTS FOR REPRODUCIBILITY, NOT FOR STABILITY. A rung is frozen into the board's progress the
- * moment it is bought, so re-opening it never re-draws and does not depend on this. What the seed
- * buys is a fixture sweep whose failures are repeatable and a caller that behaves the same on two
- * machines. The caller seeds it from the puzzle id.
- */
-export const seededRandom = (seed: string): (() => number) => {
-  let state = 0x6d2b79f5
-  for (const character of seed) {
-    state = Math.imul(state ^ character.charCodeAt(0), 2654435761)
-    state >>>= 0
-  }
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let value = Math.imul(state ^ (state >>> 15), 1 | state)
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 const lettersOf = (words: string[]): Set<string> => new Set(words.join(''))
 

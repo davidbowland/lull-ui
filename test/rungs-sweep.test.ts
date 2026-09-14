@@ -3,23 +3,16 @@ import {
   CryptogramSpentRung,
   cryptogramHintFor,
   MAX_CRYPTOGRAM_RUNG_LENGTH,
-  seededRandom as cryptogramSeededRandom,
   trueMapping,
 } from '@components/cryptogram/rungs'
-import {
-  choosePhrazleRung,
-  MAX_PHRAZLE_RUNG_LENGTH,
-  phrazleHintFor,
-  PhrazleSpentRung,
-  seededRandom,
-} from '@components/phrazle/rungs'
+import { choosePhrazleRung, MAX_PHRAZLE_RUNG_LENGTH, phrazleHintFor, PhrazleSpentRung } from '@components/phrazle/rungs'
 import {
   chooseThemedAnagramsRung,
-  seededRandom as themedAnagramsSeededRandom,
   MAX_ANAGRAM_RUNG_LENGTH,
   themedAnagramsHintFor,
   ThemedAnagramsSpentRung,
 } from '@components/themedanagrams/rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // THE ONE PLACE THE THREE HINT LADDERS ARE SWEPT AGAINST PUZZLES lull-api CAN ACTUALLY EMIT. Each
 // board's own rungs.test.ts drives its builder over the states that board reaches; this file drives
@@ -119,7 +112,7 @@ const foldCryptogram = (
   data: { answer: string; ciphertext: string },
   mapping: Record<string, string> = {},
 ): string[] => {
-  const random = cryptogramSeededRandom(data.answer)
+  const random = seededRandom(data.answer)
   const spent: CryptogramSpentRung[] = []
   let next = chooseCryptogramRung(data, { mapping }, spent, random)
   while (next !== null && spent.length <= MAX_LADDER) {
@@ -145,7 +138,7 @@ const foldAnagrams = (answers: string[], solved: boolean[] = answers.map(() => f
   const spent: ThemedAnagramsSpentRung[] = []
   // One seeded stream for the whole fold. The chooser draws among the unsolved entries with the
   // fewest rungs aimed at them, and a sweep whose ladder moved between runs could not pin a cap.
-  const random = themedAnagramsSeededRandom(answers.join('|'))
+  const random = seededRandom(answers.join('|'))
   let next = chooseThemedAnagramsRung(entries, { solved }, spent, random)
   while (next !== null && spent.length <= MAX_LADDER) {
     spent.push(next)
@@ -279,7 +272,7 @@ describe('themed anagrams sweep', () => {
     const spent: ThemedAnagramsSpentRung[] = []
     const entries = ['KETTLE', 'COLANDER', 'TOASTER', 'SPATULA'].map((answer) => ({ answer }))
     const state = { solved: [false, false, false, false] }
-    const random = themedAnagramsSeededRandom('spread')
+    const random = seededRandom('spread')
     let next = chooseThemedAnagramsRung(entries, state, spent, random)
     while (next !== null && spent.length < 3) {
       spent.push(next)

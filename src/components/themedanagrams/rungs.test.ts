@@ -2,10 +2,10 @@ import {
   chooseThemedAnagramsRung,
   MAX_ANAGRAM_RUNG_LENGTH,
   pinnedIndices,
-  seededRandom,
   themedAnagramsHintFor,
   ThemedAnagramsSpentRung,
 } from './rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // Deliberately NOT length-sorted, so an ordinal in a sentence cannot be mistaken for a rank.
 // Lengths: KETTLE 6, COLANDER 8, TOASTER 7, SPATULA 7.

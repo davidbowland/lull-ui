@@ -4,13 +4,13 @@ import { attachHints, decode, decodeHints, encode, Guesses, ThemedAnagramsHintTa
 import {
   AnagramHintEntry,
   chooseThemedAnagramsRung,
-  seededRandom,
   themedAnagramsHintFor,
   ThemedAnagramsPlayerState,
   ThemedAnagramsSpentRung,
 } from './rungs'
 import type { HintAdapter } from '@registry'
 import { HintLadder, Puzzle, PuzzleProgress, ThemedAnagramsData } from '@types'
+import { seededRandom } from '@utils/seeded-random'
 
 // THE ONLY PLACE THIS TYPE'S CODEC MEETS THE RULE. `progress.ts` stores a record it never
 // interprets and `rungs.ts` chooses and renders records it never stores; this file is

@@ -1,4 +1,5 @@
-import { choosePhrazleRung, MAX_PHRAZLE_RUNG_LENGTH, phrazleHintFor, PhrazleSpentRung, seededRandom } from './rungs'
+import { choosePhrazleRung, MAX_PHRAZLE_RUNG_LENGTH, phrazleHintFor, PhrazleSpentRung } from './rungs'
+import { seededRandom } from '@utils/seeded-random'
 
 // RESTATED, NOT IMPORTED, because the gate it names is in the other repo: this is lull-api's
 // generators/phrazle/difficulty.ts MAX_WORD_LETTERS, and this repo has no `@generators/...` to
@@ -295,24 +296,6 @@ describe('escalation', () => {
     const kinds = foldLadder(answer, guesses).map((rung) => rung.kind)
 
     expect(new Set(kinds).size).toBe(kinds.length)
-  })
-})
-
-describe('seededRandom', () => {
-  it('is deterministic for one seed', () => {
-    const left = seededRandom('2026-08-31:phrazle:abcd1234')
-    const right = seededRandom('2026-08-31:phrazle:abcd1234')
-    expect([left(), left(), left()]).toStrictEqual([right(), right(), right()])
-  })
-
-  it('differs between seeds', () => {
-    expect(seededRandom('one')()).not.toBe(seededRandom('two')())
-  })
-
-  it('stays inside the unit interval', () => {
-    const random = seededRandom('seed')
-    const drawn = Array.from({ length: 50 }, () => random())
-    expect(drawn.every((value) => value >= 0 && value < 1)).toBe(true)
   })
 })
 
