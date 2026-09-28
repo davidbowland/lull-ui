@@ -111,11 +111,6 @@ const hasNoCount = (summary: DaySummary): boolean => summary.status === 'notHere
 const countLabelFor = (summary: DaySummary): string =>
   hasNoCount(summary) ? '' : summary.status === 'allSolved' ? 'All solved' : `${summary.solvedCount} solved`
 
-// A day is openable exactly when something in it is unsolved. Read through this in both lists rather
-// than inlined twice: the same day appears in the seven above and in its own month below, and a row
-// that is a control in one list and dead in the other teaches nothing.
-const isOpenable = (summary: DaySummary | undefined): boolean => summary?.status === 'hasUnsolved'
-
 // The spoken half of the tag DayRow draws, and it is a function of its own because BOTH name
 // builders below need it. Today wins when a day is both, and DayRow's visible tag makes the same
 // choice in another file with nothing tying the two together. If they ever disagree the visible word
@@ -321,11 +316,9 @@ export const DayPanel = ({
     // now" would fall through and ask for the day a second time.
     if (request?.date === date && request.state === 'landed') return () => onSelectDay(date)
     // Anything not on the device is ASKED FOR; a day already here OPENS rather than being asked for
-    // twice. And when nothing is left to open in it, it stops being a control, exactly as it does in
-    // the seven-day list above -- the same day appears in both lists and has to press the same way
-    // in each.
-    if (here === undefined) return () => onRequestDay(date)
-    return isOpenable(here) ? () => onSelectDay(date) : undefined
+    // twice -- finished or not, exactly as it does in the seven-day list above. The same day appears
+    // in both lists and has to press the same way in each.
+    return here === undefined ? () => onRequestDay(date) : () => onSelectDay(date)
   }
 
   const requestAnnouncement =
@@ -388,9 +381,11 @@ export const DayPanel = ({
                   isToday={isToday}
                   key={day.date}
                   label={label}
-                  // A day with nothing left to open is not a control. Passing undefined is how that
-                  // is said -- see DayRow, where the branch lives.
-                  onSelect={isOpenable(day) ? () => onSelectDay(day.date) : undefined}
+                  // EVERY DAY ON THE DEVICE OPENS, finished ones included. A finished day used to be
+                  // a dead row on the argument that nothing was left behind it -- but the boards
+                  // are, and a player going back to look at a day they won is using the list for
+                  // exactly what it is for.
+                  onSelect={() => onSelectDay(day.date)}
                 />
               )
             })}

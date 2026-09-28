@@ -683,10 +683,9 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
         ? plateControlRef.current
         : pendingFocus === 'month'
           ? month
-          : // The first day row, and the month field when there is no first day row to land on.
-            // A row with nothing left to open is not a control at all, so on a device whose seven
-            // days are all finished this query finds nothing and the fallback is the only working
-            // control in the panel.
+          : // The first day row, and the month field when there is no first day row to land on --
+            // which, now that a finished day opens like any other, is only a panel with no days in
+            // its list at all.
             (root?.querySelector<HTMLElement>('ul button') ?? month)
     target?.focus()
     setPendingFocus(null)
@@ -904,18 +903,15 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
     // that. shallow: true because there is nothing to re-fetch -- pages/index.tsx has no
     // getStaticProps, so this is a query-only change on the route already mounted.
     void router.push(date === todayDate ? '/' : `/?d=${date}`, undefined, { scroll: false, shallow: true })
-    // THE SAME EXEMPTION requestDay TAKES, one step to the left, and it was missing here. A day
-    // SELECTED from the seven-day list is one the prune can still collect: retentionFloor is
-    // today - 6, so the oldest row in that list sits exactly ON the floor, and the moment the local
-    // date rolls over it is below it. The next run() -- visibilitychange, the resume path -- deletes
-    // it, removePack announces, the shelf re-reads, the day is no longer held, and read() rewrites
-    // the address bar to `/`. The player is looking at 18 August and is put back on today with no
-    // message, having pressed nothing. Reaching a day by naming it in the month field was protected;
-    // reaching the same day by pressing it in the list was not, and it is the ordinary way in.
+    // THE SAME EXEMPTION requestDay TAKES, one step to the left. A day SELECTED from the list is
+    // one the prune can still collect: it keeps the seven best-ranked days, and a FINISHED day ranks
+    // below every unfinished one -- so the day a player just opened to look back at is exactly the
+    // one next in line. The next run() -- visibilitychange, the resume path -- would delete it,
+    // removePack announces, the shelf re-reads, the day is no longer held, and read() rewrites the
+    // address bar to `/`: the player is put back on today with no message, having pressed nothing.
     //
-    // Today is passed too, which costs nothing: today is never below the floor, so the entry is a
-    // no-op the prune would have skipped anyway, and branching on it would be a second rule to keep
-    // in step with retentionFloor.
+    // Today is passed too, which costs nothing: the prune never collects today, and branching on it
+    // would be a second rule to keep in step with that one.
     keepThisSession(date)
     // Set here as well as re-derived from the route change, because the router resolves on a later
     // task and the press has to change the screen now. Both paths read the same date, so the

@@ -1,8 +1,18 @@
 import { act, renderHook } from '@testing-library/react'
 
-import { keepThisSession, retentionFloor, usePrefetch } from './usePrefetch'
+import { keepThisSession, packsToKeep, usePrefetch } from './usePrefetch'
 import { fetchPack } from '@services/lull'
-import { readHints, readPack, readProgress, writeHints, writePack, writeProgress } from '@services/storage'
+import {
+  cachedPackDates,
+  markSolved,
+  readHints,
+  readMeta,
+  readPack,
+  readProgress,
+  writeHints,
+  writePack,
+  writeProgress,
+} from '@services/storage'
 import { incompletePack, pack } from '@test/__mocks__'
 
 // jsdom reports navigator.onLine === true, so an unmocked hook fires real axios
@@ -10,18 +20,118 @@ import { incompletePack, pack } from '@test/__mocks__'
 jest.mock('@services/lull')
 
 // A pack's own `date` must match the key it is stored under -- readPack rejects a
-// mismatch as corrupt, which is what stops a poisoned entry crashing every load.
-const packFor = (date: string) => ({ ...pack, date })
+// mismatch as corrupt, which is what stops a poisoned entry crashing every load. The ids
+// carry the date too, so solving one day's puzzles finishes that day and no other.
+const packFor = (date: string) => ({
+  ...pack,
+  date,
+  puzzles: pack.puzzles.map((puzzle) => ({ ...puzzle, id: `${date}:${puzzle.type}:${puzzle.id.split(':')[2]}` })),
+})
 
 const partialPackFor = (date: string) => ({ ...incompletePack, date })
 
-describe('retentionFloor', () => {
-  it('keeps seven days, counting back from today', () => {
-    expect(retentionFloor('2026-08-18')).toEqual('2026-08-12')
+const store = (...dates: string[]): void => dates.forEach((date) => writePack(date, packFor(date)))
+
+const finish = (...dates: string[]): void =>
+  dates.forEach((date) => {
+    writePack(date, packFor(date))
+    packFor(date).puzzles.forEach((puzzle) => markSolved(puzzle.id))
   })
 
-  it('counts back across a month boundary', () => {
-    expect(retentionFloor('2026-08-02')).toEqual('2026-07-27')
+// Today and the six days before it, none of them finished.
+const WEEK = ['2026-08-18', '2026-08-17', '2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13', '2026-08-12']
+
+describe('packsToKeep', () => {
+  const TODAY = '2026-08-18'
+
+  const keptFrom = (keep: ReadonlySet<string> = new Set()): string[] =>
+    [...packsToKeep(cachedPackDates(), TODAY, new Set(readMeta().solved), keep)].toSorted()
+
+  const setup = (): void => {
+    window.localStorage.clear()
+  }
+
+  it('keeps every pack when there are seven or fewer', () => {
+    setup()
+    store(...WEEK)
+
+    expect(keptFrom()).toEqual(WEEK.toSorted())
+  })
+
+  it('drops the oldest of eight unfinished days', () => {
+    setup()
+    store(...WEEK, '2026-08-11')
+
+    expect(keptFrom()).toEqual(WEEK.toSorted())
+  })
+
+  // AGE IS NOT THE RULE. Three March days fetched for a flight outrank six finished August days,
+  // however much newer the August days are.
+  it('keeps unfinished days ahead of newer finished ones', () => {
+    setup()
+    store(TODAY, '2026-03-14', '2026-03-15', '2026-03-16')
+    finish('2026-08-17', '2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13', '2026-08-12')
+
+    expect(keptFrom()).toEqual([
+      '2026-03-14',
+      '2026-03-15',
+      '2026-03-16',
+      '2026-08-15',
+      '2026-08-16',
+      '2026-08-17',
+      '2026-08-18',
+    ])
+  })
+
+  // THE PLANE. Ten March days fetched the night before; the next open prunes before anyone plays one.
+  it('keeps the newest unfinished days when more were fetched than fit', () => {
+    setup()
+    store(TODAY)
+    store(...Array.from({ length: 10 }, (_, index) => `2026-03-${String(index + 10).padStart(2, '0')}`))
+
+    expect(keptFrom()).toEqual([
+      '2026-03-14',
+      '2026-03-15',
+      '2026-03-16',
+      '2026-03-17',
+      '2026-03-18',
+      '2026-03-19',
+      '2026-08-18',
+    ])
+  })
+
+  // The day the shelf shows by default. Collecting it would move the plate under a player who pressed
+  // nothing, and the next run() would fetch today again only to collect it again.
+  it('keeps today even when it is finished and seven older days are not', () => {
+    setup()
+    finish(TODAY)
+    store('2026-08-17', '2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13', '2026-08-12', '2026-08-11')
+
+    expect(keptFrom()).toContain(TODAY)
+    expect(keptFrom()).toHaveLength(7)
+  })
+
+  it('keeps the newest pack when today has not arrived', () => {
+    setup()
+    finish('2026-08-17')
+    store('2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13', '2026-08-12', '2026-08-11', '2026-08-10')
+
+    expect(keptFrom()).toContain('2026-08-17')
+  })
+
+  it('keeps a pack dated after today', () => {
+    setup()
+    store(...WEEK, '2026-08-11', '2026-08-19')
+
+    expect(keptFrom()).toContain('2026-08-19')
+  })
+
+  it('keeps a day it is told to keep, whatever its rank', () => {
+    setup()
+    store(...WEEK)
+    finish('2026-02-01')
+
+    expect(keptFrom(new Set(['2026-02-01']))).toContain('2026-02-01')
   })
 })
 
@@ -226,7 +336,7 @@ describe('usePrefetch', () => {
     // mid-flight. Nobody is left to receive it, and it is a delete.
     it('skips pruning when the screen goes away mid-request', async () => {
       setup()
-      writePack('2026-08-11', packFor('2026-08-11'))
+      store(...WEEK, '2026-08-11')
       const pending = deferred()
       mockFetchPack.mockReturnValueOnce(pending.promise)
 
@@ -240,10 +350,10 @@ describe('usePrefetch', () => {
     })
 
     // The failure is swallowed on purpose: a day that cannot be fetched is no reason to
-    // leave a week of expired packs on a device with a ~5MB ceiling.
+    // leave an eighth pack on a device with a ~5MB ceiling.
     it('prunes even when the request fails', async () => {
       setup()
-      writePack('2026-08-11', packFor('2026-08-11'))
+      store(...WEEK, '2026-08-11')
       mockFetchPack.mockRejectedValueOnce(new Error('Network Error'))
 
       await renderPrefetch()
@@ -270,25 +380,40 @@ describe('usePrefetch', () => {
   })
 
   describe('pruning', () => {
-    it('drops a pack older than the retention window', async () => {
+    it('drops the eighth pack', async () => {
       setup()
-      writePack('2026-08-11', packFor('2026-08-11'))
+      store(...WEEK, '2026-08-11')
 
       await renderPrefetch()
 
       expect(readPack('2026-08-11')).toBeNull()
     })
 
-    it('keeps the oldest pack still inside the window', async () => {
+    it('keeps seven packs', async () => {
       setup()
-      writePack('2026-08-12', packFor('2026-08-12'))
+      store(...WEEK, '2026-08-11')
 
       await renderPrefetch()
 
-      expect(readPack('2026-08-12')).toEqual(packFor('2026-08-12'))
+      expect(cachedPackDates()).toEqual(WEEK)
     })
 
-    // The retention window is not the fetch window. Only today is ever requested, so a
+    // THE PLANE. Days fetched on purpose used to be deleted by the next open at the gate: an age rule
+    // collected everything older than today - 6, and the session exemption had died with the page.
+    // Unfinished days now outrank finished ones, whatever their age.
+    it('keeps unfinished older days over finished recent ones', async () => {
+      setup()
+      store('2026-08-18', '2026-03-14', '2026-03-15')
+      finish('2026-08-17', '2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13', '2026-08-12')
+
+      await renderPrefetch()
+
+      expect(readPack('2026-03-14')).toEqual(packFor('2026-03-14'))
+      expect(readPack('2026-03-15')).toEqual(packFor('2026-03-15'))
+      expect(readPack('2026-08-12')).toBeNull()
+    })
+
+    // The retention count is not the fetch window. Only today is ever requested, so a
     // rule derived from what this run fetched would leave the device holding a single day
     // after every open -- and take the shelf's fallback to "the most recent pack on the
     // device" down with it.
@@ -301,31 +426,27 @@ describe('usePrefetch', () => {
       expect(readPack('2026-08-15')).toEqual(packFor('2026-08-15'))
     })
 
-    // Nothing fetches tomorrow any more, but a device that already holds it keeps it: an
-    // age rule never reaches a date newer than today. A rule that pruned anything outside
-    // the seven dates counted back from today would.
+    // Nothing fetches tomorrow any more, but a device that already holds it keeps it.
     it("keeps tomorrow's pack when the device already has one", async () => {
       setup()
-      writePack('2026-08-19', packFor('2026-08-19'))
+      store(...WEEK, '2026-08-19')
 
       await renderPrefetch()
 
       expect(readPack('2026-08-19')).toEqual(packFor('2026-08-19'))
     })
 
-    // THE AGE RULE NAMES, PRECISELY, THE DAYS THIS FEATURE EXISTS TO REACH. A player who asks for
-    // 14 March waits thirty seconds for a pack five months past the floor. run() fires on open,
-    // reconnect and RESUME, and the hook is mounted in _app for the life of the page -- so
-    // `abandoned` is never true in practice, and backgrounding the app to read a text was enough to
-    // delete the day out from under the screen showing it. The shelf then found it no longer held,
-    // rewrote the address bar to `/`, and bounced the player to today with no message.
+    // THE RANKING CAN STILL NAME THE DAY ON SCREEN. A finished day opened to look back at ranks below
+    // every unfinished one, and run() fires on open, reconnect and RESUME -- so backgrounding the app
+    // to read a text would delete the day out from under the screen showing it.
     //
     // The date here is used by no other case in this file, deliberately: the exemption is a
     // module-level Set with the session's lifetime, so a date one test exempts stays exempt for the
     // rest of the file, and a shared fixture date would make these cases depend on their order.
-    it('keeps a day this session went and got, however far past the floor it is', async () => {
+    it('keeps a day this session went and got, however it ranks', async () => {
       setup()
-      writePack('2026-03-14', packFor('2026-03-14'))
+      store(...WEEK)
+      finish('2026-03-14')
       keepThisSession('2026-03-14')
 
       await renderPrefetch()
@@ -336,9 +457,10 @@ describe('usePrefetch', () => {
     // The other half: the exemption covers the day that was asked for and nothing beside it. Without
     // this, "keeps a day this session went and got" would still pass against a prune that had simply
     // stopped working.
-    it('collects a day of the same age that nobody asked for', async () => {
+    it('collects a day of the same rank that nobody asked for', async () => {
       setup()
-      writePack('2026-03-15', packFor('2026-03-15'))
+      store(...WEEK)
+      finish('2026-03-15')
 
       await renderPrefetch()
 

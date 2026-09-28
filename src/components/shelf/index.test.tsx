@@ -1888,16 +1888,15 @@ describe('Shelf, the states behind the pick', () => {
     )
   }
 
-  // The same fallback the pool notice's primary gets, reached from the plate instead. Every day on
-  // the device is finished, so no row is a control and the query for one finds nothing -- without
-  // the fallback the keyboard would go nowhere at all and stay on the control that was pressed.
-  it('lands the keyboard on the month control when no day row can be opened', async () => {
+  // A finished day opens like any other, so a device whose every day is finished still lands the
+  // keyboard on its first day row rather than skipping to the month field.
+  it('lands the keyboard on a finished day row', async () => {
     const user = userEvent.setup({ delay: null })
     setupShelf()
 
     await user.click(screen.getByRole('button', { name: 'Pick another day' }))
 
-    expect(screen.getByRole('combobox', { name: 'Month' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: /all solved\.$/ })).toHaveFocus()
   })
 
   // IT NEVER NAMES A PUZZLE IT CANNOT OPEN. The shelf asks the registry and the dictionary, and
@@ -1958,15 +1957,14 @@ describe('Shelf, the states behind the pick', () => {
     expect(await screen.findByText('From Saturday 14 March. The gentlest one you have left there.')).toBeInTheDocument()
   })
 
-  // The card's own way into the panel. Here there IS a day row to land on, so the keyboard goes to
-  // the first one rather than to the month field -- the same press, a different destination,
-  // decided by whether anything in the panel can be opened.
+  // The card's own way into the panel lands on the first day row -- today, finished or not, since a
+  // finished day opens like any other.
   it('opens the panel on the day rows from the card', async () => {
     const user = userEvent.setup({ delay: null })
     setupShelf({ packs: [pack, dayOf('2026-08-17', 1)] })
 
     await user.click(screen.getByRole('button', { name: 'Pick another' }))
 
-    expect(screen.getByRole('button', { name: /Mon 17 Aug/ })).toHaveFocus()
+    expect(screen.getByRole('button', { name: /Tue 18 Aug/ })).toHaveFocus()
   })
 })

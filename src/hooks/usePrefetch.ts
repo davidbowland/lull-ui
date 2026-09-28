@@ -1,43 +1,69 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { fetchPack } from '@services/lull'
-import { cachedPackDates, readPack, removePack } from '@services/storage'
+import { cachedPackDates, readMeta, readPack, removePack } from '@services/storage'
 import { PackDate } from '@types'
+import { summarizeDay } from '@utils/day-summary'
 import { toPackDate } from '@utils/pack-dates'
 
-// Seven days of packs are kept on the device, whether or not this run fetched them. This
-// is emphatically NOT the fetch window: exactly one date is ever requested, so a pruning
+// Seven packs are kept on the device, whether or not this run fetched them. This is
+// emphatically NOT the fetch window: exactly one date is ever requested, so a pruning
 // rule derived from what was asked for would wipe the device down to a single day on
-// every open. Prune on age, never on what this run went and got.
-const RETENTION_WINDOW = 7
+// every open.
+//
+// SEVEN PACKS, NOT SEVEN DAYS. This was an age rule -- anything older than today - 6 went --
+// and it deleted the days a player had gone and fetched on purpose. Ask for a week of March
+// before a flight, close the app, open it once more at the gate while still online, and
+// run() collected all of it: the session exemption below had died with the page, and every
+// March day was months past the floor. The plane had nothing on it.
+const RETENTION_COUNT = 7
 
-// Seeded from the date, not from a clock, so the window always contains the day it is
-// counted back from. Parsed field by field rather than through Date(string), which
-// reads a bare date as UTC midnight -- and lands on yesterday everywhere west of it.
-const recentPackDates = (count: number, from: PackDate): PackDate[] => {
-  const [year, month, day] = from.split('-').map(Number)
-  const cursor = new Date(year, month - 1, day)
-  const dates: PackDate[] = []
-  for (let index = 0; index < count; index += 1) {
-    dates.push(toPackDate(cursor))
-    cursor.setDate(cursor.getDate() - 1)
-  }
-  return dates
+// WHICH SEVEN: the days with something left to play first, then the newest. A finished day is
+// the cheapest thing on the device to lose -- its solves live in lull:meta and it re-downloads
+// the moment it is opened -- and an unfinished one is the reason anybody fetched it. Recency
+// breaks the tie within each group, so a device full of unfinished days keeps the latest ones.
+//
+// `status !== 'allSolved'` rather than `=== 'hasUnsolved'`, through summarizeDay so "finished"
+// means what it means on the day panel: a pack still filling in is never finished, and a pack
+// readPack refuses is 'notHere', which ranks it with the unfinished days. It is about to be
+// discarded by readPack anyway; this rule has no business deciding that.
+//
+// Exported so the rule is testable without driving the hook.
+export const packsToKeep = (
+  cached: PackDate[],
+  localToday: PackDate,
+  solved: ReadonlySet<string>,
+  keep: ReadonlySet<PackDate> = new Set(),
+): Set<PackDate> => {
+  // Newest first, whatever order the caller handed over.
+  const past = cached.filter((date) => date <= localToday).toSorted((first, second) => (first < second ? 1 : -1))
+  const isFinished = (date: PackDate): boolean => summarizeDay(date, readPack(date), solved).status === 'allSolved'
+  const older = past.slice(1)
+  const ranked = [
+    // The day the shelf shows by default -- today, or the newest pack before it when today has not
+    // arrived -- ranks first whether or not it is finished. Collecting it would move the plate out
+    // from under a player who pressed nothing, and on the next open run() would fetch today again
+    // only to collect it again.
+    ...past.slice(0, 1),
+    ...older.filter((date) => !isFinished(date)),
+    ...older.filter(isFinished),
+  ]
+
+  return new Set([
+    ...ranked.slice(0, RETENTION_COUNT),
+    // A date newer than today is one no rule here has reached yet; west of UTC it is tomorrow's
+    // pack, on the device on purpose.
+    ...cached.filter((date) => date > localToday),
+    ...cached.filter((date) => keep.has(date)),
+  ])
 }
 
-// The oldest date the device keeps. Anything strictly older goes. Exported so the rule
-// is testable without driving the hook.
-export const retentionFloor = (localToday: PackDate): PackDate =>
-  recentPackDates(RETENTION_WINDOW, localToday)[RETENTION_WINDOW - 1]
-
-// THE DAYS THIS SESSION WENT AND GOT, exempt from the age rule below.
+// THE DAYS THIS SESSION WENT AND GOT, exempt from the ranking above.
 //
-// An age rule was the whole story while nothing could reach a day older than the window: every
-// cached pack was one this app had put there itself, within the last seven days, so "older than the
-// floor" and "nobody wants this" were the same sentence. Reaching an earlier day breaks that
-// identity outright. A player who names 14 March and waits thirty seconds for it has a pack that is
-// five months past the floor and is the ONE pack on the device they are looking at -- so the rule
-// that collects by age now names, precisely, the set of days this feature exists to reach.
+// The ranking keeps seven, and the day on screen need not be one of them: open a finished day to look
+// back at it and it ranks below every unfinished one, or fetch an eighth unfinished day and the
+// oldest of them falls off the end. Either way it is the ONE pack on the device the player is
+// looking at.
 //
 // It is not a corner. run() fires on open, reconnect and RESUME, and the hook is mounted in _app for
 // the life of the page, so `abandoned` is never true in practice: background the app to read a text,
@@ -51,8 +77,8 @@ export const retentionFloor = (localToday: PackDate): PackDate =>
 // stands: a key that outlives the tab turns "I looked at March once" into a permanent lease on the
 // budget, needs its own collector to ever give the space back, and hands the next reader a second
 // retention rule to reconcile with this one. A module-level Set is bounded by the page: it is empty
-// on the next load, so a day reached yesterday is collected on tomorrow's first run exactly as it
-// would have been, and it can only grow by one entry per thirty-second round trip a human sat
+// on the next load, so a day reached yesterday is ranked on tomorrow's first run like any other, and
+// it can only grow by one entry per thirty-second round trip a human sat
 // through. Nothing else may write to it -- see keepThisSession, which is the only door in.
 const requestedThisSession = new Set<PackDate>()
 
@@ -67,8 +93,9 @@ export const keepThisSession = (date: PackDate): void => {
 // accumulates ~1KB a day. Packs are the one family whose per-day weight is measured in kilobytes. A
 // five-puzzle day with its hint ladders measures ~2.5KB of JSON against the fixtures in
 // test/__mocks__.ts, and localStorage stores UTF-16, so it is ~5KB on the device and a year is
-// ~1.8MB against a ~5MB ceiling. Dropping one costs nothing a player notices: reaching a past day
-// needs a connection anyway, so the pack is re-requested the moment it is wanted.
+// ~1.8MB against a ~5MB ceiling. Dropping a FINISHED one costs nothing a player notices: it is
+// re-requested the moment it is wanted. Dropping an unfinished one is not free -- offline, it is the
+// day they meant to play -- which is why the ranking above keeps those first.
 //
 // Keep the record, drop the content: solved ids stay in lull:meta, a few bytes each, so an old
 // solved puzzle still shows as solved and re-downloads if opened.
@@ -96,14 +123,13 @@ export const keepThisSession = (date: PackDate): void => {
 // So an old pack is dropped and re-requested if the day is opened again, while everything the PLAYER
 // put there survives.
 //
-// Age AND the session exemption, never age alone -- see requestedThisSession above for why an age
-// rule stopped being the whole story the moment a day older than the window became reachable.
+// The ranked seven AND the session exemption -- see requestedThisSession above for why the day on
+// screen has to survive whatever the ranking says about it.
 const pruneOutsideWindow = (localToday: PackDate): void => {
-  const floor = retentionFloor(localToday)
+  const cached = cachedPackDates()
+  const keep = packsToKeep(cached, localToday, new Set(readMeta().solved), requestedThisSession)
 
-  cachedPackDates()
-    .filter((date) => date < floor && !requestedThisSession.has(date))
-    .forEach(removePack)
+  cached.filter((date) => !keep.has(date)).forEach(removePack)
 }
 
 // THE DAYS ON THIS DEVICE THAT ARE STILL MISSING PUZZLES, today excluded because the line above the
@@ -135,7 +161,7 @@ const incompleteCachedDates = (except: PackDate): PackDate[] =>
 // individually because the loop would otherwise abandon every day behind the first rejection --
 // and a dropped connection rejects the first one.
 //
-// The count bounds itself: the prune above has already run, so this walks the retention window plus
+// The count bounds itself: the prune above has already run, so this walks the seven kept packs plus
 // whatever days this session went and got, and only the ones still short. On an ordinary day it is
 // empty and costs nothing.
 const topUpIncomplete = async (except: PackDate): Promise<void> => {

@@ -116,14 +116,17 @@ describe('DayPanel', () => {
     expect(onSelectDay).toHaveBeenCalledWith('2026-08-24')
   })
 
-  // "All solved" is the same series as "3 solved" and reports a win. The row stops being a control
-  // because there is nothing behind it -- see DayRow.
-  it('reports a finished day as all solved and does not make it a control', () => {
-    renderPanel()
+  // "All solved" is the same series as "3 solved" and reports a win. The day still opens: a player
+  // going back to look at a day they finished is using the list for what it is for.
+  it('reports a finished day as all solved and still opens it', async () => {
+    const user = userEvent.setup({ delay: null })
+    const onSelectDay = jest.fn()
+    renderPanel({ onSelectDay })
 
-    expect(screen.getByText('Fri 21 Aug — all solved.')).toBeInTheDocument()
     expect(screen.getAllByText('All solved')).toHaveLength(2)
-    expect(screen.queryByRole('button', { name: /Fri 21 Aug/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Fri 21 Aug — all solved.' }))
+
+    expect(onSelectDay).toHaveBeenCalledWith('2026-08-21')
   })
 
   // A day that IS on the device and has been left alone keeps its zero. It is a fact about the
@@ -634,33 +637,33 @@ describe('DayPanel, older days', () => {
     expect(onRequestDay).not.toHaveBeenCalled()
   })
 
-  // The same day, in two lists, one press behavior. A finished day is not a control in the seven
-  // above, so it must not become one in its own month -- and a row that is pressable in one list and
-  // dead in the other teaches nothing about either.
-  it('leaves a finished day dead in the month list too', async () => {
+  // The same day, in two lists, one press behavior: a finished day opens in the seven above, so it
+  // opens in its own month too -- and is not asked for a second time.
+  it('opens a finished day from the month list too', async () => {
     const user = userEvent.setup({ delay: null })
-    renderPanel()
+    const onRequestDay = jest.fn()
+    const onSelectDay = jest.fn()
+    renderPanel({ onRequestDay, onSelectDay })
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Month' }), '2026-08')
+    await user.click(screen.getByRole('button', { name: 'Fri 21 Aug, here — all solved. Already on this device.' }))
 
-    expect(screen.getAllByText('Fri 21 Aug, here — all solved. Already on this device.')).toHaveLength(1)
-    expect(screen.queryByRole('button', { name: /Fri 21 Aug/ })).not.toBeInTheDocument()
+    expect(onSelectDay).toHaveBeenCalledWith('2026-08-21')
+    expect(onRequestDay).not.toHaveBeenCalled()
   })
 
-  // TODAY, ONCE TODAY IS FINISHED, is the state DayRow says matters most: a dead row that still has
-  // to announce which day it is. aria-current rides the <li> on that branch, because the row element
-  // inside it is a plain <div> whose generic role makes exposure of any ARIA state on it a coin
-  // flip. Nothing looked at this row before, in either list.
-  it('marks today in the month list even once it is dead', async () => {
+  // TODAY, ONCE TODAY IS FINISHED, still says which day it is. aria-current rides the button.
+  it('marks today in the month list once it is finished', async () => {
     const user = userEvent.setup({ delay: null })
     renderPanel()
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Month' }), '2026-08')
     const august = within(screen.getByRole('list', { name: 'August 2026' }))
 
-    expect(august.getByText('Tue 25 Aug, today — all solved.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Tue 25 Aug, today — all solved.' })).not.toBeInTheDocument()
-    expect(august.getByText('Tue 25 Aug, today — all solved.').closest('li')).toHaveAttribute('aria-current', 'date')
+    expect(august.getByRole('button', { name: 'Tue 25 Aug, today — all solved.' })).toHaveAttribute(
+      'aria-current',
+      'date',
+    )
   })
 })
 
