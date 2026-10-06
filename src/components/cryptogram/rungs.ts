@@ -33,14 +33,11 @@ export interface CryptogramPlayerState {
 
 const RUNG_COUNT = 3
 
-// This type's own cap, and it is 99 rather than the 80 every other hint on this wire takes, because
-// 80 was a claim about a bound that does not exist. CRYPTOGRAM HAS NO PER-WORD LENGTH GATE:
-// services/phrases.ts bounds the whole text at MAX_TEXT_LENGTH 80 with MIN_WORDS 2 and
-// ALLOWED_CHARACTERS of letters and spaces, and cryptogram/difficulty.ts adds only letter counts --
-// 12 or more letters, 6 to 20 distinct. So the longest legal word is 80 less a space and a
-// one-letter second word: 78 letters, and 'ABCDEF' repeated thirteen times clears every one of
-// those gates. The frame "One of the words is " plus the period is 21 characters, so the longest
-// sentence this composer can produce is 99, and a cap of 80 was one a legal puzzle could breach.
+// This type's own cap. lull-api gates every cryptogram word at 9 letters, so with the frame "One of
+// the words is " plus the period (21 characters) the longest sentence this composer produces is 30.
+// The cap stays at 99 -- the 78-letter word a 100-character answer could hold, plus the frame --
+// because the word gate is a fact about the OTHER repo, and a cap that only holds while it does is
+// one a stale or hand-built pack could breach.
 //
 // NOT CLAMPED, deliberately. Truncating a word sentence produces a hint that names a word the
 // puzzle does not contain, which is worse than a long one. Asserted in the test at the exact

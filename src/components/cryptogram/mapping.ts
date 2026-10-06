@@ -63,9 +63,9 @@ const RUNG_SEPARATOR = ','
 // the second needs a ciphertext, and `decodeHints` has none -- the same split phrazle's progress.ts
 // makes between `isSpentRung` and `withinAnswer`.
 //
-// The index is bounded at two digits here because lull-api caps a cryptogram phrase at 80
-// characters, so the most words a legal puzzle can hold is 40. That is a fact about the OTHER repo,
-// which is why this bound is generous rather than exact -- the exact one is `withinPuzzle`.
+// The index is bounded at two digits here because lull-api caps a cryptogram sentence at 16 words.
+// That is a fact about the OTHER repo, which is why this bound is generous rather than exact -- the
+// exact one is `withinPuzzle`.
 const RUNG = /^(?:L[A-Z]|W\d{1,2})$/
 // The rule's own ceiling, restated rather than imported: `RUNG_COUNT` is module-private in rungs.ts
 // beside it, and a test that imported the bound it checks against would assert the cap against

@@ -227,7 +227,7 @@ export interface AnagramEntry {
 // The theme is ALWAYS SHOWN, at every difficulty. Hiding it is the Backlog's Scrambled Connections
 // under another type's name, and mechanically it converts a one-answer puzzle into a several-answer
 // one -- which breaks the Tier A claim rather than raising a difficulty. So there is no `category`
-// field here and this type never imports generators/category-visibility.ts.
+// field here.
 //
 // RENDERED IN WIRE ORDER, and the reason is now the device's rather than the wire's. The ladder used
 // to ship ordinals that indexed this array, so a board that sorted entries by length -- the obvious
@@ -382,9 +382,8 @@ export interface Phrase {
 // type can have a perfectly good single answer that is an ordinary English word, which belongs in an
 // adjudication but not in a list titled "phrases not to reuse".
 //
-// `category` is optional because difficulty HIDES it -- see generators/category-visibility.ts. It is
-// omitted, never nulled: dynamodb.ts stores the pack as JSON.stringify, so an absent key simply
-// disappears from the payload.
+// `category` ships at every difficulty. It is optional because a pack stored before 2026-10-06 omits
+// it at difficulties 3 and 5, and an absent key is how that pack arrives -- never a null.
 //
 // IT NO LONGER EXTENDS HintedPuzzleData, and that is the change that took cryptogram and phrazle
 // hints off the wire. Drawing a phrase and shipping the phrase's ladder were always separate
@@ -428,7 +427,7 @@ export interface CryptogramData extends PhrasePuzzleData {
 
 // TWO fields, both of them inherited, and its smallness is the point: `answer` and `category?` come
 // from PhrasePuzzleData, which is this type declaring in the type system what it is -- the same
-// phrase in a third costume, exactly as generators/category-visibility.ts already says. An ALIAS
+// phrase in a third costume. An ALIAS
 // rather than an `extends` with an empty body, which is the same type carrying a lint error.
 //
 // IT WAS THREE FIELDS. `hints` left with PhrasePuzzleData's ladder, and this type's went two ways at

@@ -10,6 +10,23 @@ describe('CryptogramBoard', () => {
   const onProgress = jest.fn()
   const onSolved = jest.fn()
 
+  // JSDOM IMPLEMENTS NO SCROLLING AT ALL, so Element.prototype.scrollIntoView does not exist and the
+  // caret effect would throw on its first move. THE DELETE IS NOT OPTIONAL: `clearMocks` clears the
+  // calls and knows nothing about an assignment to a prototype.
+  const scrollIntoView = jest.fn()
+
+  beforeAll(() => {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+      writable: true,
+    })
+  })
+
+  afterAll(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  })
+
   // One session per test, never the default export's own. `userEvent.click(...)` off the default
   // export is the v13 API: under v14 it builds a throwaway session with the default 0ms advance
   // timer, which puts a real setTimeout between every event of every interaction. This file drives
@@ -165,7 +182,7 @@ describe('CryptogramBoard', () => {
       expect(screen.getByText('0 of 9 squares filled')).toBeInTheDocument()
     })
 
-    it('leaves the category out of the sign line when difficulty hides it', () => {
+    it('leaves the category out of the sign line on an older pack that has none', () => {
       setup(hiddenCategoryCryptogram)
 
       expect(screen.queryByText('Saying')).not.toBeInTheDocument()
@@ -1114,6 +1131,21 @@ describe('CryptogramBoard', () => {
   // while focus was inside the phrase -- and every pad key deliberately keeps focus when pressed,
   // so the first tap on a letter, Undo or Delete moved focus out of the board for good and typing
   // silently stopped working from then on.
+  // A sentence wraps below the fold on a phone, and a pad key keeps focus on itself, so the scroll is
+  // the only thing that shows the player where the caret went.
+  describe('keeping the caret in view', () => {
+    it('scrolls the square the caret moves to into view after a pad press', async () => {
+      const user = setup()
+
+      await user.click(square('Cipher V, letter 1 of 9, empty'))
+      await user.click(key('A, not used yet'))
+
+      expect(key('A, on cipher V')).toHaveFocus()
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(square('Cipher Z, letter 2 of 9, empty'))
+    })
+  })
+
   describe('typing from outside the board', () => {
     it('assigns a letter typed after a pad key took focus', async () => {
       const user = setup()

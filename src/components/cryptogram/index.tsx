@@ -31,13 +31,13 @@ import { CryptogramData, PuzzleComponentProps } from '@types'
 
 // How many moves Undo can walk back. A cap rather than an unbounded list because the history is
 // snapshots of a mapping and the board is open for as long as the player leaves the tab open --
-// but the number is generous rather than defensive: 50 moves is longer than any cryptogram in this
-// product takes to solve, so in practice the cap is never the thing that stops an undo. What stops
-// it is arriving back at the board you started with.
+// but the number is generous rather than defensive. A sentence can hold all 26 cipher letters, so a
+// clean solve is up to 26 moves, and 100 covers every letter placed, changed and erased again with
+// room to spare. A snapshot is at most 26 short strings, so the whole history stays a few kilobytes.
 //
 // The oldest entry is dropped, never the newest: the whole value of a history is that the recent
 // end of it is intact.
-const UNDO_DEPTH = 50
+const UNDO_DEPTH = 100
 
 // px, between letters INSIDE a word, against the gap between words. Word boundaries come from
 // proximity rather than from a box, and the ratio is what carries them: equal gaps plus a bracket
@@ -155,7 +155,14 @@ const LOCKED_ELSEWHERE = (cipher: string, plain: string): string =>
 // size it wanted to be. Split, the guess gets the whole square and the cipher letter gets a line of
 // its own -- and the caption row is what makes the phrase scannable, because the ciphertext now
 // reads straight across as a line of text rather than as a footnote inside each box.
+//
+// The scroll margins are for the caret effect's `scrollIntoView`, and they sit on the square because
+// the square is what it targets. The sign row is `sticky top-0` inside the scrollport, so it covers
+// the top 34px of it plus its two 1px rules, and `block: 'nearest'` knows nothing about that: 36px
+// on top keeps a square from landing under it. The 14px below is the caption, CAPTION_GAP plus a line
+// of at most 10px, so the cipher letter comes into view with its square. Neither margin moves layout.
 const SQUARE =
+  'scroll-mt-[36px] scroll-mb-[14px] ' +
   'flex cursor-pointer items-center justify-center rounded-[var(--lull-r-sm)] ' +
   'border border-[var(--lull-rule)] bg-[var(--lull-raised)] leading-none text-[var(--lull-ink)] ' +
   'shadow-[inset_0_1px_1px_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.09)] ' +
@@ -225,9 +232,9 @@ const PLATE =
 // ground, hairlines and gutter -- because the writing bench and the guess bench draw the same one,
 // and a band that three benches share is the grammar rather than a string copied four times.
 //
-// Sticky, so the two facts it holds do not scroll away with the phrase. The board is the one band
-// that flexes and therefore the one that scrolls, and on a short window a three-line phrase
-// scrolls -- taking "10 of 22 squares filled" off the top of the screen with it, which is the
+// Sticky, so the two facts it holds do not scroll away with the sentence. The board is the one band
+// that flexes and therefore the one that scrolls, and on a phone a sentence of several rows always
+// scrolls -- which would take "10 of 52 squares filled" off the top of the screen with it, the
 // number a player checks most and the only place it is written.
 const SIGN_ROW = 'lull-signrow sticky top-0'
 
@@ -278,8 +285,7 @@ interface Square {
 // A SNAPSHOT of the whole mapping rather than the letter that was assigned, because restoring
 // covers clears, steals and overwrites with one rule where re-clearing the assigned letter could
 // only walk back an assignment -- a run emptied by the eraser was gone for good. A mapping is at
-// most 26 short strings, and the cap is 50, so the whole history is smaller than the phrase it
-// belongs to.
+// most 26 short strings and the cap is UNDO_DEPTH, so the history stays small.
 //
 // The caret comes with it because undoing a move and being left somewhere else is not undoing the
 // move. Type four letters, notice the second was wrong, and four presses of Undo should put both
@@ -375,14 +381,22 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // a ref array, and `hasMoved` is the rule that focus is never seized before the player has asked
   // for it. Collapsing them would make the rule depend on the type.
   //
-  // And it stands down entirely for one move when a pad key asked it to. `skipFocus` is CAPTURED
-  // before it is reset: resetting first makes the flag always false where it is read, which makes
-  // the whole gate a no-op. Resetting before the early returns is what keeps it from stranding.
+  // Focus stands down for one move when a pad key asked it to. `skipFocus` is CAPTURED before it is
+  // reset: resetting first makes the flag always false where it is read, which makes the whole gate a
+  // no-op. Resetting before the early return is what keeps it from stranding.
+  //
+  // THE SCROLL DOES NOT STAND DOWN WITH IT. A sentence wraps to several rows and the board band shows
+  // little more than one of them on a phone, so the caret routinely moves to a square below the
+  // fold -- and a pad press, which keeps focus on the key, is exactly the move that leaves nothing
+  // else to bring it back. Scrolling moves no focus, so it runs on every cursor change. `nearest`
+  // does nothing when the square is already in view.
   useEffect(() => {
     const skip = skipFocus.current
     skipFocus.current = false
-    if (cursor === null || !hasMoved.current || skip) return
-    squareRefs.current[cursor]?.focus()
+    if (cursor === null || !hasMoved.current) return
+    const target = squareRefs.current[cursor]
+    target?.scrollIntoView({ block: 'nearest' })
+    if (!skip) target?.focus()
   }, [cursor])
 
   // WHAT A RUNG HAS HANDED OVER, READ OFF THE LIVE `progress` PROP ON EVERY RENDER -- never off the
@@ -1155,7 +1169,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
         className="lull-board flex flex-col overflow-x-hidden"
       >
         {/* The sign over the working surface, read the way a wayfinding sign is read: what this is
-            on the left, where you stand on the right. Both are facts about the phrase and neither
+            on the left, where you stand on the right. Both are facts about the sentence and neither
             is a heading -- the board already sits under the page's h1, and a lone <h2> above it
             would buy a heading level for a word. */}
         <p className={SIGN_ROW}>
@@ -1163,7 +1177,8 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
             <span className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</span>
           )}
           {/* Last, and pushed right by justify-between whether or not a category stands opposite
-              it: a hidden category leaves the tally where it was rather than sliding it left. */}
+              it: a pack stored before categories shipped at every difficulty has none, and the
+              tally stays where it is rather than sliding left. */}
           <span className="ms-auto shrink-0">{tally}</span>
         </p>
 

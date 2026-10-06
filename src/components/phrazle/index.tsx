@@ -475,7 +475,7 @@ export const PhrazleBoard = ({
   progress,
   puzzle,
 }: PuzzleComponentProps<PhrazleData>): React.ReactNode => {
-  const { answer } = puzzle.data
+  const { answer, category } = puzzle.data
 
   // THE ONE VALUE STILL READ OFF THE PACK, and it is guarded here because the worst case latches:
   // the shell persists progress before this renders, so a throw during render throws at mount
@@ -1049,14 +1049,20 @@ export const PhrazleBoard = ({
           so a screen reader announces the landmark rather than an unlabeled box. */}
       <section aria-label="Phrazle" className="lull-board flex flex-col" tabIndex={0}>
         {/* Sticky, because the count is the one number a player checks constantly and the grid is
-            the one band that scrolls. Phrazle ships no category, ever, so the left slot is genuinely
-            empty and `ms-auto` handles it -- the same code path the cipher bench's hidden-category
-            difficulties take. */}
+            the one band that scrolls. The category stands on the left, read the way the cipher
+            bench reads it: what this phrase IS opposite where the player stands. A pack stored
+            before Phrazle shipped a category has none, so the slot is empty and `ms-auto` keeps the
+            count on the right either way. */}
         {/* `Guess 7`, never `Guess 7 of N`. There is no N: the board grows a row whenever the
             player needs one, so an "of" would have to name either a limit that does not exist or the
             row count the player can already see, which counts nothing. What is left is the one
             number that still means something -- how many attempts this phrase has taken. */}
-        <p className={SIGN_ROW}>{drawable && <span className="ms-auto shrink-0">{`Guess ${spent}`}</span>}</p>
+        <p className={SIGN_ROW}>
+          {category !== undefined && (
+            <span className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</span>
+          )}
+          {drawable && <span className="ms-auto shrink-0">{`Guess ${spent}`}</span>}
+        </p>
 
         <div className={PLATE} ref={plateRef}>
           {/* SIBLINGS of the live region and in another band entirely, never inside it: text present

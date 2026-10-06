@@ -126,8 +126,8 @@
        -----------------
                     868
 
-     460 for the board because the board has to hold two things at once. The phrase is about 250px
-     on a desktop measure, and an open hint sheet is drawn upward from the hint bar and is at most
+     460 for the board because the board has to hold two things at once. A cryptogram sentence is
+     about 180-310px on a desktop measure, and an open hint sheet is drawn upward from the hint bar and is at most
      420 but typically 170 — so 460 is what keeps a three-rung ladder sitting UNDER the squares
      rather than over them, which is the whole reason the cap is a number rather than `none`.
 
@@ -266,8 +266,9 @@ body {
 
    The sign row belongs to the PUZZLE COMPONENT rather than to this file, because everything on it
    is read off the puzzle's own data, which the shell deliberately cannot see. It holds up to two
-   facts — a category on the left and how far the board has got on the right — and the guess bench
-   ships no category, so its left slot is simply empty. Its band is `.lull-signrow`. */
+   facts — a category on the left and how far the board has got on the right. A pack stored
+   before every difficulty shipped a category leaves the left slot empty. Its band is
+   `.lull-signrow`. */
 .lull-title {
   flex: 0 0 auto;
   order: 2;

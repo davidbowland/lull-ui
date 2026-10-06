@@ -251,6 +251,21 @@ describe('PhrazleBoard', () => {
       expect(screen.getByText('Guess 1')).toBeInTheDocument()
     })
 
+    // The category is a fact about the phrase, read beside the count rather than as a heading.
+    it('shows the category on the sign line', () => {
+      renderBoard()
+
+      expect(screen.getByRole('region', { name: 'Phrazle' })).toHaveTextContent('Saying')
+      expect(screen.getByText('Saying')).toBeInTheDocument()
+    })
+
+    it('leaves the category out on an older pack that has none', () => {
+      renderBoard({ ...phrazlePuzzle, data: { answer: phrazlePuzzle.data.answer } })
+
+      expect(screen.queryByText('Saying')).not.toBeInTheDocument()
+      expect(screen.getByText('Guess 1')).toBeInTheDocument()
+    })
+
     // Seven, and now seven is ALL of them rather than one row's worth. The five rows of hidden tiles
     // this used to be written against are gone -- a row the player has not reached is a row that has
     // not been drawn -- so the promise it defends has changed from "the future rows are hidden" to

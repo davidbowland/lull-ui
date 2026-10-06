@@ -160,8 +160,8 @@ export const cryptogramPuzzle: Puzzle<CryptogramData> = {
   type: 'cryptogram',
 }
 
-// Difficulty 3 hides the category outright. The board leaves it out of the meta line entirely --
-// no placeholder, no separator -- so a fixture without the key is the only way to cover it.
+// A pack stored before every difficulty shipped a category: no `category` key at all. The board
+// leaves it out of the meta line entirely -- no placeholder, no separator.
 export const hiddenCategoryCryptogram: Puzzle<CryptogramData> = {
   ...cryptogramPuzzle,
   data: { answer: 'Ate ate tea', ciphertext: 'VZQ VZQ ZQV' },
@@ -425,6 +425,7 @@ export const phrazlePuzzleId = '2026-08-18:phrazle:5e4d3c2b'
 export const phrazlePuzzle: Puzzle<PhrazleData> = {
   data: {
     answer: 'TOE HOLD',
+    category: 'Saying',
   },
   difficulty: 3,
   estimatedSeconds: 240,
