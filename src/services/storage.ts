@@ -212,6 +212,10 @@ export const writeProgress = (puzzleId: string, progress: PuzzleProgress): void 
 // The day this family genuinely needs collecting, do not restore either of these first. The rule has
 // to be "oldest first, under pressure", which wants sizes and a budget rather than a filtered list
 // of ids -- see the block above pruneOutsideWindow in usePrefetch.ts.
+//
+// forgetPuzzles, at the foot of this file, DOES remove progress -- and it is not that collector come
+// back. It takes ids the player named by pressing "Start this day over", never ids found by a scan,
+// so it binds nothing the storage-key rule in CLAUDE.md is about.
 
 // Hints
 
@@ -373,3 +377,23 @@ export const markSolved = (puzzleId: string): void => {
 
 export const setInstallDismissed = (dismissed: boolean): void =>
   writeMeta({ ...readMeta(), installDismissed: dismissed })
+
+// Starting a day over
+//
+// EVERYTHING THE PLAYER LEFT ON A PUZZLE: the board, the rungs, and the solved mark. The solved mark
+// goes too, though nobody asked for it by name, because keeping it beside an empty board is a state
+// the frame already reads as "solved, nothing left on the board" -- the shelf would print Solved over
+// a day the player just asked to start over.
+//
+// ANNOUNCED ONCE, after the last key is gone, so a listener never re-reads a day with half its
+// puzzles forgotten.
+export const forgetPuzzles = (puzzleIds: readonly string[]): void => {
+  puzzleIds.forEach((puzzleId) => {
+    safeRemove(`${PROGRESS_PREFIX}${puzzleId}`)
+    safeRemove(`${HINTS_PREFIX}${puzzleId}`)
+  })
+  const forgotten = new Set(puzzleIds)
+  const meta = readMeta()
+  writeMeta({ ...meta, solved: meta.solved.filter((puzzleId) => !forgotten.has(puzzleId)) })
+  announce()
+}

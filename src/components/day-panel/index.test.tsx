@@ -47,9 +47,12 @@ const panel = (overrides: Partial<React.ComponentProps<typeof DayPanel>> = {}) =
     locale="en-GB"
     now={NOW}
     onDismiss={jest.fn()}
+    onRefreshDay={jest.fn()}
     onRequestDay={jest.fn()}
     onSelectDay={jest.fn()}
     panelId="day-panel"
+    refresh={null}
+    refreshDate={null}
     request={null}
     solved={new Set()}
     todayDate="2026-08-25"
@@ -745,5 +748,110 @@ describe('DayPanel, on a device with no days', () => {
 
     expect(screen.queryByRole('button', { name: /Bring back today/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Choose a month' })).toHaveAttribute('aria-disabled', 'true')
+  })
+})
+
+// STARTING THE DAY ON SCREEN OVER. It clears the player's boards, rungs and solved marks, so the press
+// asks before it acts, and the report says plainly when nothing was cleared.
+describe('DayPanel, starting a day over', () => {
+  const DAY = '2026-08-24'
+
+  const startOver = () => screen.getByRole('group', { name: 'Start over' })
+
+  it('offers to start the day on screen over', () => {
+    renderPanel({ refreshDate: DAY })
+
+    expect(within(startOver()).getByRole('button', { name: 'Start Mon 24 Aug over' })).toBeInTheDocument()
+    expect(startOver()).toHaveTextContent(
+      'Download Mon 24 Aug again and play it from the start. This erases your answers and hints for that day.',
+    )
+  })
+
+  // The empty device has no day on screen to start over.
+  it('offers nothing when there is no day on screen', () => {
+    renderPanel({ days: [], refreshDate: null })
+
+    expect(screen.queryByRole('group', { name: 'Start over' })).not.toBeInTheDocument()
+  })
+
+  // The same rule as the month field: a control that cannot do what it names is worse than none.
+  it('says it needs a connection instead of offering the press offline', () => {
+    renderPanel({ isOnline: false, refreshDate: DAY })
+
+    expect(within(startOver()).queryByRole('button')).not.toBeInTheDocument()
+    expect(startOver()).toHaveTextContent('Starting over needs a connection.')
+  })
+
+  it('asks before clearing anything, and puts the keyboard on the safe answer', async () => {
+    const user = userEvent.setup({ delay: null })
+    const onRefreshDay = jest.fn()
+    renderPanel({ onRefreshDay, refreshDate: DAY })
+
+    await user.click(screen.getByRole('button', { name: 'Start Mon 24 Aug over' }))
+
+    expect(onRefreshDay).not.toHaveBeenCalled()
+    expect(startOver()).toHaveTextContent('Erase everything on Mon 24 Aug and download it again?')
+    expect(screen.getByRole('button', { name: 'Keep my answers' })).toHaveFocus()
+  })
+
+  it('takes the question back and returns the keyboard to the offer', async () => {
+    const user = userEvent.setup({ delay: null })
+    const onRefreshDay = jest.fn()
+    renderPanel({ onRefreshDay, refreshDate: DAY })
+
+    await user.click(screen.getByRole('button', { name: 'Start Mon 24 Aug over' }))
+    await user.click(screen.getByRole('button', { name: 'Keep my answers' }))
+
+    expect(onRefreshDay).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Erase and download' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start Mon 24 Aug over' })).toHaveFocus()
+  })
+
+  // The confirm press unmounts both answers, so the keyboard goes to the sentence that says what is
+  // happening instead of falling to <body>.
+  it('starts the day over once confirmed, and moves the keyboard to the report', async () => {
+    const user = userEvent.setup({ delay: null })
+    const onRefreshDay = jest.fn()
+    renderPanel({ onRefreshDay, refreshDate: DAY })
+
+    await user.click(screen.getByRole('button', { name: 'Start Mon 24 Aug over' }))
+    await user.click(screen.getByRole('button', { name: 'Erase and download' }))
+
+    expect(onRefreshDay).toHaveBeenCalledWith(DAY)
+    expect(within(startOver()).getByRole('status')).toHaveFocus()
+  })
+
+  // ONE NODE for every message, held across re-renders: a region that remounts never announces.
+  it('reports the wait, the success and the failure in the same live region', () => {
+    const { rerender } = renderPanel({ refresh: { date: DAY, state: 'pending' }, refreshDate: DAY })
+    const region = within(startOver()).getByRole('status')
+
+    expect(region).toHaveTextContent('Downloading Mon 24 Aug again…')
+
+    rerender(panel({ refresh: { date: DAY, state: 'done' }, refreshDate: DAY }))
+    expect(region).toHaveTextContent('Mon 24 Aug is ready to play from the start.')
+
+    rerender(panel({ refresh: { date: DAY, state: 'failed' }, refreshDate: DAY }))
+    expect(region).toHaveTextContent('Mon 24 Aug didn’t download. Nothing was erased.')
+  })
+
+  // A second press while the first is in flight would race two clears against one day.
+  it('withholds the offer while the day is downloading', () => {
+    renderPanel({ refresh: { date: DAY, state: 'pending' }, refreshDate: DAY })
+
+    expect(screen.queryByRole('button', { name: 'Start Mon 24 Aug over' })).not.toBeInTheDocument()
+  })
+
+  it('offers the press again after a failure', () => {
+    renderPanel({ refresh: { date: DAY, state: 'failed' }, refreshDate: DAY })
+
+    expect(screen.getByRole('button', { name: 'Start Mon 24 Aug over' })).toBeInTheDocument()
+  })
+
+  // The day on screen can change under a settled report, and a report is a claim about one day.
+  it('says nothing about a day that is no longer on screen', () => {
+    renderPanel({ refresh: { date: '2026-08-23', state: 'done' }, refreshDate: DAY })
+
+    expect(within(startOver()).getByRole('status')).toBeEmptyDOMElement()
   })
 })

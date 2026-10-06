@@ -3,7 +3,7 @@ import { useRouter } from 'next/router'
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import { Button } from '@components/button'
-import { DayPanel, DayRequest } from '@components/day-panel'
+import { DayPanel, DayRefresh, DayRequest } from '@components/day-panel'
 import { useDictionary } from '@components/dictionary-provider'
 import { Plate, Shell } from '@components/enclosure'
 import { InstallCard } from '@components/install-card'
@@ -13,7 +13,7 @@ import { useInstallPrompt } from '@hooks/useInstallPrompt'
 import { useOnline } from '@hooks/useOnline'
 import { keepThisSession } from '@hooks/usePrefetch'
 import { BENCH_ORDER, entryFor, UNKNOWN_TYPE_MESSAGE } from '@registry'
-import { fetchPack } from '@services/lull'
+import { fetchPack, refreshPack } from '@services/lull'
 import { cachedPackDates, readMeta, readPack, readProgress, STORAGE_EVENT } from '@services/storage'
 import { Pack, PackDate, Puzzle } from '@types'
 import { crumbLabel, dayLabel } from '@utils/date-labels'
@@ -536,6 +536,10 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
   // whether the pick came from the day the player most recently asked for and got, so a later ask
   // that came back empty or never arrived is the answer to that question changing.
   const [outcome, setOutcome] = useState<DayRequest | null>(null)
+  // WHAT STARTING THE DAY ON SCREEN OVER IS DOING, and it lives and dies with the panel exactly as
+  // `request` does: it is a report printed in the panel, so a panel opened later must not mount with
+  // it already in its live region.
+  const [refresh, setRefresh] = useState<DayRefresh | null>(null)
   const [pendingFocus, setPendingFocus] = useState<PanelFocus | null>(null)
   // THE PLATE'S OWN REPORT, and deliberately not `request` above. That state describes the day
   // PANEL and is cleared when the panel is dismissed; this one is about the day already on screen
@@ -832,7 +836,10 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
     // live request the reader was waiting on: the role="status" emptied, the "up to half a minute"
     // aside went with it, the pending row lost "On its way" and got its ordinary name back, and all
     // of it reappeared when the fetch settled. Nothing was reset, because nothing had ended.
-    if (!isPanelOpen) setRequest(null)
+    if (!isPanelOpen) {
+      setRequest(null)
+      setRefresh(null)
+    }
     setPendingFocus(focus)
     setIsPanelOpen(true)
   }
@@ -850,6 +857,7 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
     // this state exists to describe a panel that is on screen, so it does not outlive one. What the
     // session learned lives in `outcome` and is untouched.
     setRequest(null)
+    setRefresh(null)
     const opener = openerRef.current
     const target = opener !== null && opener.isConnected ? opener : plateControlRef.current
     target?.focus()
@@ -882,6 +890,25 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
       // nothing came back, try again.
       console.error('check for more failed', { date, error })
       setFillCheck({ arrived: 0, date, state: 'failed' })
+    }
+  }
+
+  // START THE DAY ON SCREEN OVER, once the panel has asked and the player has said yes. refreshPack
+  // clears nothing until the new day is in hand, so a failure here is reported as exactly that.
+  //
+  // NOTHING TO DO ON SUCCESS BUT SAY SO. refreshPack writes through storage and announces, read()
+  // re-reads the snapshot, and the rows come back unstarted under the panel that is still open.
+  //
+  // No `keepThisSession`, for the reason checkForMore takes none: this only ever names the day the
+  // plate is showing, which is already inside the window or already exempted by whatever reached it.
+  const refreshDay = async (date: PackDate): Promise<void> => {
+    setRefresh({ date, state: 'pending' })
+    try {
+      await refreshPack(date)
+      setRefresh({ date, state: 'done' })
+    } catch (error: unknown) {
+      console.error('start over failed', { date, error })
+      setRefresh({ date, state: 'failed' })
     }
   }
 
@@ -1023,9 +1050,12 @@ export const Shelf = ({ locale = defaultLocale(), now = Date.now }: ShelfProps):
         locale={locale}
         now={clock}
         onDismiss={dismissPanel}
+        onRefreshDay={(date) => void refreshDay(date)}
         onRequestDay={requestDay}
         onSelectDay={selectDay}
         panelId={panelId}
+        refresh={refresh}
+        refreshDate={pack?.date ?? null}
         request={request}
         solved={solved}
         todayDate={todayDate}

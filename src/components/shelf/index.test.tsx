@@ -6,8 +6,8 @@ import { orderPuzzles, Shelf } from './index'
 import { DictionaryContext, DictionaryState } from '@components/dictionary-provider'
 import { keepThisSession } from '@hooks/usePrefetch'
 import { REGISTRY } from '@registry'
-import { fetchPack } from '@services/lull'
-import { markSolved, STORAGE_EVENT, writePack, writeProgress } from '@services/storage'
+import { fetchPack, refreshPack } from '@services/lull'
+import { forgetPuzzles, markSolved, STORAGE_EVENT, writePack, writeProgress } from '@services/storage'
 import {
   goFigurePuzzle,
   incompletePack,
@@ -68,6 +68,10 @@ const mockRouter = {
   replace: mockReplace,
 }
 jest.mock('next/router', () => ({ useRouter: () => mockRouter }))
+
+// THE DAY PANEL HOLDS TWO LIVE REGIONS: its own, which reports on the month field, and the one inside
+// "Start over" at its foot. Every `getAllByRole('status')[0]` on a panel below means the first, which
+// comes first in the document because the month field sits above the start-over group.
 
 // Built here rather than taken from a real pack: this is an ordering function, and the
 // fixtures exist to make two puzzles differ in exactly one key at a time. A real pack
@@ -983,6 +987,76 @@ describe('Shelf, choosing a day', () => {
     await user.click(screen.getByRole('button', { name: /Sat 14 Mar/ }))
   }
 
+  describe('starting a day over', () => {
+    const mockRefreshPack = jest.mocked(refreshPack)
+
+    // What the real refreshPack does to the device once the new day is in hand, written through real
+    // storage so the shelf learns of it the way it would in the app: through STORAGE_EVENT.
+    const startsOver = (fresh: Pack) => async (): Promise<Pack> => {
+      forgetPuzzles(fresh.puzzles.map((puzzle) => puzzle.id))
+      writePack(fresh.date, fresh)
+      return fresh
+    }
+
+    const startOver = async (user: ReturnType<typeof userEvent.setup>, label: string): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: 'Pick another day' }))
+      await user.click(screen.getByRole('button', { name: `Start ${label} over` }))
+      await user.click(screen.getByRole('button', { name: 'Erase and download' }))
+    }
+
+    const report = (): HTMLElement => within(screen.getByRole('group', { name: 'Start over' })).getByRole('status')
+
+    it('starts the day on screen over and shows it unstarted', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockRefreshPack.mockImplementationOnce(startsOver(pack))
+      setupShelf({ solved: [puzzleId, quickPuzzleId] })
+      expect(screen.getAllByText('Solved')).toHaveLength(2)
+
+      await startOver(user, 'Tue 18 Aug')
+
+      expect(mockRefreshPack).toHaveBeenCalledWith('2026-08-18')
+      expect(await screen.findByText('Tue 18 Aug is ready to play from the start.')).toBeInTheDocument()
+      expect(screen.queryByText('Solved')).not.toBeInTheDocument()
+      expect(screen.getAllByText('Not started')).toHaveLength(2)
+    })
+
+    // The press names the day the player is looking at, never today by default.
+    it('starts an earlier day over when that is the day on screen', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockRefreshPack.mockImplementationOnce(startsOver(olderDay))
+      setupShelf({ date: '2026-08-17', packs: [pack, olderDay] })
+
+      await startOver(user, 'Mon 17 Aug')
+
+      expect(mockRefreshPack).toHaveBeenCalledWith('2026-08-17')
+    })
+
+    it('says nothing was cleared when the day does not download', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockRefreshPack.mockRejectedValueOnce(new Error('Network Error'))
+      setupShelf({ solved: [puzzleId] })
+
+      await startOver(user, 'Tue 18 Aug')
+
+      expect(await screen.findByText('Tue 18 Aug didn’t download. Nothing was erased.')).toBeInTheDocument()
+      expect(screen.getByText('Solved')).toBeInTheDocument()
+    })
+
+    // The report is about a panel on screen and goes with it, as the day request's does.
+    it('opens a fresh panel after a start-over the player walked away from', async () => {
+      const user = userEvent.setup({ delay: null })
+      mockRefreshPack.mockImplementationOnce(startsOver(pack))
+      setupShelf()
+      await startOver(user, 'Tue 18 Aug')
+      await screen.findByText('Tue 18 Aug is ready to play from the start.')
+
+      await user.click(screen.getByRole('button', { name: 'Never mind' }))
+      await user.click(screen.getByRole('button', { name: 'Pick another day' }))
+
+      expect(report()).toBeEmptyDOMElement()
+    })
+  })
+
   describe('the plate control', () => {
     it('opens the day panel from the plate', async () => {
       const user = userEvent.setup({ delay: null })
@@ -1218,7 +1292,7 @@ describe('Shelf, choosing a day', () => {
       setupShelf({ date: '2026-08-17', packs: [pack, olderDay] })
 
       await user.click(screen.getByRole('button', { name: 'Pick another day' }))
-      await user.click(screen.getByRole('button', { name: /Tue 18 Aug/ }))
+      await user.click(screen.getByRole('button', { name: /^Tue 18 Aug/ }))
 
       expect(window.location.search).toEqual('')
       expect(screen.getByText('Today')).toBeInTheDocument()
@@ -1344,7 +1418,7 @@ describe('Shelf, choosing a day', () => {
       })
       const panel = within(screen.getByRole('region', { name: 'Choose a day' }))
 
-      expect(panel.getByRole('status')).toHaveTextContent('Bringing back Sunday 15 March…')
+      expect(panel.getAllByRole('status')[0]).toHaveTextContent('Bringing back Sunday 15 March…')
       expect(screen.queryByText('Saturday 14 March is here.')).not.toBeInTheDocument()
     })
 
@@ -1362,7 +1436,7 @@ describe('Shelf, choosing a day', () => {
       await user.click(screen.getByRole('button', { name: 'Bring back an earlier day' }))
       const panel = within(screen.getByRole('region', { name: 'Choose a day' }))
 
-      expect(panel.getByRole('status')).toHaveTextContent('Bringing back Saturday 14 March…')
+      expect(panel.getAllByRole('status')[0]).toHaveTextContent('Bringing back Saturday 14 March…')
       expect(
         screen.getByText('This can take up to half a minute. The days already on this device still open right away.'),
       ).toBeInTheDocument()
@@ -1646,7 +1720,7 @@ describe('Shelf, choosing a day', () => {
       await user.click(screen.getByRole('button', { name: 'Pick another day' }))
 
       const panel = screen.getByRole('region', { name: 'Choose a day' })
-      expect(within(panel).getByRole('status')).toBeEmptyDOMElement()
+      expect(within(panel).getAllByRole('status')[0]).toBeEmptyDOMElement()
       expect(screen.queryByRole('button', { name: /Try again/ })).not.toBeInTheDocument()
       expect(screen.queryByText('The connection dropped before the day came back.')).not.toBeInTheDocument()
     })
@@ -1837,7 +1911,7 @@ describe('Shelf, choosing a day', () => {
       await user.click(screen.getByRole('button', { name: 'Pick another day' }))
 
       const panel = screen.getByRole('region', { name: 'Choose a day' })
-      expect(within(panel).getByRole('status')).toBeEmptyDOMElement()
+      expect(within(panel).getAllByRole('status')[0]).toBeEmptyDOMElement()
     })
   })
 })
@@ -1965,6 +2039,6 @@ describe('Shelf, the states behind the pick', () => {
 
     await user.click(screen.getByRole('button', { name: 'Pick another' }))
 
-    expect(screen.getByRole('button', { name: /Tue 18 Aug/ })).toHaveFocus()
+    expect(screen.getByRole('button', { name: /^Tue 18 Aug/ })).toHaveFocus()
   })
 })

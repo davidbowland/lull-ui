@@ -17,6 +17,15 @@ export interface DayRequest {
   state: 'pending' | 'landed' | 'empty' | 'failed'
 }
 
+// WHAT STARTING A DAY OVER CAN BE, named for what the player sees. It carries its date for the reason
+// DayRequest does: the day on screen can change under a settled report, and a report is a claim about
+// one day only. There is no `confirming` here -- asking first is this panel's business, and the shell
+// hears nothing until the player has said yes.
+export interface DayRefresh {
+  date: PackDate
+  state: 'pending' | 'done' | 'failed'
+}
+
 export interface DayPanelProps {
   // The days ON THE DEVICE, newest first. Never the calendar: every row here is openable offline,
   // which is the promise this half of the panel makes.
@@ -38,6 +47,9 @@ export interface DayPanelProps {
   // midnight.
   now?: () => number
   onDismiss: () => void
+  // Called only after the player has confirmed. It names a day and nothing else: the clear and the
+  // download are the shell's, exactly as the fetch behind onRequestDay is.
+  onRefreshDay: (date: PackDate) => void
   onRequestDay: (date: PackDate) => void
   onSelectDay: (date: PackDate) => void
   // Supplied by the caller rather than generated here, because the caller is what points
@@ -49,6 +61,11 @@ export interface DayPanelProps {
   // currently produce a duplicate id rests entirely on this parameter being generated -- see the
   // duplicate-id note in CLAUDE.md.
   panelId: string
+  refresh: DayRefresh | null
+  // THE DAY ON SCREEN, which is the only day this panel offers to start over -- the player picks a day
+  // first and starts that one over, so the press can never name a day they are not looking at. Null
+  // on the empty device, where there is no day on screen.
+  refreshDate: PackDate | null
   request: DayRequest | null
   // The solved ids, for the month list ONLY. The seven `days` above arrive as summaries because the
   // shelf has their packs; a month's other twenty-four days have no pack anywhere, and a solved
@@ -157,14 +174,22 @@ export const DayPanel = ({
   locale,
   now = Date.now,
   onDismiss,
+  onRefreshDay,
   onRequestDay,
   onSelectDay,
   panelId,
+  refresh,
+  refreshDate,
   request,
   solved,
   todayDate,
 }: DayPanelProps): React.ReactNode => {
   const [month, setMonth] = useState('')
+  // Asking first is the panel's own state. The shell hears nothing until the player says yes.
+  const [isConfirming, setIsConfirming] = useState(false)
+  // Where the keyboard goes after the question opens or closes. Held as state for the reason the
+  // shelf holds its own: the destination is not on the page until the commit after the press.
+  const [startOverFocus, setStartOverFocus] = useState<'keep' | 'offer' | 'report' | null>(null)
 
   // useId, so two panels could never collide. Both ends of every IDREF built from these are asserted
   // in this component's test -- aria-describedby contributes no accessible name, so it can rot in
@@ -172,8 +197,14 @@ export const DayPanel = ({
   const generatedId = useId()
   const monthFieldId = `${generatedId}-month-field`
   const offlineNoteId = `${generatedId}-offline`
+  // Names the start-over group. Built here and resolved by the role query in this component's test,
+  // which finds the group by the heading's text -- break either end and that query fails.
+  const startOverHeadingId = `${generatedId}-start-over`
 
   const statusRef = useRef<HTMLParagraphElement>(null)
+  const startOverRef = useRef<HTMLButtonElement>(null)
+  const keepRef = useRef<HTMLButtonElement>(null)
+  const startOverReportRef = useRef<HTMLParagraphElement>(null)
   const monthFaceRef = useRef<HTMLButtonElement>(null)
   const previousState = useRef(request?.state)
   const previousOnline = useRef(isOnline)
@@ -232,6 +263,17 @@ export const DayPanel = ({
     if (previous !== 'pending' || request?.state === 'pending') return
     statusRef.current?.focus()
   }, [isOnline, request])
+
+  // EVERY ANSWER TO THE QUESTION UNMOUNTS THE BUTTON THAT WAS PRESSED, so each one names where the
+  // keyboard goes. Opening the question lands on "Keep my answers" -- the answer that loses nothing,
+  // so a stray second Enter costs the player nothing. Keeping takes the reader back to the offer they
+  // pressed. Confirming lands on the report, which is the sentence saying what the press did.
+  useEffect(() => {
+    if (startOverFocus === null) return
+    const target = { keep: keepRef, offer: startOverRef, report: startOverReportRef }[startOverFocus].current
+    target?.focus()
+    setStartOverFocus(null)
+  }, [startOverFocus])
 
   // MEMOIZED BECAUSE allPackDates RETURNS A FRESH ARRAY EVERY CALL. Hand the result straight to a
   // prop or a dependency array and every memo below re-renders and every effect holding it fires, on
@@ -345,6 +387,27 @@ export const DayPanel = ({
           landed: '',
           pending: 'This can take up to half a minute. The days already on this device still open right away.',
         }[request.state]
+
+  // Held to the day on screen, for the reason DayRefresh carries a date.
+  const startOverLabel = refreshDate === null ? '' : crumbLabel(refreshDate, locale, now)
+  const startOverReport =
+    refresh === null || refresh.date !== refreshDate
+      ? ''
+      : {
+          done: `${startOverLabel} is ready to play from the start.`,
+          // "Nothing was erased" is the sentence a player who just watched a progress-clearing
+          // button fail needs most, and it is true: refreshPack clears nothing until the new day is in
+          // hand.
+          failed: `${startOverLabel} didn’t download. Nothing was erased.`,
+          pending: `Downloading ${startOverLabel} again…`,
+        }[refresh.state]
+  const isStartingOver = refresh !== null && refresh.date === refreshDate && refresh.state === 'pending'
+
+  const confirmStartOver = (date: PackDate): void => {
+    setIsConfirming(false)
+    setStartOverFocus('report')
+    onRefreshDay(date)
+  }
 
   return (
     // The install-card notice grammar -- an r-lg plate with a rule edge -- and NOT a third
@@ -574,6 +637,85 @@ export const DayPanel = ({
           </>
         )}
       </div>
+
+      {/* STARTING THE DAY ON SCREEN OVER, at the foot of the panel because it is the rarest thing on
+          it: a way round a pack the device thinks is final, for the day the backend fixes or remakes
+          one. It sits in this panel rather than on the plate because it destroys the player's boards,
+          and the plate's one control is for choosing.
+
+          A GROUP named by its heading, so the offer, the question and the report are one thing a
+          screen reader enters and leaves -- and so its live region can be told apart from the
+          panel's own.
+
+          Withheld on the empty device, where `refreshDate` is null and there is no day on screen. */}
+      {refreshDate !== null && !isEmptyDevice && (
+        <div aria-labelledby={startOverHeadingId} className={OLDER_DAYS} role="group">
+          <h3 className={EYEBROW} id={startOverHeadingId}>
+            Start over
+          </h3>
+          <p className={NOTE}>
+            Download {startOverLabel} again and play it from the start. This erases your answers and hints for that day.
+          </p>
+
+          {/* OFFLINE IT SAYS SO rather than offering a press that round-trips to the same failure. */}
+          {!isOnline && <p className={NOTE}>Starting over needs a connection.</p>}
+
+          {/* The visible words ARE the name, day included, so speech input can say exactly what is
+              on the button (WCAG 2.5.3) and a screen reader hears which day it is about to clear.
+
+              A `default` and never a `primary`: this is the one control on the panel that destroys
+              something, and the accent marks the offer a surface exists to make. */}
+          {isOnline && !isConfirming && !isStartingOver && (
+            <Button
+              className="mt-[var(--lull-s3)]"
+              onClick={() => {
+                setIsConfirming(true)
+                setStartOverFocus('keep')
+              }}
+              ref={startOverRef}
+              size="sm"
+            >
+              Start {startOverLabel} over
+            </Button>
+          )}
+
+          {isOnline && isConfirming && (
+            <>
+              <p className="mt-[var(--lull-s3)] text-[13.5px] text-[var(--lull-ink)]">
+                Erase everything on {startOverLabel} and download it again?
+              </p>
+              <div className="mt-[var(--lull-s2)] flex flex-wrap gap-[var(--lull-s2)]">
+                <Button onClick={() => confirmStartOver(refreshDate)} size="sm">
+                  Erase and download
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsConfirming(false)
+                    setStartOverFocus('offer')
+                  }}
+                  ref={keepRef}
+                  size="sm"
+                  variant="quiet"
+                >
+                  Keep my answers
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* Mounted with the group and never hidden, for the reason the panel's own region is: one
+              that mounts with its message already in it is routinely not announced. tabIndex={-1}
+              lets the confirm press land the keyboard here. */}
+          <p
+            className="mt-[var(--lull-s3)] text-[12.5px] text-[var(--lull-muted)] empty:mt-0 empty:h-0 empty:overflow-hidden"
+            ref={startOverReportRef}
+            role="status"
+            tabIndex={-1}
+          >
+            {startOverReport}
+          </p>
+        </div>
+      )}
 
       {/* THERE IS NOTHING TO DISMISS ON THE EMPTY DEVICE, so the footer is withheld there -- the
           same `days.length === 0` every other difference on that screen is derived from.

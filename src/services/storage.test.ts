@@ -1,6 +1,7 @@
 import {
   cachedPackDates,
   clearDictRetry,
+  forgetPuzzles,
   markSolved,
   readDictRetry,
   readHints,
@@ -272,6 +273,67 @@ describe('storage', () => {
       removeHints(missingVowelsPuzzleId)
 
       expect(readHints(missingVowelsPuzzleId, 3)).toBe(0)
+    })
+  })
+
+  describe('forgetting puzzles', () => {
+    it('clears the progress, hints and solved mark of every puzzle it is handed', () => {
+      setup()
+      writeProgress(puzzleId, '6+9')
+      writeHints(puzzleId, 2)
+      writeProgress(missingVowelsPuzzleId, 'HLL')
+      writeHints(missingVowelsPuzzleId, 1)
+      markSolved(puzzleId)
+      markSolved(missingVowelsPuzzleId)
+
+      forgetPuzzles([puzzleId, missingVowelsPuzzleId])
+
+      expect(readProgress(puzzleId)).toBeNull()
+      expect(readProgress(missingVowelsPuzzleId)).toBeNull()
+      expect(readHints(puzzleId, 3)).toBe(0)
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(0)
+      expect(readMeta().solved).toEqual([])
+    })
+
+    it('leaves every other puzzle alone', () => {
+      setup()
+      writeProgress(missingVowelsPuzzleId, 'HLL')
+      writeHints(missingVowelsPuzzleId, 1)
+      markSolved(puzzleId)
+      markSolved(missingVowelsPuzzleId)
+
+      forgetPuzzles([puzzleId])
+
+      expect(readProgress(missingVowelsPuzzleId)).toEqual('HLL')
+      expect(readHints(missingVowelsPuzzleId, 3)).toBe(1)
+      expect(readMeta().solved).toEqual([missingVowelsPuzzleId])
+    })
+
+    it('keeps the install choice', () => {
+      setup()
+      setInstallDismissed(true)
+      markSolved(puzzleId)
+
+      forgetPuzzles([puzzleId])
+
+      expect(readMeta().installDismissed).toBe(true)
+    })
+
+    // Once, after every key is gone, so a listener never re-reads a half-forgotten day.
+    it('announces once, after everything is cleared', () => {
+      setup()
+      writeProgress(puzzleId, '6+9')
+      markSolved(puzzleId)
+
+      const listener = announcementsDuring(
+        () => forgetPuzzles([puzzleId, missingVowelsPuzzleId]),
+        () => {
+          expect(readProgress(puzzleId)).toBeNull()
+          expect(readMeta().solved).toEqual([])
+        },
+      )
+
+      expect(listener).toHaveBeenCalledTimes(1)
     })
   })
 
