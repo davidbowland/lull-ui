@@ -96,11 +96,11 @@ describe('the cryptogram hint adapter', () => {
       expect((cryptogramHints.ladder(elsewhere, '') ?? []).map((hint) => hint.text)[0]).not.toEqual(LOW_RUNG)
     })
 
-    // A SOLVED BOARD KEEPS ITS BAND. Every cipher letter is mapped correctly, so the fold has no
-    // candidate and no word left to name -- and an empty ladder is null, which unmounts a 60px band
-    // on the winning keystroke and re-lays the grid out underneath it. Worse here than anywhere else:
-    // an unlocked square can still be cleared, so the band flickered as a player toggled the last
-    // letter. So the ladder a solved board shows is the one a fresh board would have shown, and
+    // A SOLVED BOARD KEEPS ITS CONTROL. Every cipher letter is mapped correctly, so the fold has no
+    // candidate and no word left to name -- and an empty ladder is null, which takes the hint control
+    // off the sign row on the winning keystroke (and, when the bar was a 60px band, re-laid the grid
+    // out underneath it). Worse here than anywhere else: an unlocked square can still be cleared, so
+    // the control flickered as a player toggled the last letter. So the ladder a solved board shows is the one a fresh board would have shown, and
     // nothing of it is displayed unless the player buys it.
     it('keeps a ladder to draw on a board that is already solved', () => {
       expect(texts(SOLVED_BOARD)).toEqual([LOW_RUNG, HIGH_RUNG, WORD_RUNG])

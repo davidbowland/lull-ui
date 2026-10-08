@@ -42,7 +42,7 @@ jest.mock('@components/dictionary-provider', () => ({
   DictionaryProvider: (props: { children: React.ReactNode }) => mockDictionaryProvider(props),
 }))
 
-// WHAT the viewport meta buys -- env(safe-area-inset-*) resolving to a real number, the docked
+// WHAT the viewport meta buys -- env(safe-area-inset-*) resolving to a real number, the pinned
 // keypad clearing the home indicator, the flowed padding staying off the notch -- is layout, and
 // jsdom has none. This repo also forbids style assertions, so a test that claimed to check any of
 // it could not fail. The compiled CSS from `next build` is the evidence for the utilities and a

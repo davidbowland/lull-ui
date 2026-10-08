@@ -62,7 +62,7 @@ describe('GoFigureBoard', () => {
 
   // What the keyboard says when the sheet is over the board. Named here for the same reason the
   // component names it once: it is asserted from several tests and a sentence written twice drifts.
-  const HIDE_TO_TYPE = 'Hide the hints to type.'
+  const CLOSE_TO_TYPE = 'Close the hints to type.'
 
   // The ribbon shows a MESSAGE or the resting line, never both -- FloorBar lays the resting line
   // over the live region and hides it whenever the bench has something to say. Every write
@@ -114,9 +114,9 @@ describe('GoFigureBoard', () => {
   }
 
   // The board and the instrument are SIBLINGS, not one nested in the other: the shell
-  // wraps them in a `display: contents` box so each becomes a flex item of the screen
-  // column, and it orders its own hint bar between them. A wrapper here would collapse
-  // the two bands into one and take the seam with it.
+  // puts them in its play column, the board first and the floor after it, and index.css
+  // pins the floor to the bench's bottom edge. A wrapper here would collapse the two
+  // bands into one and take the seam with it.
   describe('the two bands', () => {
     it('renders the board and the instrument as siblings', () => {
       const { container } = renderBoard()
@@ -1615,7 +1615,7 @@ describe('GoFigureBoard', () => {
 
       await openRung(user, HINT_1)
 
-      expect(screen.getByRole('region', { name: 'Open hints' })).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: 'Hints' })).toHaveAttribute('aria-modal', 'true')
       expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toHaveAttribute('aria-expanded', 'true')
     })
 
@@ -1946,8 +1946,8 @@ describe('GoFigureBoard', () => {
       // The sheet's OWN dismissal, not the bar's control. Spending the last rung used to turn that
       // control into "Hide hints"; it now offers the answer instead, and this test is about the
       // banner surviving a dismissal rather than about which button performs one. The sheet has
-      // carried its own Hide since a touch player could otherwise only leave by spending rungs.
-      await user.click(screen.getByRole('button', { name: 'Hide' }))
+      // carried its own dismissal since a touch player could otherwise only leave by spending rungs.
+      await user.click(screen.getByRole('button', { name: 'Close hints' }))
 
       expect(screen.getByText('Solved. 6 + 9 + 7 × 7 = 154')).toBeInTheDocument()
     })
@@ -2417,7 +2417,7 @@ describe('GoFigureBoard', () => {
       await user.keyboard('{ArrowRight}')
 
       expect(screen.getByText(INSTRUCTION)).toBeInTheDocument()
-      expect(screen.queryByText(HIDE_TO_TYPE, withoutMark)).not.toBeInTheDocument()
+      expect(screen.queryByText(CLOSE_TO_TYPE, withoutMark)).not.toBeInTheDocument()
     })
 
     it('declines a digit while the hint sheet is open', async () => {
@@ -2443,7 +2443,7 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
       await user.keyboard('6')
 
-      expect(said(HIDE_TO_TYPE)).toBeInTheDocument()
+      expect(said(CLOSE_TO_TYPE)).toBeInTheDocument()
     })
 
     it('says why a sign is declined while the hint sheet is open', async () => {
@@ -2454,7 +2454,7 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
       await user.keyboard('*')
 
-      expect(said(HIDE_TO_TYPE)).toBeInTheDocument()
+      expect(said(CLOSE_TO_TYPE)).toBeInTheDocument()
     })
 
     it('says why Backspace is declined while the hint sheet is open', async () => {
@@ -2466,7 +2466,7 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
       await user.keyboard('{Backspace}')
 
-      expect(said(HIDE_TO_TYPE)).toBeInTheDocument()
+      expect(said(CLOSE_TO_TYPE)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Square 1, number, 6' })).toBeInTheDocument()
     })
 
@@ -2475,9 +2475,9 @@ describe('GoFigureBoard', () => {
       renderBoard()
 
       await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
-      // The sheet's own Hide control, not the bar's: with a rung open and the sheet showing, the bar
+      // The sheet's own Close button, not the bar's: with a rung open and the sheet showing, the bar
       // is already offering the NEXT rung rather than a way to shut what is open.
-      await user.click(screen.getByRole('button', { name: 'Hide' }))
+      await user.click(screen.getByRole('button', { name: 'Close hints' }))
       await user.click(screen.getByRole('button', { name: 'Square 1, number, empty' }))
       await user.keyboard('6')
 
@@ -2485,7 +2485,7 @@ describe('GoFigureBoard', () => {
     })
 
     // ESCAPE IS THE EXIT A KEYBOARD PLAYER ACTUALLY USES, and it was the one exit no test covered:
-    // the Hide control is a pointer target, and a player already typing has no reason to go looking
+    // the Close button is a pointer target, and a player already typing has no reason to go looking
     // for it. It also exercises the half of `sheetIsOpen` that a pointer dismissal does not -- the
     // board never hears about Escape, HintBar handles it on its own frame, and the only way the
     // keys can come back is the board reading the sheet's real state off the DOM afterwards.
@@ -2610,10 +2610,12 @@ describe('GoFigureBoard', () => {
     })
 
     // The hint control has it worse than the other two: the press opens a sheet, so focus leaving
-    // for a board square would strand the player outside the thing they just opened -- and the
-    // control is what `aria-expanded` is on. The caret has been moved off square 1 first for the
-    // same reason as above.
-    it('keeps focus on the hint control after a rung lands', async () => {
+    // for a board square would strand the player outside the thing they just opened. It goes INTO
+    // that thing instead -- the popup is a modal dialog and opening it puts focus on its Close
+    // button -- and one Tab is the way back to the control, which the popup's Tab cycle keeps so
+    // the next rung can be bought from the keyboard. The caret has been moved off square 1 first
+    // for the same reason as above.
+    it('puts focus in the hint popup after a rung lands, one Tab from the control', async () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
@@ -2621,6 +2623,10 @@ describe('GoFigureBoard', () => {
       const hint = screen.getByRole('button', { name: 'Open hint 1 of 3' })
       hint.focus()
       await user.keyboard('{Enter}')
+
+      expect(screen.getByRole('button', { name: 'Close hints' })).toHaveFocus()
+
+      await user.tab()
 
       expect(hint).toHaveFocus()
     })

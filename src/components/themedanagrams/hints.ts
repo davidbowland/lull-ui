@@ -147,17 +147,18 @@ const fold = (entries: AnagramHintEntry[], guesses: Guesses, spent: ThemedAnagra
   const probe = grow(entries, { solved: solvedIn(entries, guesses) }, spent, seed)
   if (probe.length > 0) return probe
 
-  // A WON BOARD HAS NOTHING LEFT TO CHOOSE, AND THE BAND STILL HAS TO STAND. All four rows right is
-  // the only state that empties this fold on a drawable pack -- every rung aims at an unsolved entry
-  // -- and it arrives on the winning KEYSTROKE, for the player who bought nothing, which is most of
-  // them. An empty ladder is null, null unmounts a 60px `shrink-0` band, and the board would re-lay
-  // itself out at the instant of the solve. Worse, an unlocked box can still be cleared, so the band
-  // flickered as a player toggled the last letter.
+  // A WON BOARD HAS NOTHING LEFT TO CHOOSE, AND THE CONTROL STILL HAS TO STAND. All four rows right
+  // is the only state that empties this fold on a drawable pack -- every rung aims at an unsolved
+  // entry -- and it arrives on the winning KEYSTROKE, for the player who bought nothing, which is
+  // most of them. An empty ladder is null, and null takes the hint control off the sign row at the
+  // instant of the solve; when the bar was a 60px `shrink-0` band it re-laid the board out as well.
+  // Worse, an unlocked box can still be cleared, so the control flickered as a player toggled the
+  // last letter.
   //
   // So a won board shows the ladder a fresh one would have shown. That is honest rather than a
   // placeholder: the rungs are speculative, HintBar draws only `slice(0, opened)`, and a player who
   // has already won reads a hint about an answer standing in the box beside it. What it buys is the
-  // band -- and with it the answer reveal, which `controlLabel` reaches only through a ladder.
+  // control -- and with it the answer reveal, which `controlLabel` reaches only through a ladder.
   //
   // It cannot fire on a pack this board refuses to draw: `entriesOf` answers with no entries, so the
   // fresh fold is empty too and the frame draws no bar at all, which is the right answer there.

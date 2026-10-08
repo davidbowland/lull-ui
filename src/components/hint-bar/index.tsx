@@ -72,143 +72,210 @@ export interface HintBarProps {
   // answer to give ends its ladder exactly where it always did, with the control turning into the
   // sheet's toggle. Nothing here invents a fallback.
   solution?: string
-  // `docked` is the shell's own band between the board and the instrument, so it is a fixed strip
-  // that neither gives nor takes a pixel. `inline` is for the tile bench, which has no band of its
-  // own and sets the bar inside its own column. `bare` is for a bench that puts the bar in a row it
-  // already owns: the control and the sheet, and nothing else at all.
-  variant?: 'bare' | 'docked' | 'inline'
+  // `sign` is the shell's: the control laid over the right end of the board's sign row, from the
+  // hint dock puzzle-frame renders above the board, with a sheet that drops from that row over the
+  // board. `bare` is for a bench that puts the bar in a row it already owns -- goFigure's tray: the
+  // control and the sheet, and nothing else at all.
+  //
+  // `docked` and `inline` are gone. `docked` was a 60px band between the board and the instrument,
+  // and the band was the cost the larger-window cut removed; `inline` had no caller left in the app,
+  // and with `docked` gone it would have been the only reader of a sheet sized for that band.
+  variant?: 'bare' | 'sign'
 }
 
-// The bar's footprint, and the only thing the variant changes. `lull-hintbar` is the band order the
-// stylesheet declares, so the bar takes its place in the screen column by naming itself rather than
-// by whatever wraps it.
+// The bar's footprint, and the only thing the variant changes.
 const VARIANT = {
   // No band, no padding, no ground. The bar is a control sitting in someone else's row, so it
-  // contributes nothing but the control and the sheet that control opens. `inline` was tried here
-  // first and does not fit: its `py-2` makes 8 + 44 + 8 = 60px out of a 44px row, and its `px-4`
-  // re-applies a gutter the row already carries.
-  bare: '',
-  docked:
-    'lull-hintbar h-[60px] shrink-0 border-t border-[var(--lull-hair)] bg-[var(--lull-ground)] ' +
-    'pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]',
-  inline: 'h-auto px-[var(--lull-s4)] py-[var(--lull-s2)]',
+  // contributes nothing but the control and the sheet that control opens. `relative` does nothing
+  // here -- the bare sheet is fixed and measured against the viewport -- and is kept because it has
+  // always been on this root and costs nothing.
+  bare: 'relative flex items-center',
+  // IN FLOW AND NOT POSITIONED, and the second half is load-bearing. The root spans the dock's full
+  // width at zero height and puts the control at its right end, one pixel down so it sits inside
+  // the sign row's top hairline rather than on it. Because neither this root nor anything between it
+  // and the sheet is positioned, the sheet's containing block is the DOCK, which spans the bench --
+  // an absolutely positioned root would itself become the containing block and shrink the sheet to
+  // the control's 116px. `overflow-visible` because the control is taller than a zero-height box.
+  sign: 'flex h-0 items-start justify-end overflow-visible pt-px pr-[var(--lull-gutter-right)]',
 } as const
 
-// Anchored to the TOP edge of the bar and taken out of flow, which is the whole point: the
-// instrument below is a sibling in the same flex column, and anything that grew inside that column
-// would push it down. Nothing here can, because nothing here occupies flow at all.
+// THE SHEET IS A POPUP, and both variants share everything about it but where it is anchored. It
+// used to be a plate laid over the board and nothing more: the same raised ground as the board under
+// it, a quiet "Hide" in its corner, and nothing marking the board as covered. Players kept typing
+// into a board they could no longer see, and were refused in a ribbon they were not looking at. Now
+// a scrim (SCRIM below) dims the whole bench while it is open, this surface carries the dark shadow
+// in both themes so it lifts off the scrim as a separate object, and its corner holds a bordered
+// Close button with an X.
 //
-// Inset by the GUTTER, not by `inset-x-0`, and the difference arrived with the layout. An absolutely
-// positioned box resolves its offsets against the padding box of its positioned ancestor -- which is
-// this bar, and the bar now carries the page gutter itself rather than inheriting it from a padded
-// column. Under `inset-x-0` a rounded, bordered, shadowed card had its corners cut off flat by the
-// screen edge, and in landscape on a notched phone it ran under the cutout, since the instrument is
-// the only band that re-applies env(safe-area-inset-*).
+// The border is --lull-rule, the boundary token, because over the scrim this card IS the thing a
+// player has to find the edge of.
+const SHEET_SURFACE =
+  'flex flex-col gap-[var(--lull-s3)] overflow-y-auto rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] ' +
+  'bg-[var(--lull-raised)] p-[var(--lull-s4)] shadow-[0_8px_28px_rgba(0,0,0,0.55)]'
+
+// The sheet a `sign` bar opens: dropped from the sign row, out of flow, so no length of hint text can
+// move anything -- not the board, not the seam.
 //
-// THE HEIGHT BOUND IS THE BOARD'S HEIGHT, term for term, and every term is a band it must not
-// overrun. The sheet's bottom edge is the bar's top edge, so subtracting the crown (the spine and
-// the title row), the bar, the seam and the sheet's own margin from the viewport leaves exactly the
-// space between the top of the board and the top of the bar. `bottom-full` puts the sheet in it.
+// ANCHORED TO THE DOCK, which is the positioned box this sheet resolves against (see `sign` above).
+// The dock and the sign row start at the same y and stick together, so `top: 46px + s2` is the sign
+// row's bottom edge plus a margin, at every scroll position.
 //
-// It used to subtract a flat --lull-s7 in place of the crown, as "clearance from the top of the
-// screen" -- 48px where the bands above the board are 108, so the sheet was allowed 68px it did not
-// have. A three-rung ladder with the answer under it on a 667px viewport used them: the card's top
-// corners were drawn across the title row with "Phrazle" and "About 5 min" cut through the middle.
-// Clearance from the screen was never the promise worth making; the sheet overlays THE BOARD, and
-// the crown is what that sentence costs.
+// Inset by the GUTTER, not by `inset-x-0`. Under `inset-x-0` a rounded, bordered, shadowed card has
+// its corners cut off flat by the screen edge, and in landscape on a notched phone it runs under the
+// cutout, since the instrument is the only band that re-applies env(safe-area-inset-*).
 //
-// --lull-kb is subtracted for the same reason .lull-bench subtracts it. A software keyboard shrinks
-// the bench, and the crown is fixed, so every pixel the keyboard takes comes out of the board -- and
-// out of the room this sheet has. Missing Vowels is the bench that can raise one, and its bar is
-// this variant.
+// THE HEIGHT BOUND IS THE SCREEN BELOW THE SIGN ROW, and the seam is no longer in it. It used to be
+// the BOARD's height below the sign row -- the bench less the crown, the sign row, the 240px seam
+// and the inset, clamped between 140 and 420 -- because the sheet was a plate on the board and the
+// keypad was still live beside it. On a 495px phone that calc came to about 45px, the 140px floor
+// won, and the sheet scrolled inside itself with rung 3 cut off and its bottom edge on the keypad.
+// The sheet is modal now: the scrim covers the keypad and nothing under it takes a press, so there is
+// nothing left down there for it to stay off. What it must still clear is the crown, worst case
+// (on screen, which is how every bench opens), the sign row it drops from, its top margin, and a
+// --lull-s4 of air above the bottom of the bench: 712px → 542, 495px → 317. Three rungs and an
+// answer measure about 200-250 at 375px wide.
 //
-// CLAMPED, with a floor, and the floor is the whole fix. The bound alone is fine in portrait and
-// collapses in landscape: at a 390dvh phone it computes to 14px, and at 320dvh it goes negative.
-// Against the sheet's own 32px of padding that leaves nothing at all -- so opening a hint relabeled
-// the button, moved focus, and displayed no text, inside a zero-height overflow-y-auto box that
-// touch cannot scroll. A component built to protect the seam became the one thing on the bench that
-// silently did nothing.
+// `overflow-y: auto` stays only as the last resort, for content taller than the screen -- a writing
+// bench with the software keyboard up -- and no floor or ceiling clamps it any more. A negative calc
+// (a landscape phone with the keyboard up) resolves to 0 rather than invalidating the declaration.
 //
-// clamp() with a 140px floor means the sheet is always at least readable. Where the viewport
-// genuinely cannot spare that, the frame's column has already switched from clipping to scrolling
-// -- see puzzle-frame -- so the overflow has somewhere to go.
+// `z-2` ranks it inside the dock, above the scrim's `z-1` and below the control's `z-3`; the dock's
+// own `z-index: 2` is what puts all three over the sign row and the instrument. index.css holds the
+// scale.
+const SHEET_DROP =
+  'absolute top-[calc(46px+var(--lull-s2))] right-[var(--lull-gutter-right)] left-[var(--lull-gutter-left)] z-2 ' +
+  'max-h-[calc(var(--lull-bench-h)-var(--lull-crown)-46px-var(--lull-s2)-var(--lull-s4))] ' +
+  SHEET_SURFACE
+
+// THE SCRIM: the whole bench dimmed while the sheet is open, so the board reads as covered rather
+// than as something still waiting for a key. Fixed to the viewport, so it covers the crown, the board,
+// the ribbon and the keypad whichever band this bar happens to be mounted in.
 //
-// `z-2` is a RANK, and index.css holds the scale it is a rank in. The sign row three benches mount
-// at the top of the board is sticky at `z-index: 1`, and a positioned box left at `auto` loses to it
-// wherever they overlap -- which, now that the sheet stops at the board's top edge, is guaranteed
-// rather than incidental. Without this the strip and its ground are painted straight across the
-// open hints.
-const SHEET =
-  'absolute right-[var(--lull-gutter-right)] bottom-full left-[var(--lull-gutter-left)] z-2 mb-[var(--lull-s2)] flex ' +
-  'max-h-[clamp(140px,calc(100dvh-var(--lull-kb)-var(--lull-crown)-var(--lull-seam)-60px-var(--lull-s2)),420px)] ' +
-  'flex-col gap-[var(--lull-s3)] overflow-y-auto rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] ' +
-  'bg-[var(--lull-raised)] p-[var(--lull-s4)] shadow-[0_8px_28px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.55)]'
+// It takes the press, and that is half its job. A tap that lands on it shuts the sheet and reaches
+// nothing underneath -- the scrim is on top, so it is the element hit, and no key, square or tile
+// below it ever sees the event. It shuts on `click` and not on `pointerdown`: unmounting the scrim on
+// the down would leave the up and the click to land on whatever was under the finger, which on a
+// phone is a key of the pad. `pointerdown` is still canceled, so the press moves no focus on the way.
+//
+// aria-hidden and unfocusable: it carries no text and no role, and a reader dismisses the sheet
+// through the Close button or Escape, which the scrim only duplicates for a pointer.
+//
+// --lull-scrim is the dark ground at 55% in BOTH themes, so a light board reads as covered too.
+// `z-1` ranks it under the sheet and the control in whichever stacking context this bar sits in --
+// the dock on a `sign` bench, the instrument on goFigure.
+const SCRIM = 'fixed inset-0 z-1 bg-[var(--lull-scrim)]'
+
+// THE CONTROL RIDES ABOVE THE SCRIM, so the button that opened the popup is still there to press --
+// it buys the next rung, or shuts the sheet when nothing is left -- and reads as "on" while it is.
+// Positioned so its `z-3` applies; on the `sign` bar it is the SPAN that is positioned and never the
+// root, whose absence of `relative` is what makes the dock the sheet's containing block.
+const CONTROL_LAYER = 'relative z-3'
+
+// The Close button's mark: two strokes, drawn in the button's own ink. Hidden from the name, which
+// is the button's "Close hints"; nobody says "Close X".
+const CloseMark = (): React.ReactNode => (
+  <svg
+    aria-hidden="true"
+    className="shrink-0"
+    fill="none"
+    height="16"
+    stroke="currentColor"
+    strokeLinecap="round"
+    strokeWidth="1.75"
+    viewBox="0 0 16 16"
+    width="16"
+  >
+    <path d="m4 4 8 8M12 4l-8 8" />
+  </svg>
+)
+
+// THE SIGN CONTROL IS TWO BOXES: a 44px TARGET a thumb can find (WCAG 2.5.5), and a 32px PILL inside
+// it that is all a player sees. One 44px pill filled the 46px sign row hairline to hairline, and the
+// focus ring -- 2px at a 3px offset, index.css's `:focus-visible` -- reached 5px past it, so with the
+// row stuck at the top of the bench the scroller cut the ring's top edge off. The pill is centered
+// in the target, which the root's `pt-px` sets 1px down inside the row's top hairline: pill at
+// 7-39px of the row, ring at 2-44px, inside both hairlines with a pixel to spare.
+//
+// So the RING MOVES TO THE PILL. The button's own outline is turned off by `.lull-hint-target` in
+// index.css -- NOT by a `focus-visible:outline-none` utility, which was tried and drew two rings.
+// index.css's `:focus-visible` is unlayered and every utility lives in `@layer utilities`, and an
+// unlayered rule beats a layered one whatever the specificity, so the utility never applied; the
+// override has to be unlayered too. The pill draws the same ring when the button holds focus,
+// through `group-focus-visible:` (no unlayered rule targets the pill, so that utility applies). The accent is the ring's own color,
+// restated: the sign row is a light surface, not the floor, so index.css's floor override does not
+// apply here either way.
+//
+// A native <button> rather than the shared Button, because the target is transparent and the face
+// is the pill, and Button draws its face on the element that takes the press. Giving every Button
+// caller a second box to fix one row would be the wider change for the narrower problem. The pill
+// RESTATES Button's `default` variant at `sm` -- border, ground, inset light, 13.5px semibold, px-3,
+// the press scale and its easing -- so a change to that face has to be made here too.
+//
+// The target's width is --lull-hint-w, so the row can reserve exactly that much: index.css pads
+// `.lull-bench[data-hint-dock] .lull-signrow` by the same token. The pill spans it, and its ring's
+// 5px overhang falls in the gutter on the right and the reserve's --lull-s3 on the left. Centered
+// because the labels vary in length inside a box that does not.
+const SIGN_TARGET = 'lull-hint-target group flex h-11 w-[var(--lull-hint-w)] cursor-pointer items-center'
+const SIGN_PILL =
+  'flex h-8 w-full items-center justify-center rounded-[var(--lull-pill)] border border-[var(--lull-rule)] ' +
+  'bg-[var(--lull-raised)] px-[var(--lull-s3)] text-[13.5px] font-semibold text-[var(--lull-ink)] ' +
+  'shadow-[inset_0_1px_1px_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.09)] ' +
+  'transition-transform duration-[380ms] ease-[cubic-bezier(0.22,0.68,0.12,1)] group-active:scale-[0.98] ' +
+  'group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[var(--lull-accent)] ' +
+  // PRESSED WHILE THE SHEET IS OPEN, read off the target's own `aria-expanded` so the face and what a
+  // reader is told cannot disagree. Ink ground and plate text, an existing high-contrast pair in both
+  // themes, so above the scrim the control reads as the thing that is "on".
+  'group-aria-expanded:border-[var(--lull-ink)] group-aria-expanded:bg-[var(--lull-ink)] ' +
+  'group-aria-expanded:text-[var(--lull-plate)] group-aria-expanded:shadow-none'
+
+// The same pressed state on goFigure's control, which is the shared Button and sits on the FLOOR --
+// dark in both themes. Ink on the floor would be a near-black pill on near-black ground in the light
+// theme, and floor-ink is the unpressed face's own near-white there, so neither reads as a change.
+// The floor's accent pair (floorPrimary's, 7.07:1 light and 8.78:1 dark) differs from the unpressed
+// face in both themes.
+const BARE_PRESSED =
+  'aria-expanded:border-[var(--lull-floor-accent)] aria-expanded:bg-[var(--lull-floor-accent)] ' +
+  'aria-expanded:text-[var(--lull-floor)] aria-expanded:shadow-none'
 
 // FIXED, not absolute, and both halves of that matter. This is the sheet a `bare` bar opens, and a
-// `bare` bar is anchored in a control row rather than in a band of its own -- which puts two
-// overflow-y-auto ancestors above it, FloorBar's well and `.lull-board`. Either one clips an
-// absolutely positioned box, so the sheet above would be cut off rather than drawn over the board,
-// and there is no unclipped ancestor anywhere on that bench.
+// `bare` bar is anchored in a control row rather than in a band of its own -- which puts it inside
+// FloorBar's overflow-y-auto well and, above that, the bench, which is the column's one scroller.
+// Either one clips an absolutely positioned box, so the sheet above would be cut off rather than
+// drawn over the board, and there is no unclipped ancestor anywhere on that bench.
 //
 // Its horizontal offsets fail for a second and independent reason. An absolutely positioned box
 // resolves them against the padding box of its positioned ancestor, which for a ~170px control
 // yields a ~138px sheet tucked under Undo. Fixed resolves them against the viewport, so the page
 // gutters mean the page gutters.
 //
-// The cost of `fixed`, stated rather than left to be found: the sheet no longer scrolls with the
-// bench. The frame's column is `overflow-y-auto` under the ceiling index.css gives `.lull-bench`,
-// so every viewport shorter than the bands it holds scrolls internally -- and a fixed sheet stays
-// pinned to the viewport while the control that opened it moves. Scrolled away from the bottom,
-// the sheet therefore hangs above the seam with its control somewhere else on the screen. That is
-// the lesser of two evils by a wide margin, because the alternative is not "the sheet moves with
-// the control" but "the sheet is clipped away entirely" -- there is no unclipped ancestor on that
-// bench to be absolute inside of.
+// ANCHORED NEAR THE TOP, like SHEET_DROP, rather than above the tray as it used to be. Pinned to the
+// seam, the sheet could only grow upward into whatever the board left above the 240px instrument --
+// about 200px on a 495px phone, which is less than three rungs and an expression need -- and it
+// scrolled inside itself. With the scrim over the tray there is no reason left to keep off it, so
+// the sheet starts a --lull-s2 under the crown (worst case: the crown on screen, which is how the
+// bench opens) and may grow down to a --lull-s4 above the bottom inset: 712px -> 572, 495px -> 355.
+// It overlays the tray where it is tall enough to reach it, and the control it would cover is the
+// one whose job the sheet's own Close button is doing.
 //
-// Positioned off the SEAM PLUS THE INSET, and the second term is the whole correctness of the line.
-// --lull-seam is the instrument's BUDGET, not its footprint: floor-bar sizes its band as
-// `calc(var(--lull-seam) + env(safe-area-inset-bottom))`, and index.css records the rule that the
-// inset is added to the seam and never taken out of it. So the floor's top edge sits at
-// 240 + inset from the bottom of the viewport, and a sheet pinned at 248 sat 26px INSIDE the floor
-// on any iPhone X-class device in portrait -- covering the top half of the 52px ribbon, which is
-// the always-mounted live region the bench announces through. The claim two paragraphs up, that the
-// sheet clears the instrument whatever happens to be in it, was the thing that was wrong.
+// Fixed, so it does not scroll with the bench, and that costs nothing now: the scrim is fixed too,
+// and while both are up nothing under them is reachable to scroll to.
 //
-// The clamp carries the same term for the same reason: without it the available height overstates
-// the viewport by the inset, on exactly the devices that have one.
+// --lull-kb is not subtracted: this bench has no text input to raise a keyboard.
 //
-// IT ALSO SUBTRACTS THE CROWN, and for the reason the docked clamp does: the bands above the board
-// are 108px and the clearance this used to leave was 48, so a long enough ladder was free to draw
-// itself over the title row. goFigure's ladder is three short rungs and an expression, so today it
-// is bounded by its own content at every viewport this app supports and the term changes nothing on
-// screen. It is here because "the sheet overlays the board" is the promise, not "the sheet usually
-// fits", and the next rung wording is the thing that would find the difference.
-//
-// The band the docked clamp subtracts for the hint bar has no counterpart here: a `bare` bar sits in
-// a row the bench already draws inside the seam, so the seam is the whole of what is below the
-// board. --lull-kb has none either -- this bench has no text input to raise a keyboard, and the
-// sheet is pinned to a viewport bottom the keyboard would cover, so a term that shortened the sheet
-// without moving it would be answering the wrong question.
-//
-// The 140px floor is carried over from the docked clamp and is the same fix for the same bug:
-// without it the height expression collapses to 14px on a 390dvh phone in landscape, and a
-// component built to protect the seam silently displayed nothing.
-//
-// `z-2` is the same rank the docked sheet takes, and index.css holds the scale. goFigure mounts no
-// sign row, so nothing on THIS bench currently outranks an unranked sheet -- the rank is here so
-// that the two variants of one component paint at one height, rather than one of them being a
-// latent bug waiting on a bench that grows a sticky strip.
+// `.lull-instrument` is sticky with `z-index: 1`, which makes it a stacking context and nests this
+// sheet's `z-2` -- and the scrim's `z-1` -- inside it: rank 2 within the instrument, rank 1 against
+// the page. That is enough to cover the board, because nothing on goFigure's board has a z-index;
+// index.css records why.
 //
 // One caveat, and it is a trap laid for the future rather than a live condition: a transformed
 // ancestor contains a fixed box, so `position: fixed` inside one stops meaning "the viewport". No
 // component applies `.lull-rise` today -- `grep -rn "lull-rise" src` comes back with the stylesheet
-// and nothing else -- so nothing is currently animating a transform above this sheet. Do not put
-// one there.
+// and nothing else -- so nothing is currently animating a transform above this sheet or its scrim.
+// Do not put one there.
 const SHEET_FIXED =
-  'fixed right-[var(--lull-gutter-right)] left-[var(--lull-gutter-left)] z-2 ' +
-  'bottom-[calc(var(--lull-seam)+env(safe-area-inset-bottom)+var(--lull-s2))] flex ' +
-  'max-h-[clamp(140px,calc(100dvh-var(--lull-crown)-var(--lull-seam)-env(safe-area-inset-bottom)-var(--lull-s2)),420px)] ' +
-  'flex-col gap-[var(--lull-s3)] overflow-y-auto rounded-[var(--lull-r-lg)] border border-[var(--lull-rule)] ' +
-  'bg-[var(--lull-raised)] p-[var(--lull-s4)] shadow-[0_8px_28px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.55)]'
+  'fixed top-[calc(var(--lull-crown)+var(--lull-s2))] right-[var(--lull-gutter-right)] left-[var(--lull-gutter-left)] z-2 ' +
+  'max-h-[calc(100dvh-var(--lull-crown)-var(--lull-s2)-var(--lull-s4)-env(safe-area-inset-bottom))] ' +
+  SHEET_SURFACE
 
 // `list-decimal` is a CROSS-REPO contract, not a styling choice, and it is the reason lull-api's
 // goFigure copy says "the 2nd operator FROM THE LEFT" rather than just "the 2nd operator". That band
@@ -221,12 +288,6 @@ const LIST = 'flex list-decimal flex-col gap-[var(--lull-s2)] pl-[var(--lull-s5)
 
 const SHEET_HEAD = 'flex items-center justify-between gap-[var(--lull-s3)]'
 
-// A rung says which hints are spent, so it is drawn with the load-bearing boundary colors rather
-// than with `--lull-hair`: hair is decoration and must never be the thing a state is read from.
-// The color is not carrying the state alone either -- the control beside it counts the rungs out
-// in words, which is what satisfies WCAG 1.4.1.
-const RUNG = 'h-[5px] w-4 rounded-[3px] border border-[var(--lull-rule)]'
-
 // The whole state of the ladder, said in words, on the one control the bar offers. The label always
 // names what the press will DO, which is what stops any state being a dead end. It used to read
 // "All hints open" and refuse the press -- a true statement of the state, and useless as a control:
@@ -235,7 +296,7 @@ const RUNG = 'h-[5px] w-4 rounded-[3px] border border-[var(--lull-rule)]'
 //
 // IT READS THE SHEET BEFORE IT READS THE LADDER, and that order is load-bearing now that the sheet
 // comes back shut. A control that only ever opened the NEXT rung would charge a returning player a
-// hint to re-read the ones they had already paid for -- the mirror of the bug the sheet's own Hide
+// hint to re-read the ones they had already paid for -- the mirror of the bug the sheet's own Close
 // button fixed, where wanting the board back cost a rung. So while there is something in the sheet
 // and the sheet is shut, the press shows it, free; with the sheet open there is nothing left to
 // reveal but the ladder, and the control goes back to being the ladder.
@@ -256,19 +317,19 @@ const RUNG = 'h-[5px] w-4 rounded-[3px] border border-[var(--lull-rule)]'
 // visible half and has nowhere left to shrink to. Undo and Clear already pay nothing for their long
 // forms -- those are `aria-label`s, and an `aria-label` costs no width at all.
 //
-// SHORTENED IN EVERY VARIANT, not only in `bare`, and this is a decision rather than a shortcut.
-// `docked` and `inline` sit in bands with room to spare, so the width argument above does not reach
-// them and a `variant` parameter here would have been easy to add. Three reasons not to:
+// SHORTENED IN EVERY VARIANT, not only in `bare` -- and on `sign` the width argument reaches it on
+// its own: that control is a fixed --lull-hint-w (116px) laid over the sign row, and "Open hint 1 of
+// 3" at ~148 would not fit in it. But the split was made for every variant before that was true, and
+// the reasons it was are still the reasons a `variant` parameter here would be wrong:
 //
 // First, a label that depends on the layout is a label that says different words for the same state
 // on two benches, and the bench whose words are wrong is then the bench whose tests do not cover
 // them. `controlLabel` takes the ladder, the sheet and the count -- everything that can change what
 // the control MEANS -- and nothing about where it is drawn. One code path is one set of words.
 //
-// Second, the shorter phrase is better copy on the phrase benches rather than merely narrower there.
-// `docked` and `inline` draw a band whose visible label already reads "Hints", an inch from a
-// control that used to read "Open hint 1 of 3" -- the word twice, in two type sizes, saying one
-// thing. "Hint 1 of 3" beside a heading that says "Hints" reads as the pager it is.
+// Second, the shorter phrase is better copy rather than merely narrower. On the sign row it is the
+// ONLY word for hints on screen -- the band that once headed it "Hints" is gone -- and "Hint 1 of 3"
+// reads as what it is, a pager over the ladder, where "Open hint 1 of 3" reads as an instruction.
 //
 // Third, the accessible name does not move. `Open hint 1 of 3`, `Show 2 hints` and `Hide hints` are
 // exactly what they were, in every variant and both modes, which is why the four other suites that
@@ -279,17 +340,18 @@ const RUNG = 'h-[5px] w-4 rounded-[3px] border border-[var(--lull-rule)]'
 // a session instead of dropping its verb on one press and keeping it on the next. `Hide hints` is
 // the state whose two halves come out the same string, and that is the split applied rather than the
 // split skipped: there is no noun form that says what the press does. "Hints" would be a heading
-// rather than a control, it would collide with the band's own visible "Hints" label on `docked`, and
-// its case breaks 2.5.3's containment; "Hide" alone would put a second button reading exactly "Hide"
-// an inch from the sheet's own, doing the same job. It is also ten characters against "Hint 1 of
+// rather than a control, it would say nothing about whether the press opens or shuts, and its case
+// breaks 2.5.3's containment; "Hide" alone would be a bare verb an inch from the sheet's own
+// Close, doing the same job under a different word. It is also ten characters against "Hint 1 of
 // 3"'s eleven, so it never binds the row and has nothing to buy.
 interface ControlLabel {
   // What a screen reader says. Always carries the verb, because a name that only counted rungs would
   // tell a reader what the control is ABOUT rather than what pressing it does.
   name: string
   // What the row draws. The count survives here rather than the verb, because the count is what this
-  // file's WCAG 1.4.1 argument rests on -- the rung markers are aria-hidden scenery, so these words
-  // are the only non-color carrier of how much of the ladder is spent.
+  // file's WCAG 1.4.1 argument rests on -- no variant draws rung markers any more, and when the docked
+  // band did they were aria-hidden scenery, so these words are the only carrier of how much of the
+  // ladder is spent.
   visible: string
 }
 
@@ -365,7 +427,7 @@ const controlLabel = (hints: HintLadder, isOpen: boolean, opened: number, hasSol
  * THAT SENTENCE IS THE CALLER'S TO KEEP AND IT WAS BRIEFLY UNTRUE. A pack ladder is fixed, so a
  * solved puzzle draws the same bar it always did; a COMPUTED one is folded against live state, and
  * two of the three adapters had nothing left to choose once every square or every row was right --
- * so they answered null, PuzzleFrame drew no bar, and this 60px `shrink-0` band unmounted on the
+ * so they answered null, PuzzleFrame drew no bar, and what was then a 60px `shrink-0` band unmounted on the
  * winning keystroke, re-laying out the board underneath it. Worse on cryptogram, where an unlocked
  * square can still be cleared: the band flickered as a player toggled the last letter. Both adapters
  * now fall back to the ladder a fresh board would have shown, so this file's promise holds on all six
@@ -383,7 +445,7 @@ export const HintBar = ({
   puzzleId,
   resetSignal = 0,
   solution,
-  variant = 'docked',
+  variant = 'sign',
 }: HintBarProps): React.ReactNode => {
   // Read once, at mount. The frame keys the view on the puzzle id, so a different puzzle is a
   // different component rather than a prop change, and re-reading storage on every render would
@@ -430,15 +492,23 @@ export const HintBar = ({
   // paid for before it offers the next one.
   const [isOpen, setIsOpen] = useState(false)
 
-  // The Button component takes no ref, and the reveal control has to be findable by name after the
-  // sheet closes: a sheet that vanished while focus was inside it would drop focus to <body>, and
-  // the next Tab would restart at the top of the page. The wrapper is what gives us a handle.
+  // The control is a shared Button on `bare` and a native <button> on `sign`, and it has to be
+  // findable after the sheet closes: a sheet that vanished while focus was inside it would drop
+  // focus to <body>, and the next Tab would restart at the top of the page. The wrapper is the one
+  // handle both variants share.
   const controlRef = useRef<HTMLSpanElement>(null)
   // The wrapper the `hidden` attribute lives on, so the reset effect below can ask whether focus is
   // about to be hidden rather than assume it. Nothing else needs it.
   const sheetRef = useRef<HTMLDivElement>(null)
-  const labelId = useId()
   const sheetId = useId()
+  // The dialog's name, which is its own visible "Hints" heading. An IDREF built here and resolved
+  // here; `aria-labelledby` is the kind that cannot rot silently, since breaking it takes the
+  // dialog's name and the suite finds the dialog by that name.
+  const headingId = useId()
+  // The two things focus moves between inside the popup: where it lands on open, and the scroller
+  // the Tab cycle visits when -- and only when -- the content is taller than the screen.
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
 
   // What a reset says out loud, and it is empty in every other state. See the render below for why
   // it is a piece of state rather than a constant the markup gates on `resetSignal`.
@@ -467,17 +537,19 @@ export const HintBar = ({
   // written against a single render would catch.
   const label = controlLabel(hints, isOpen, opened, hasSolution)
 
-  // The label and the SECTION THAT NAMES ITSELF WITH IT go together, and taking one without the
-  // other is the bug this pair exists to prevent. Dropping only the visible "Hints" text leaves
-  // `aria-labelledby` pointing at an id no longer in the document -- an aria-valid-attr-value
-  // violation -- and an unnamed region nested inside the region the host bench already declares.
+  // A NAMED REGION ON THE SIGN ROW, and no region at all on `bare`. The shell's control is a
+  // landmark of its own -- it sits outside the board, in the hint dock -- so a reader can reach
+  // "Hints" from the landmark list. Its name is an `aria-label` and not a visible heading: the docked
+  // band used to label itself with a visible "Hints" span through `aria-labelledby`, and that span,
+  // like the three rung markers beside it, has gone. The control's own words already count ("Hint 2
+  // of 3", "2 hints", "Show answer"), and a 116px control laid over a 46px row has no room for a
+  // heading to repeat them. A string attribute also cannot dangle the way an IDREF can.
   //
-  // Nothing load-bearing goes with them. The rung markers are aria-hidden scenery, and this file's
-  // WCAG 1.4.1 argument rests on the control's own label counting the rungs out in words, which
-  // `bare` keeps unchanged.
+  // `bare` stays a plain <div>: it sits in goFigure's tray, which is its own region, and a second
+  // landmark nested inside it would name one row of controls twice.
   const isBare = variant === 'bare'
   const Frame = isBare ? 'div' : 'section'
-  const frameProps = isBare ? {} : { 'aria-labelledby': labelId }
+  const frameProps = isBare ? {} : { 'aria-label': 'Hints' }
 
   const close = (): void => {
     // Focus first, then hide. React flushes the state change after this handler returns, so by the
@@ -590,7 +662,7 @@ export const HintBar = ({
     // so it has no way to ask for a shut one. A declined press therefore opens a sheet with an
     // empty list in it -- which is why the sheet's header is gated on the sheet being open rather
     // than on there being a rung in it. See the render below: an open sheet always carries its own
-    // Hide, so "the owner said no" is a sheet the player can close rather than a trap.
+    // Close, so "the owner said no" is a sheet the player can close rather than a trap.
     const next = opened + 1
     if (control) {
       control.onOpen(next)
@@ -612,21 +684,79 @@ export const HintBar = ({
     setIsOpen(true)
   }
 
+  // INTO THE POPUP ON OPEN, onto its Close button, from every path that opens it: a fresh rung, the
+  // free reopen, a declined controlled press. A dialog that left focus behind on the control would
+  // leave a keyboard player standing outside the thing that just covered the screen, and a reader
+  // hearing the control's new label rather than the dialog. Keyed on the TRANSITION: a press on the
+  // control while the sheet is already up -- the next rung, the reveal -- leaves focus where the
+  // press put it, which "leaves focus on the control that revealed the answer" pins.
+  //
+  // Shutting needs nothing here: every path that shuts the sheet runs `close` or the reset effect,
+  // and both move focus back to the control before the sheet leaves the tree.
+  useEffect(() => {
+    if (isOpen) closeRef.current?.focus()
+  }, [isOpen])
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
-    if (event.key !== 'Escape' || !isOpen) return
-    close()
+    if (!isOpen) return
+    if (event.key === 'Escape') {
+      close()
+      return
+    }
+    if (event.key === 'Tab') cycle(event)
+  }
+
+  // THE TAB CYCLE, and it holds THREE stops rather than the dialog's own one or two: the Close
+  // button, the dialog's body when it scrolls, and the hint CONTROL, which sits outside the dialog
+  // element above the scrim. The control is in the ring on purpose. It is the only way to buy the
+  // next rung or the answer, and every way of reaching it again from outside -- Close, Escape --
+  // shuts the sheet, after which the control's press is the FREE reopen and never the next rung. A
+  // ring of Close alone would leave a keyboard player able to open rung 1 and never rung 2: a trap
+  // in the ladder, where the pointer player just presses the pill. Nothing else on the page is in
+  // the ring, so focus never reaches the covered board.
+  //
+  // The body is a stop only when it actually scrolls, because a scroller a keyboard cannot focus
+  // cannot be scrolled from the keyboard -- and one that does not scroll is a stop that does
+  // nothing. jsdom lays nothing out, so under test it never scrolls and the ring is two stops.
+  //
+  // Only presses made from inside the ring are handled. This listener is on the bar's root, so it
+  // sees Tab from the control and from the dialog and from nothing else.
+  const cycle = (event: React.KeyboardEvent<HTMLElement>): void => {
+    const dialog = dialogRef.current
+    const ring = [
+      closeRef.current,
+      dialog !== null && dialog.scrollHeight > dialog.clientHeight ? dialog : null,
+      controlRef.current?.querySelector('button') ?? null,
+    ].filter((stop): stop is HTMLElement => stop !== null)
+    const active = document.activeElement
+    // Focus on the dialog's body when it is not a stop -- a click on a rung's text puts it there --
+    // counts as standing on Close, the dialog's first stop.
+    const at = ring.findIndex((stop) => stop === active)
+    const from = at === -1 && dialog?.contains(active) === true ? 0 : at
+    if (from === -1) return
+    event.preventDefault()
+    ring[(from + (event.shiftKey ? ring.length - 1 : 1)) % ring.length].focus()
   }
 
   return (
     <Frame
-      // `relative` is what the DOCKED and INLINE sheet is measured against, so the overlay is
-      // bounded by this bar's top edge rather than by whatever the frame happens to wrap it in. It
-      // does nothing for `bare`, whose sheet is fixed and therefore measured against the viewport --
-      // harmless there, and cheaper to keep than to make conditional on nothing.
-      className={`relative flex items-center ${VARIANT[variant]}`}
+      // The whole class comes from VARIANT, because on `sign` the ABSENCE of `relative` is the point:
+      // the sheet must resolve against the dock around this root, not against this root.
+      className={VARIANT[variant]}
       onKeyDown={handleKeyDown}
       {...frameProps}
     >
+      {/* First in the root so it paints under the sheet and the control at any rank; see SCRIM.
+          Mounted only while the sheet is open, so a shut bar draws nothing over the bench. */}
+      {isOpen && (
+        <div
+          aria-hidden="true"
+          className={SCRIM}
+          data-hint-scrim=""
+          onClick={close}
+          onPointerDown={(event) => event.preventDefault()}
+        />
+      )}
       {/* The live region wraps the list rather than duplicating its newest entry, so a screen
           reader announces only the rung that just appeared. `aria-atomic="false"` is what makes
           that true and is not optional: role="status" carries an implicit aria-atomic="true" in
@@ -641,9 +771,9 @@ export const HintBar = ({
           The last of those was the returning player's bug -- `hidden` does not empty a subtree, so a
           stored count of 2 put two <li> in this region before any reader was watching it.
 
-          The sheet's own Hide control is inside it, and that is a change with a cost that was
-          weighed rather than missed: the first reveal now reads "Hints, Hide, <rung 1>" instead of
-          just the rung. Every LATER rung is unaffected, because aria-atomic="false" announces only
+          The sheet's own Close control is inside it, and that is a change with a cost that was
+          weighed rather than missed: the first reveal now reads "Hints, Close hints, <rung 1>"
+          instead of just the rung. Every LATER rung is unaffected, because aria-atomic="false" announces only
           the nodes that changed and the header is static. The alternative was a sheet a touch-only
           player could not close without spending every remaining hint, which is a worse thing to
           have and a worse thing to say.
@@ -652,8 +782,8 @@ export const HintBar = ({
       <div aria-atomic="false" role="status">
         {/* What a reset sounds like, and without it a reset sounded like nothing at all: the
             focused button is silently renamed from "Open hint 2 of 3" back to "Open hint 1 of 3"
-            and screen readers do not re-read a focused element when its label changes, the rung
-            markers are aria-hidden scenery, and the sheet just vanishes. A player who pressed Play
+            and screen readers do not re-read a focused element when its label changes, nothing
+            else on the row draws the count, and the sheet just vanishes. A player who pressed Play
             again heard the board's own news and nothing about the ladder.
 
             It can only be said here because the reset no longer remounts this component. The region
@@ -672,8 +802,8 @@ export const HintBar = ({
             of state rather than markup gated on `resetSignal` directly so that the next press can
             take it back down -- see `press`.
 
-            sr-only rather than visible: the bar is a 60px band with a name, three rung markers and
-            a control in it, and there is no room for a sentence that is only true for one press. */}
+            sr-only rather than visible: the bar is a 116px control laid over a 46px row, and there
+            is no room for a sentence that is only true for one press. */}
         {announcement !== '' && (
           <p className="sr-only" key={`${resetSignal}:${announcement}`}>
             {announcement}
@@ -685,13 +815,23 @@ export const HintBar = ({
             correctness guarantee belongs, and this wrapper carries no display utility, so the
             attribute stands on its own. */}
         <div hidden={!isOpen} id={sheetId} ref={sheetRef}>
-          {/* Focusable because it scrolls and every rung inside it is plain text: a scrollable
-              region with no focusable descendant cannot be scrolled from the keyboard at all. No
-              static rule finds this under jsdom -- nothing is laid out, so scrollHeight is always 0
-              and the box never reports itself as scrollable. What guards it is a test that tabs
-              backwards from the control and expects to land here; see "is reachable from the
-              keyboard, so a player can scroll it". */}
-          <section aria-label="Open hints" className={isBare ? SHEET_FIXED : SHEET} tabIndex={0}>
+          {/* A MODAL DIALOG, named by its own visible heading. The scrim makes everything outside
+              it unreachable to a pointer and `aria-modal` says the same to a reader; the Tab cycle
+              in `cycle` makes it true for a keyboard, with the one exception that cycle explains.
+
+              tabIndex -1, not 0: focusable so the Tab cycle can put a keyboard on it when its
+              content is taller than the screen -- a scroller with only plain text in it cannot
+              otherwise be scrolled from the keyboard -- and out of the page's tab order, because
+              the cycle decides when it is a stop. jsdom lays nothing out, so under test it never
+              scrolls and the cycle never visits it. */}
+          <section
+            aria-labelledby={headingId}
+            aria-modal="true"
+            className={isBare ? SHEET_FIXED : SHEET_DROP}
+            ref={dialogRef}
+            role="dialog"
+            tabIndex={-1}
+          >
             {/* The way out, and it has to be here rather than only on the bar below.
                 The bar's own control is the LADDER: while a rung is still unspent it reads
                 "Open hint 2 of 3" and opening is the only thing it can do, so a player who
@@ -701,13 +841,21 @@ export const HintBar = ({
 
                 So the sheet carries its own dismissal, where the thing being dismissed is,
                 and it runs the same `close` -- focus returns to the bar's control, because
-                this button is inside the element about to leave the accessibility tree. */}
-            {/* The label is STATIC, and a paragraph rather than a heading. Static because this
-                header sits inside the live region: aria-atomic="false" announces the nodes that
-                changed, so a label counting the open rungs would re-announce itself alongside
-                every new one. A paragraph because the sheet is drawn over a board whose heading
-                levels belong to the shell, and a heading here would either skip a level or claim
-                one it does not own.
+                this button is inside the element about to leave the accessibility tree.
+
+                A BORDERED BUTTON WITH AN X AND A WORD, and it used to be a `quiet` "Hide" -- no
+                border, muted ink, indistinguishable from a caption. Players did not see it and
+                kept pressing the board under the sheet. `default` is the app's bordered control,
+                the X is the mark every popup on the web is shut with, and "Close" is the word the
+                board's refusal now uses too ("Close the hints to type."). The name says what is
+                closed; the visible word is contained in it (WCAG 2.5.3). 44px tall from Button's
+                own min-h-11. */}
+            {/* The label is STATIC, and an <h2> that names the dialog. Static because this header
+                sits inside the live region: aria-atomic="false" announces the nodes that changed,
+                so a label counting the open rungs would re-announce itself alongside every new one.
+                A heading because a modal dialog is its own document for as long as it is open --
+                the board's headings are behind the scrim and out of reach -- and the dialog's name
+                is this text, through `aria-labelledby`.
 
                 GATED ON THE SHEET BEING OPEN, not on there being a rung in it, and the difference
                 is a trap rather than a tidiness. `press` opens the sheet whether or not the count
@@ -726,9 +874,15 @@ export const HintBar = ({
                 -- see its own comment. */}
             {isOpen && (
               <div className={SHEET_HEAD}>
-                <p className="text-[11px] font-semibold tracking-[0.14em] text-[var(--lull-muted)] uppercase">Hints</p>
-                <Button onClick={close} size="sm" variant="quiet">
-                  Hide
+                <h2
+                  className="text-[11px] font-semibold tracking-[0.14em] text-[var(--lull-muted)] uppercase"
+                  id={headingId}
+                >
+                  Hints
+                </h2>
+                <Button aria-label="Close hints" onClick={close} ref={closeRef} size="sm" variant="default">
+                  <CloseMark />
+                  Close
                 </Button>
               </div>
             )}
@@ -829,9 +983,8 @@ export const HintBar = ({
                 the arrangement NVDA and JAWS are documented to miss, since they announce changes
                 inside a region they are ALREADY watching.
 
-                A <p> and not a heading, for the reason the sheet's own label is one: the heading
-                levels on screen belong to the shell, and a heading here would either skip a level or
-                claim one it does not own. */}
+                A <p> and not a heading: it is the answer, a sentence in the dialog's body, and the
+                dialog's one heading is the "Hints" above that names it. */}
             {isOpen && isRevealed && (
               <p className="border-t border-[var(--lull-rule)] pt-[var(--lull-s3)] text-[var(--lull-ink)]">
                 {solution}
@@ -841,35 +994,6 @@ export const HintBar = ({
         </div>
       </div>
 
-      {/* The band's own furniture: the name it goes by and the markers that show what is spent.
-          Gated together with the <section> above, because the `id` this label carries is the thing
-          that section names itself with -- keeping one without the other leaves a dangling
-          aria-labelledby, which is why the pair is decided once, in `isBare`, rather than twice
-          here. */}
-      {!isBare && (
-        <div className="mr-auto flex flex-col gap-[var(--lull-s1)]">
-          <span className="text-[11px] font-semibold tracking-[0.14em] text-[var(--lull-muted)] uppercase" id={labelId}>
-            Hints
-          </span>
-          {/* Scenery. The control's own label counts the rungs out in words, so nothing here is the
-              only carrier of anything.
-
-              Keyed by INDEX, the same as the sheet's list above and for a stronger version of the
-              same reason: these markers carry no identity at all -- they are three positions that
-              fill in, not three rungs. Keying them on rung text would hand React duplicate keys on a
-              list it reconciles every time `opened` changes, and the failure mode there is a stale or
-              missing marker rather than a console warning. */}
-          <span aria-hidden="true" className="flex gap-[3px]">
-            {hints.map((_hint, index) => (
-              <span
-                className={`${RUNG} ${index < opened ? 'border-[var(--lull-accent)] bg-[var(--lull-accent)]' : 'bg-[var(--lull-hair)]'}`}
-                key={index}
-              />
-            ))}
-          </span>
-        </div>
-      )}
-
       {/* Never unmounted and never `disabled`: a browser blurs a disabled element, focus falls to
           <body>, and the next Tab restarts at the top of the page. It is no longer aria-disabled
           either -- spending the last rung turns it into the sheet's toggle rather than into a
@@ -878,10 +1002,32 @@ export const HintBar = ({
           aria-expanded and aria-controls are what let a screen reader user know the sheet is a
           thing this button opens and closes, which is the relationship the old flowed drawer
           carried and the first version of this bar dropped. */}
-      <span ref={controlRef}>
-        <Button aria-controls={sheetId} aria-expanded={isOpen} aria-label={label.name} onClick={press} size="sm">
-          {label.visible}
-        </Button>
+      <span className={CONTROL_LAYER} ref={controlRef}>
+        {isBare ? (
+          <Button
+            aria-controls={sheetId}
+            aria-expanded={isOpen}
+            aria-label={label.name}
+            className={BARE_PRESSED}
+            onClick={press}
+            size="sm"
+          >
+            {label.visible}
+          </Button>
+        ) : (
+          // See SIGN_TARGET. The same name, state and IDREF as the bare control, on a different
+          // face; the pill is a span, so it adds nothing to the accessible name.
+          <button
+            aria-controls={sheetId}
+            aria-expanded={isOpen}
+            aria-label={label.name}
+            className={SIGN_TARGET}
+            onClick={press}
+            type="button"
+          >
+            <span className={SIGN_PILL}>{label.visible}</span>
+          </button>
+        )}
       </span>
     </Frame>
   )

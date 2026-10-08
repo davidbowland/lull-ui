@@ -469,9 +469,9 @@ describe('PuzzleFrame', () => {
       expect(screen.getByText('Easy')).toBeInTheDocument()
     })
 
-    // Cipher and writing get the docked hint bar; the tile bench spends its 60px on the goal plate
-    // and its worked example instead. Read off the bench, so a second type on the same surface
-    // inherits the decision rather than repeating it.
+    // Cipher and writing get the shell's hint control, laid over the board's sign row from the hint
+    // dock; the tile bench draws its own in its tray instead. Read off the bench, so a second type on
+    // the same surface inherits the decision rather than repeating it.
     //
     // THE SHIPPED ADAPTER IS NAMED, because `entryFor` is mocked here and writes `hints:
     // stubbedAdapter` over whatever the registry holds -- so leaving it unset would take a real
@@ -496,10 +496,10 @@ describe('PuzzleFrame', () => {
       expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
     })
 
-    // THE SECOND TYPE ON THE WRITING BENCH, and this is the assertion that `hasHintBar` was written
+    // THE SECOND TYPE ON THE WRITING BENCH, and this is the assertion that `hasHintDock` was written
     // off the BENCH rather than off the type. Its own comment says it is written that way "so a
     // second type that plays on the same surface inherits the decision instead of repeating it" --
-    // this is that second type, and it gets the docked bar with no shell edit at all.
+    // this is that second type, and it gets the dock with no shell edit at all.
     it('gives the second writing-bench type the same hint bar', async () => {
       setupPack(crypticCluePack)
 
@@ -524,8 +524,8 @@ describe('PuzzleFrame', () => {
       expect(screen.getByText('The answer is TANGO.')).toBeInTheDocument()
     })
 
-    // THE THIRD TYPE ON THE WRITING BENCH, and it needs no shell edit either: `hasHintBar` is
-    // `entry.bench !== 'tile'`, so this type inherits the docked bar the way Cryptic Clue did.
+    // THE THIRD TYPE ON THE WRITING BENCH, and it needs no shell edit either: `hasHintDock` is
+    // `entry.bench !== 'tile'`, so this type inherits the dock the way Cryptic Clue did.
     it('gives the third writing-bench type the same hint bar', async () => {
       setupPack(themedAnagramsPack)
       stubbedAdapter = REGISTRY.themedanagrams.hints
@@ -620,18 +620,89 @@ describe('PuzzleFrame', () => {
     })
 
     // DOM order is the whole mechanism and the only part of it a test can hold: CLAUDE.md
-    // forbids style assertions and jsdom lays nothing out to measure. The board and the
-    // instrument come out of one component, so the hint bar can only land between them if the
-    // frame renders it after both -- which is exactly what the `order` rules then undo.
-    it('renders the hint bar after the component that owns the two bands around it', async () => {
+    // forbids style assertions and jsdom lays nothing out to measure. The control comes BEFORE the
+    // board, so focus order is breadcrumb, hint control, board -- which is also the order on screen,
+    // since the control is laid over the top of the board's sign row.
+    it('renders the hint control before the board', async () => {
       setupPack(cryptogramPack)
       stubbedAdapter = REGISTRY.cryptogram.hints
 
       renderFrame(cryptogramPuzzleId)
       const board = await screen.findByRole('region', { name: 'Board' })
-      const bar = screen.getByRole('button', { name: 'Open hint 1 of 3' })
+      const control = screen.getByRole('button', { name: 'Open hint 1 of 3' })
 
-      expect(board.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(board.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    })
+
+    // AND OUTSIDE IT, which is the property the order above does not imply. The frame rebuilds the
+    // board on every answer reveal, so a control inside it would be destroyed by the press that
+    // reveals -- focus, the open sheet and the bar's live region with it. That is why the control
+    // rides a shell-owned dock rather than a prop the board renders.
+    it('keeps the hint control out of the board', async () => {
+      setupPack(cryptogramPack)
+      stubbedAdapter = REGISTRY.cryptogram.hints
+
+      renderFrame(cryptogramPuzzleId)
+      const board = await screen.findByRole('region', { name: 'Board' })
+
+      expect(board).not.toContainElement(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+      expect(board).not.toContainElement(screen.getByRole('region', { name: 'Hints' }))
+    })
+
+    // THE RESERVE'S HOOK. `data-hint-dock` on the bench is what makes index.css keep the sign row's
+    // text clear of the control laid over its right end; it is set by the same `hasHintDock` that
+    // renders the dock, and these rows hold the two together bench by bench. The bench is the
+    // frame's root element, so it is read off the container rather than by a class.
+    describe('the bench that carries a hint dock', () => {
+      const bench = (container: HTMLElement): Element | null => container.firstElementChild
+
+      it.each([
+        ['cipher', cryptogramPack, cryptogramPuzzleId],
+        ['writing', phrasePack, missingVowelsPuzzleId],
+        ['writing (Cryptic Clue)', crypticCluePack, crypticCluePuzzleId],
+        ['writing (Themed Anagrams)', themedAnagramsPack, themedAnagramsPuzzleId],
+      ])('is marked on the %s bench', async (_bench, loaded, id) => {
+        setupPack(loaded)
+
+        const { container } = renderFrame(id)
+        await screen.findByRole('region', { name: 'Board' })
+
+        expect(bench(container)).toHaveAttribute('data-hint-dock', '')
+      })
+
+      it('is marked on the guess bench', async () => {
+        setupPack(phrazlePack)
+
+        const { container } = render(
+          <DictionaryContext.Provider value={{ status: 'ready', words: phrazleDictionary }}>
+            <PuzzleFrame locale="en-US" now={noonOnPackDate} puzzleId={phrazlePuzzleId} />
+          </DictionaryContext.Provider>,
+        )
+        await screen.findByRole('region', { name: 'Board' })
+
+        expect(container.firstElementChild).toHaveAttribute('data-hint-dock', '')
+      })
+
+      // Go Figure draws its own control in its tray, so the shell draws none and reserves nothing.
+      it('is not marked on the tile bench', async () => {
+        setup()
+        writePack(packDate, pack)
+
+        const { container } = renderFrame()
+        await screen.findByRole('region', { name: 'Board' })
+
+        expect(bench(container)).not.toHaveAttribute('data-hint-dock')
+      })
+
+      // The bench and the breadcrumb are the same element's business -- the attribute is on the
+      // column the breadcrumb heads, not on some wrapper above it.
+      it('is the column the breadcrumb heads', async () => {
+        setupPack(cryptogramPack)
+
+        const { container } = renderFrame(cryptogramPuzzleId)
+
+        expect(bench(container)).toContainElement(await breadcrumb())
+      })
     })
 
     // A board that starts a puzzle over cannot clear the ladder itself -- `lull:hints:<puzzleId>`
@@ -780,9 +851,38 @@ describe('PuzzleFrame', () => {
         // NAMED "Hide hints" BY THE TIME THIS RUNS, and that is the control behaving correctly rather
         // than a second button: the press opens the sheet, and with the ladder spent and the answer
         // out there is nothing left for the control to offer, so it becomes the sheet's toggle. The
-        // element is the same one -- `toHaveFocus` on the node found under its new name is what says
-        // focus rode through the board's remount AND through the relabeling.
-        expect(screen.getByRole('button', { name: 'Hide hints' })).toHaveFocus()
+        // element is the same one -- `toBe(control)` is what says the node itself rode through the
+        // board's remount, and `toHaveFocus` that focus rode with it AND through the relabeling.
+        const after = screen.getByRole('button', { name: 'Hide hints' })
+        expect(after).toBe(control)
+        expect(after).toHaveFocus()
+      })
+
+      // THE SAME PROPERTY ON A BENCH WHOSE REVEAL GOES THROUGH AN ADAPTER, where the press is
+      // detected by the frame rather than reported by the bar. The finished board and the rung tail
+      // land in one string and the board is rebuilt the same way, so the dock's control has to
+      // survive it the same way.
+      it('keeps the same hint control, focused, through an adapter bench’s reveal', async () => {
+        const user = userEvent.setup({ delay: null })
+        setupPack(cryptogramPack)
+        stubbedAdapter = REGISTRY.cryptogram.hints
+
+        renderFrame(cryptogramPuzzleId)
+        const control = await screen.findByRole('button', { name: 'Open hint 1 of 3' })
+        const before = screen.getByRole('region', { name: 'Board' })
+        control.focus()
+        await user.keyboard('{Enter}')
+        // The first press opens the popup and puts focus on its Close button; one Tab is the way
+        // back to the control, which the popup's Tab cycle keeps for exactly this -- buying the
+        // next rung from the keyboard.
+        await user.tab()
+        await user.keyboard('{Enter}')
+        await user.keyboard('{Enter}')
+        await user.keyboard('{Enter}')
+
+        expect(screen.getByRole('region', { name: 'Board' })).not.toBe(before)
+        expect(screen.getByRole('button', { name: 'Hide hints' })).toBe(control)
+        expect(control).toHaveFocus()
       })
 
       // NOT ON A RUNG. Two presses in, the board is still the player's and the puzzle is not solved
@@ -1189,7 +1289,7 @@ describe('PuzzleFrame', () => {
 
       expect(readProgress(cryptogramPuzzleId)).toBeNull()
       expect(screen.queryByText('From the adapter, first.')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Close hints' })).toBeInTheDocument()
     })
 
     // `ladder` MAY ANSWER NULL, and the frame reads that the way it reads a malformed pack ladder:

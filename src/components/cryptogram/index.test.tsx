@@ -15,16 +15,28 @@ describe('CryptogramBoard', () => {
   // calls and knows nothing about an assignment to a prototype.
   const scrollIntoView = jest.fn()
 
+  // JSDOM 20 HAS NO POINTER CAPTURE EITHER, and the pad calls setPointerCapture on every press. The
+  // pad's user.click presses here run its no-layout path -- the key is the one the press landed on,
+  // committed on pointerup -- and nothing in this suite asserts capture, so no-ops are enough. Deleted
+  // after, for the same reason as scrollIntoView.
+  const POINTER_CAPTURE = ['setPointerCapture', 'releasePointerCapture', 'hasPointerCapture']
+
   beforeAll(() => {
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
       writable: true,
     })
+    for (const method of POINTER_CAPTURE) {
+      Object.defineProperty(Element.prototype, method, { configurable: true, value: () => false, writable: true })
+    }
   })
 
   afterAll(() => {
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    for (const method of POINTER_CAPTURE) {
+      delete (Element.prototype as unknown as Record<string, unknown>)[method]
+    }
   })
 
   // One session per test, never the default export's own. `userEvent.click(...)` off the default
@@ -180,6 +192,19 @@ describe('CryptogramBoard', () => {
 
       expect(screen.getByText('Saying')).toBeInTheDocument()
       expect(screen.getByText('0 of 9 squares filled')).toBeInTheDocument()
+    })
+
+    // THE FIRST CHILD OF THE BOARD, and that position is the contract: the shell lays its hint
+    // control over the right end of the board's first row, and index.css reserves room for it on
+    // `.lull-signrow`. A <div>, because the band stacks two lines and has a control laid over it --
+    // a <p> held one line of phrasing content and nothing else.
+    it('opens the board with the sign row', () => {
+      setup()
+
+      const sign = screen.getByRole('region', { name: 'Cryptogram' }).firstElementChild
+
+      expect(sign).toHaveClass('lull-signrow')
+      expect(sign).toHaveTextContent('Saying0 of 9 squares filled')
     })
 
     it('leaves the category out of the sign line on an older pack that has none', () => {

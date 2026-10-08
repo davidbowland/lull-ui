@@ -80,10 +80,11 @@ const WELL = {
 // survives.
 //
 // It clamps the TAIL, and that is the point. An earlier draft let the text grow upward out of the
-// band, out of flow, over the bottom of the phrase -- and on the three benches that carry a hint bar
-// that bought exactly nothing: the floor's top edge is the bar's bottom edge, so a third line grows
-// into the bar's 60px and every pixel of it is behind an opaque strip. What it changed was which
-// half you lose. Anchored to the bottom, the line that disappears is the FIRST one -- "Every Q is Z
+// band, out of flow, over the bottom of the phrase -- and that bought nothing. When the three
+// benches that carry a hint control still had a 60px hint bar between the board and the floor, a
+// third line grew into the bar and every pixel of it was behind an opaque strip; with the bar gone
+// it would grow onto the bottom of the board, over the squares the player is reading. What it
+// changed was which half you lose. Anchored to the bottom, the line that disappears is the FIRST one -- "Every Q is Z
 // now, 12 squares" -- and the positional tail survives. Clamped, the sentence keeps its head and
 // loses its tail, which is the same priority `assign` already applies when it chooses between the
 // full-board notice and the `Now on ...` tail. The whole string stays in the DOM either way, so the
@@ -95,8 +96,8 @@ const RIBBON =
 // The hairline under the ribbon belongs to the MESSAGE, not to the band, and that is not a detail.
 // The band is reserved space and it is empty until the player's first move, so a rule drawn under
 // it always turned 52px of nothing into a container -- an empty bar with a line under it, sitting
-// between the board and the instrument, which on the tile bench (no hint bar above it, a tray with
-// gaps below it) read as a piece of the layout that had failed to load. Drawn only alongside the
+// between the board and the instrument, which on the tile bench (the board directly above it, a tray
+// with gaps below it) read as a piece of the layout that had failed to load. Drawn only alongside the
 // text, the same way the accent dot is, it is a rule under a sentence.
 //
 // Transparent rather than absent, so the border-box height stays 52 either way and nothing below
@@ -171,7 +172,8 @@ export const FloorBar = ({
       {message === '' && resting !== '' && (
         <p className={RESTING}>
           {/* Clamped like a message is, and for the same reason: this band is 52px whatever is in
-              it, and text allowed to grow out of it would be drawn behind the hint bar above. */}
+              it, and text allowed to grow out of it would be drawn over the bottom of the board
+              above. */}
           <span className="line-clamp-2">{resting}</span>
         </p>
       )}

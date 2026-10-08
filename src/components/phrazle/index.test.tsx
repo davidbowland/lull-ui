@@ -133,7 +133,22 @@ describe('PhrazleBoard', () => {
   // The board mounts exactly one, so the last one built belongs to the render under test.
   const lastObserver = (): Recorded => observers[observers.length - 1]
 
+  // JSDOM HAS NO POINTER CAPTURE EITHER, and the pad captures the pointer on every press: it
+  // commits on release and lets a thumb slide to the next key, which only works if the pad keeps
+  // receiving the moves once the finger leaves the key it landed on. Every `user.click` in this file
+  // is such a press. No-ops rather than recorders, because what capture does is the keypad suite's
+  // business; this suite only needs the call not to throw. Deleted in afterAll on scrollIntoView's
+  // reasoning -- `clearMocks` knows nothing about an assignment to a prototype.
+  const noPointerCapture = {
+    hasPointerCapture: (): boolean => false,
+    releasePointerCapture: (): void => undefined,
+    setPointerCapture: (): void => undefined,
+  }
+
   beforeAll(() => {
+    Object.entries(noPointerCapture).forEach(([method, value]) => {
+      Object.defineProperty(Element.prototype, method, { configurable: true, value, writable: true })
+    })
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
@@ -166,6 +181,9 @@ describe('PhrazleBoard', () => {
   })
 
   afterAll(() => {
+    Object.keys(noPointerCapture).forEach((method) => {
+      delete (Element.prototype as unknown as Record<string, unknown>)[method]
+    })
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
     delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
   })
@@ -230,6 +248,21 @@ describe('PhrazleBoard', () => {
       // bands, and a board that rendered one of them would take the seam with it.
       expect(container.querySelector('.lull-board')).toBeInTheDocument()
       expect(container.querySelector('.lull-instrument')).toBeInTheDocument()
+    })
+
+    // THE SIGN ROW IS THE BOARD'S FIRST CHILD, which is the layout convention every hint-dock bench
+    // keeps: the shell lays its hint control over that row's right end, so a sign row drawn anywhere
+    // else would leave the control floating over the grid. Structural DOM, like the row above, and
+    // asserted with the count inside it so the element found is the real band and not an empty one.
+    //
+    // REDDENS ON: anything rendered ahead of the sign row inside the section.
+    it('opens the board with its sign row', () => {
+      const { container } = renderBoard()
+
+      const first = container.querySelector('.lull-board')?.firstElementChild
+
+      expect(first).toBe(container.querySelector('.lull-signrow'))
+      expect(first).toHaveTextContent('Guess 1')
     })
 
     // ONE ROW, NOT SIX. The board draws the guesses made plus the one being composed, so a fresh
@@ -1408,25 +1441,30 @@ describe('PhrazleBoard', () => {
       expect(composing()).toHaveAccessibleName('Your guess, TOE')
     })
 
-    // THE BOARD BAND IS A FOCUS DESTINATION NOW, and that is a new place keystrokes can arrive from.
-    // It is `tabIndex={0}` so a keyboard player can scroll a growing grid, and a <section> acts on
-    // nothing -- so rule 3 correctly declines to treat it like a button and Enter falls through to
-    // `commit`. This is the same shape as the hint sheet, which holds focus for the same reason and
-    // is answered by the OPEN check rather than by the tag test.
+    // THE PLAYER WHO MIXES THE TWO INPUTS: a row filled on the pad, then committed from a hardware
+    // keyboard once focus has left the pad. A tapped key KEEPS focus, and Enter on a focused key is
+    // that key's own activation (rule 3) -- so what is owed is that Enter commits again the moment
+    // focus is back on <body>, with nothing left over from the taps to swallow it.
     //
-    // The whole phrase is typed and committed from that focus, because the failure this guards
-    // against is asymmetric: a tag test widened to swallow SECTION would leave letters working and
-    // silently eat only the Enter.
+    // This row used to focus the board band itself, which carried tabIndex={0} while it was the
+    // bench's scroller. It is not a focus destination any more -- the bench scrolls, and holds
+    // focusable controls of its own -- so <body> is the one place an Enter arrives from that is not
+    // a control.
     //
-    // REDDENS ON: adding SECTION to rule 3's tag test, after which the guess is never committed.
-    it('fills and commits a row with the board band focused', async () => {
+    // REDDENS ON: the keydown listener moved off the window onto the board or the pad, after which
+    // an Enter from <body> reaches nothing and the guess is never committed.
+    it('commits a row filled on the pad once focus is back on the body', async () => {
       const { user } = renderBoard()
 
-      await user.tab()
+      await type(user, 'TOEHOLD')
+      // Whatever the taps left focused, rather than a named key: which element a press focuses is
+      // the pad's business, and this row is about the Enter that follows.
+      const focused = document.activeElement as HTMLElement
+      focused.blur()
 
-      expect(screen.getByRole('region', { name: 'Phrazle' })).toHaveFocus()
+      expect(document.body).toHaveFocus()
 
-      await user.keyboard('TOEHOLD{Enter}')
+      await user.keyboard('{Enter}')
 
       expect(onProgress).toHaveBeenCalledWith('{"guesses":["TOE HOLD"]}')
     })
@@ -1494,47 +1532,193 @@ describe('PhrazleBoard', () => {
     })
   })
 
-  describe('the composing row is kept in view', () => {
-    // `nearest` rather than `center`, so on a viewport where everything fits it does nothing at all.
-    // This is the guess bench's version of goFigure's non-negotiable: the two things a player is
-    // comparing are the row they are typing and the row they just had marked, and they are adjacent,
-    // so keeping the bottom of the grid in view keeps both.
+  // WHICH ROW EACH SCROLL LANDS ON, never just how many there were. The old version of this block
+  // counted calls, and a count cannot tell the old behavior from the new one: an accepted Guess
+  // still scrolls exactly once, and the whole change is that it now scrolls the MARKED row instead
+  // of the new empty one. `mock.contexts` records the element each call was made on, so every row
+  // below names its target.
+  //
+  // THE RULE: an accepted Guess shows the row just marked; the first letter of the next guess shows
+  // the composing row; nothing else scrolls -- not later letters, not Delete, not a refused Guess,
+  // and not a key refused while the hint sheet is up (that row lives with the sheet's own block,
+  // below). Always `block: 'nearest'`, so a row already on screen does not move.
+  describe('what the bench scrolls to, and when', () => {
+    // The elements scrolled to while `step` ran, in call order. Sliced from where the record stood
+    // before the step, so each assertion is about one action rather than about the whole test.
+    const scrollsDuring = async (step: () => Promise<void>): Promise<unknown[]> => {
+      const from = scrollIntoView.mock.contexts.length
+      await step()
+      return scrollIntoView.mock.contexts.slice(from)
+    }
+    const markedRow = (name: string): HTMLElement => screen.getByRole('group', { name })
+
+    // ONE SCROLL AT MOUNT, onto the row the player will type into -- and on a RESTORED board too,
+    // where the guess count is already five. The count is "seen" at mount, so the effect that shows
+    // a marked row stays quiet: a board coming back from storage owes the player their next row, not
+    // a scroll to the last one they marked yesterday.
     //
-    // Once at mount and once per commit, keyed to guesses.length -- NOT to every keystroke, which
-    // would fight a player who has scrolled up to re-read row 1.
+    // REDDENS ON: the marked-row effect running at mount (two calls, the first on `Guess 5`).
+    it('scrolls the composing row into view at mount, and nothing else', () => {
+      renderBoard(phrazlePuzzle, FIVE_SPENT)
+
+      expect(scrollIntoView.mock.contexts).toHaveLength(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(composing())
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    })
+
+    // A fresh board's letters are not the start of a NEXT guess -- there was no previous one -- so
+    // a whole row typed from mount scrolls nothing.
     //
-    // REDDENS ON: dropping the effect (0 calls at the first assertion); keying it to `[typed]` (8
-    // calls at the second); `center` instead of `nearest` (the last-called-with).
-    it('scrolls at mount and after a commit, and not on a keystroke', async () => {
+    // REDDENS ON: the flag starting true, or the composing scroll keyed to `typed`.
+    it('does not scroll while the first row is typed', async () => {
       const { user } = renderBoard()
 
-      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      const scrolled = await scrollsDuring(() => type(user, 'HOTHAND'))
 
+      expect(scrolled).toEqual([])
+    })
+
+    // THE COMPLAINT THIS EXISTS FOR: "When a phrase is submitted, the usual thing is to see the
+    // results before scrolling to the next input area." The Guess scrolls once, onto the row it just
+    // marked -- never onto the new empty row below it.
+    //
+    // REDDENS ON: the old `[guesses.length]` effect on composingRef (the one scroll lands on the
+    // composing row); `center` or `start` instead of `nearest`.
+    it('shows the marked row on an accepted Guess and leaves the new row where it is', async () => {
+      const { user } = renderBoard()
       await type(user, 'HOTHAND')
 
-      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      const scrolled = await scrollsDuring(() => user.click(keyNamed(/^Guess$/)))
 
-      await user.click(keyNamed(/^Guess$/))
-
-      expect(scrollIntoView).toHaveBeenCalledTimes(2)
+      expect(scrolled).toHaveLength(1)
+      expect(scrolled[0]).toBe(markedRow('Guess 1, HOT HAND'))
+      expect(scrolled).not.toContain(composing())
       expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
     })
 
-    // THE OTHER ARM OF `composingRef.current?.`, and it is the arm a reader assumes cannot happen. A
-    // finished board draws no composing row at all, so the ref holds null and the effect that runs
-    // at mount has nothing to point at. Without the optional chain this render throws.
+    // THE FIRST LETTER IS THE PLAYER MOVING ON, so it -- and only it -- brings the composing row into
+    // view. The second letter, and a Delete, scroll nothing: a player who scrolled back up to re-read
+    // guess 1 while typing must not be yanked down on every keystroke.
     //
-    // REDDENS ON: `ref={composingRef}` on every row unconditionally -- the last row rendered wins
-    // and the finished board scrolls to row 6.
+    // REDDENS ON: the flag never cleared (every letter scrolls); the nonce bumped on Delete; the
+    // scroll fired from `commit` rather than from the letter.
+    it('scrolls the composing row once, on the first letter of the next guess', async () => {
+      const { user } = renderBoard()
+      await type(user, 'HOTHAND')
+      await user.click(keyNamed(/^Guess$/))
+
+      const first = await scrollsDuring(() => type(user, 'T'))
+
+      expect(first).toHaveLength(1)
+      expect(first[0]).toBe(composing())
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+
+      const later = await scrollsDuring(async () => {
+        await type(user, 'O')
+        await user.click(keyNamed(/^Delete$/))
+      })
+
+      expect(later).toEqual([])
+    })
+
+    // THE SAME RULE FROM A HARDWARE KEYBOARD, which reaches `press` and `commit` by another road:
+    // Enter shows the marked row and the first typed letter shows the composing one.
+    it('follows the same rule from a hardware keyboard', async () => {
+      const { user } = renderBoard()
+
+      const guessed = await scrollsDuring(() => user.keyboard('HOTHAND{Enter}'))
+
+      expect(guessed).toEqual([markedRow('Guess 1, HOT HAND')])
+
+      const started = await scrollsDuring(() => user.keyboard('t'))
+
+      expect(started).toEqual([composing()])
+    })
+
+    // NEITHER A REFUSED GUESS NOR A DELETE ON AN EMPTY ROW STARTS ANYTHING, and neither may spend
+    // the flag either: the letter that follows is still the first letter of the next guess and still
+    // owes its one scroll.
     //
-    // A WON board rather than a lost one, because winning is the only way a board finishes now. The
-    // arm being exercised is the same: `rows` is `guesses.length` once `over`, so no composing row
-    // is drawn and the ref holds null.
-    it('scrolls nothing at all on a board with no composing row', () => {
+    // REDDENS ON: `commit` clearing the flag on a refusal; `erase` clearing it.
+    it("scrolls nothing on a refused Guess or a Delete, and keeps the first letter's scroll", async () => {
+      const { user } = renderBoard()
+      await type(user, 'HOTHAND')
+      await user.click(keyNamed(/^Guess$/))
+
+      const refused = await scrollsDuring(() => user.click(keyNamed(/^Guess$/)))
+
+      // Message three of the test (row full, marking, refusal), so the nonce is odd and the mark is due.
+      expect(ribbon()).toHaveProperty('textContent', `${FILL_FIRST}${REPEAT_MARK}`)
+      expect(refused).toEqual([])
+
+      const erased = await scrollsDuring(() => user.click(keyNamed(/^Delete$/)))
+
+      expect(erased).toEqual([])
+
+      const first = await scrollsDuring(() => type(user, 'T'))
+
+      expect(first).toEqual([composing()])
+    })
+
+    // A GUESS THE WORD LIST REFUSES IS NOT A MARKED ROW: no row is added, so there is nothing new to
+    // show and nothing scrolls.
+    //
+    // REDDENS ON: the marked-row scroll fired from `commit` before the dictionary check.
+    it('scrolls nothing when the word list refuses the guess', async () => {
+      const { user } = renderBoard()
+      await type(user, 'TOEHELD')
+
+      const scrolled = await scrollsDuring(() => user.click(keyNamed(/^Guess$/)))
+
+      expect(scrolled).toEqual([])
+      expect(onProgress).not.toHaveBeenCalled()
+    })
+
+    // THE WINNING GUESS DRAWS NO COMPOSING ROW, so the marked row is the only thing there is to show
+    // -- and it is shown exactly as any other marked row is.
+    //
+    // REDDENS ON: the marked-row scroll skipped on a win; `ref={composingRef}` on the last row.
+    it('shows the winning row and nothing after it', async () => {
+      const { user } = renderBoard()
+      await type(user, 'TOEHOLD')
+
+      const scrolled = await scrollsDuring(() => user.click(keyNamed(/^Guess$/)))
+
+      expect(scrolled).toEqual([markedRow('Guess 1, TOE HOLD')])
+      expect(screen.queryByRole('group', { name: /^Your guess/ })).toBeNull()
+    })
+
+    // AGAIN EMPTIES THE BOARD AND SCROLLS NOTHING: the count shrank, which is not a guess to show,
+    // and a fresh board's first letter is not the start of a NEXT guess.
+    //
+    // REDDENS ON: the marked-row effect firing on any change of the count rather than on growth.
+    it('scrolls nothing on Again or on the first letter after it', async () => {
+      const { user } = renderBoard(phrazlePuzzle, WON_ON_SIX)
+
+      const scrolled = await scrollsDuring(async () => {
+        await user.click(screen.getByRole('button', { name: 'Play again' }))
+        await type(user, 'T')
+      })
+
+      expect(composing()).toHaveAccessibleName('Your guess, T')
+      expect(scrolled).toEqual([])
+    })
+
+    // A FINISHED BOARD MOUNTS ONTO ITS WINNING ROW. It draws no composing row, so the mount scroll
+    // falls back to the last marked row -- which is the row "Show answer" just filled in. The frame
+    // reveals by REBUILDING the board from the solved progress it wrote, so the revealed answer
+    // arrives as exactly this mount, appended under every guess the player made; with nothing to
+    // scroll to, it could sit under the pinned floor and the press would seem to do nothing.
+    //
+    // REDDENS ON: the mount scroll aiming only at the composing row (no call at all), and on
+    // `ref={composingRef}` on every row unconditionally (the call lands on a row named for typing).
+    it('scrolls the winning row into view when a finished board mounts', () => {
       renderBoard(phrazlePuzzle, WON_ON_SIX)
 
       expect(screen.getByText(SOLVED)).toBeInTheDocument()
-      expect(scrollIntoView).not.toHaveBeenCalled()
+      expect(scrollIntoView.mock.contexts).toHaveLength(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(markedRow('Guess 6, TOE HOLD'))
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
     })
   })
 
@@ -1632,12 +1816,11 @@ describe('PhrazleBoard', () => {
     //
     // REDDENS ON: dropping the `over` guard from `press`, which types a Q into a row that does not
     // exist -- the composing-row query stops being null and the ribbon says nothing at all.
-    // TWO TABS, NOT ONE. The board band is `tabIndex={0}` so a keyboard player can scroll a grid
-    // that now grows without bound, so it is the first stop and the pad's first key is the second.
+    // ONE TAB. The board band is not a tab stop -- it stopped being one when the bench took over
+    // the scrolling -- and nothing inside it is focusable, so the pad's first key is the first stop.
     it('refuses a letter typed into it and says which key does something', async () => {
       const { user } = renderBoard(phrazlePuzzle, WON_ON_SIX)
 
-      await user.tab()
       await user.tab()
 
       // Q, because the pad is a KEYBOARD and Q is where a keyboard starts. This assertion is
@@ -1970,29 +2153,26 @@ describe('PhrazleBoard', () => {
       expect(screen.getAllByRole('img', { name: 'Empty' })).toHaveLength(6)
     })
 
-    // THE SCROLLABLE REGION IS REACHABLE FROM THE KEYBOARD, which is WCAG 2.1.1 on the one band that
-    // scrolls. NOTHING INSIDE IT IS FOCUSABLE, by design: a tile is role="img" with no handler,
-    // because 126 buttons is 126 tab stops for elements nothing can do anything with, and the pad is
-    // in the floor rather than in this band. A scrollable box with no focusable content and no
-    // tabIndex of its own cannot be scrolled without a mouse or a touch screen.
+    // THE BOARD BAND IS NOT A TAB STOP, and that is the replacement for a row that pinned the
+    // opposite. The band carried tabIndex={0} while it was the bench's one scroller, because nothing
+    // inside it is focusable and a scrollable box with no focusable content cannot otherwise be
+    // scrolled from a keyboard. The bench scrolls now, and it holds focusable controls in every
+    // state -- the breadcrumb's links, the hint control, the pad's keys -- so WCAG 2.1.1 is met one
+    // level up, and a tab stop on a box that no longer scrolls would be a stop that does nothing.
     //
-    // IT MATTERS NOW IN A WAY IT DID NOT BEFORE. The band could always overflow in principle -- row
-    // 77's three-by-seven phrase at 320 floors its tiles and spills -- but that was one dense phrase
-    // at one width. A board with no guess limit scrolls in every long game, and the thing a keyboard
-    // player could not otherwise do is scroll BACK to re-read guess 1 while typing guess 12.
+    // ASSERTED TWICE, as the attribute and as the Tab landing. The attribute alone would pass on a
+    // board that made some other element inside the grid focusable; the landing on Q is what says
+    // the first stop this component offers is the pad.
     //
-    // ASSERTED AS THE TAB LANDING, not as the attribute: `toHaveAttribute('tabindex', '0')` passes on
-    // an element that is `display: none` or `disabled`, and what is owed is that a Tab arrives here.
-    // The name comes with it, so the landmark announces itself rather than reading as an unlabeled
-    // box.
-    //
-    // REDDENS ON: dropping tabIndex={0} from the section, after which the first Tab goes to the pad.
-    it('takes a Tab onto the band that scrolls', async () => {
+    // REDDENS ON: restoring tabIndex={0} on the section, after which the first Tab lands on it.
+    it('offers no tab stop on the board band and starts the tab order at the pad', async () => {
       const { user } = renderBoard(phrazlePuzzle, FIVE_SPENT)
+
+      expect(screen.getByRole('region', { name: 'Phrazle' })).not.toHaveAttribute('tabindex')
 
       await user.tab()
 
-      expect(screen.getByRole('region', { name: 'Phrazle' })).toHaveFocus()
+      expect(screen.getByRole('button', { name: /^Q,/ })).toHaveFocus()
     })
 
     // NON-ATOMIC. role="status" carries an implicit aria-atomic="true" in ARIA 1.2, under which every
@@ -2053,7 +2233,7 @@ describe('PhrazleBoard', () => {
 
   describe('the keystrokes this board declines', () => {
     // PINNED, BECAUSE IT IS SURPRISING, and this test exists to stop a future reader "fixing" rule 3
-    // to make the hardware Enter work from the pad -- which would break the hint sheet's `Hide` in a
+    // to make the hardware Enter work from the pad -- which would break the hint sheet's `Close` in a
     // way nothing else catches. Every pad key deliberately keeps focus on press, so the moment a
     // player taps a letter the event target is a <button>, rule 3 declines, and the browser
     // re-activates the focused key natively. Pressing Enter after tapping E types a second E.
@@ -2200,15 +2380,15 @@ describe('PhrazleBoard', () => {
     })
   })
 
-  // THE SHEET IS THE SHELL'S AND IT LIES OVER THIS BOARD. PuzzleFrame draws HintBar between the two
-  // elements this component returns -- this bench is `guess`, and the frame gives every bench but
-  // `tile` the docked bar -- and the sheet is drawn over the grid. A keyboard player who opens a
-  // hint to check a row and Tabs once is standing on a `<section aria-label="Open hints">` carrying
-  // tabIndex={0}, which is there precisely so the sheet can be scrolled, and every keystroke made
+  // THE SHEET IS THE SHELL'S AND IT LIES OVER THIS BOARD. PuzzleFrame draws HintBar in a dock laid
+  // over this board's sign row -- this bench is `guess`, and the frame gives every bench but `tile`
+  // a hint dock -- and the sheet drops down over the grid. A keyboard player who opens a
+  // hint to check a row is standing in the sheet's modal dialog -- on its Close button, or on its
+  // body, which is focusable precisely so the sheet can be scrolled -- and every keystroke made
   // there still reached the board: Enter spent one of six attempts on a row the player could not
   // see, and THIS BENCH HAS NO UNDO BY DESIGN.
   describe('the hint sheet lying over the board', () => {
-    const HIDE_TO_TYPE = 'Hide the hints to type.'
+    const CLOSE_TO_TYPE = 'Close the hints to type.'
 
     // A REAL HintBar as a SIBLING, never a stub sheet. What the board's guard follows is an IDREF
     // HintBar owns -- the control's `aria-controls` and the `hidden` attribute on the element it
@@ -2221,7 +2401,7 @@ describe('PhrazleBoard', () => {
     // THE LADDER'S CONTENT IS NOT WHAT THESE ROWS ARE ABOUT, and it is worth saying so now that the
     // one they are handed is named for a wire shape this bench no longer receives. What they need is
     // three rungs and a real sheet: three so the control reads "Open hint 1 of 3", and a real sheet
-    // so pressing it draws the `<section aria-label="Open hints">` the board's keydown guard follows
+    // so pressing it draws the dialog named "Hints" whose wrapper the board's keydown guard follows
     // by IDREF. `phrazleStalePackLadder` supplies both, and it is the honest choice rather than an
     // arbitrary one -- an UNCONTROLLED HintBar is exactly the bar a pack ladder drives, so the pair
     // on screen here is the pair a player saw before this app's adapter shipped. The shell hands the
@@ -2253,16 +2433,19 @@ describe('PhrazleBoard', () => {
       return { container, user }
     }
 
-    // THE PAD IS NOT REFUSED WHILE THE SHEET IS UP, which the rows below rely on to fill a row and
-    // which is the tile bench's posture too: the sheet is drawn over the BOARD and the instrument is
-    // a band below it, so a key the player can see and touch goes on working. What the guard is
-    // about is the keyboard, which writes into a row the sheet is covering.
+    // THE BOARD DOES NOT REFUSE THE PAD WHILE THE SHEET IS UP, and the rows below rely on that to
+    // fill a row under an open sheet. What keeps a finger off the pad in the app is the sheet's SCRIM,
+    // which lies over the whole bench and takes the press itself -- see "takes a press on the scrim
+    // without typing" below. jsdom does no hit-testing, so a click here goes straight to the key the
+    // scrim would have covered. What the board's own guard is about is the keyboard, which writes
+    // into a row the sheet is covering with no scrim in its way.
     const openTheSheet = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
       await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
     }
 
     // THE PROVED SCENARIO, and the most expensive one: the row is full, the sheet is up, focus is on
-    // the sheet because that is where a Tab from the control lands, and Enter committed the guess.
+    // the sheet's body because that is where a keyboard player scrolling it stands, and Enter
+    // committed the guess.
     //
     // REDDENS ON: dropping the sheet guard from onKeyDown -- onProgress is then called with
     // {"guesses":["TOE HOLD"]} and one of six attempts is gone with no way back.
@@ -2271,11 +2454,11 @@ describe('PhrazleBoard', () => {
       await openTheSheet(user)
       await type(user, 'TOEHOLD')
 
-      screen.getByRole('region', { name: 'Open hints' }).focus()
+      screen.getByRole('dialog', { name: 'Hints' }).focus()
       await user.keyboard('{Enter}')
 
       // `Every tile is full.` was message one, so this is message two and its text stands alone.
-      expect(boardRibbon(container)).toHaveProperty('textContent', HIDE_TO_TYPE)
+      expect(boardRibbon(container)).toHaveProperty('textContent', CLOSE_TO_TYPE)
       expect(onProgress).not.toHaveBeenCalled()
       expect(composing()).toHaveAccessibleName('Your guess, TOE HOLD')
     })
@@ -2293,7 +2476,7 @@ describe('PhrazleBoard', () => {
 
       expect(composing()).toHaveAccessibleName('Your guess,')
       // The test's first message, so the nonce is odd and the mark is due.
-      expect(boardRibbon(container)).toHaveProperty('textContent', `${HIDE_TO_TYPE}${REPEAT_MARK}`)
+      expect(boardRibbon(container)).toHaveProperty('textContent', `${CLOSE_TO_TYPE}${REPEAT_MARK}`)
     })
 
     it('refuses a Backspace pressed while the sheet is open', async () => {
@@ -2304,7 +2487,26 @@ describe('PhrazleBoard', () => {
       await user.keyboard('{Backspace}')
 
       expect(composing()).toHaveAccessibleName('Your guess, TOE')
-      expect(boardRibbon(container)).toHaveProperty('textContent', `${HIDE_TO_TYPE}${REPEAT_MARK}`)
+      expect(boardRibbon(container)).toHaveProperty('textContent', `${CLOSE_TO_TYPE}${REPEAT_MARK}`)
+    })
+
+    // THE SCRIM TAKES THE PRESS, and that is the pointer half of what the guard above does for the
+    // keyboard. A finger aimed at a key while the sheet is up lands on the scrim, which lies over the
+    // pad: the sheet shuts and no letter is typed. The scrim is found by its hook attribute because it
+    // has no role and no name -- it is aria-hidden scenery a reader dismisses through Close or
+    // Escape instead.
+    //
+    // REDDENS ON: the scrim passing the press on, or not shutting the sheet.
+    it('takes a press on the scrim without typing, and shuts the sheet', async () => {
+      const { container, user } = renderWithHints('2026-10-07:phrazle:sheet-scrim')
+      await type(user, 'TOE')
+      await openTheSheet(user)
+
+      await user.click(container.querySelector('[data-hint-scrim]') as HTMLElement)
+
+      expect(composing()).toHaveAccessibleName('Your guess, TOE')
+      expect(screen.queryByRole('dialog', { name: 'Hints' })).not.toBeInTheDocument()
+      expect(onProgress).not.toHaveBeenCalled()
     })
 
     // THE POSITIVE HALF, and it is the one that matters most: the guard reads the sheet's `hidden`
@@ -2319,6 +2521,31 @@ describe('PhrazleBoard', () => {
       await user.keyboard('TOEHOLD{Enter}')
 
       expect(onProgress).toHaveBeenCalledWith('{"guesses":["TOE HOLD"]}')
+    })
+
+    // A KEY REFUSED UNDER THE SHEET STARTS NOTHING, and the first letter after the sheet is shut
+    // still does. The refusal never reaches `press`, so the flag an accepted Guess set is untouched
+    // and the row comes into view on the letter the player could actually see land.
+    //
+    // REDDENS ON: the scroll fired from the keydown handler ahead of the sheet guard; the flag
+    // cleared by the refusal.
+    it('scrolls nothing for a letter refused under the sheet, and scrolls on the first after it', async () => {
+      const { user } = renderWithHints('2026-10-07:phrazle:sheet-scroll')
+      await user.keyboard('HOTHAND{Enter}')
+      await openTheSheet(user)
+
+      const from = scrollIntoView.mock.contexts.length
+      await user.keyboard('T')
+
+      expect(composing()).toHaveAccessibleName('Your guess,')
+      expect(scrollIntoView.mock.contexts.slice(from)).toEqual([])
+
+      await user.click(screen.getByRole('button', { name: 'Close hints' }))
+      await user.keyboard('T')
+
+      expect(composing()).toHaveAccessibleName('Your guess, T')
+      expect(scrollIntoView.mock.contexts.slice(from)).toHaveLength(1)
+      expect(scrollIntoView.mock.contexts.slice(from)[0]).toBe(composing())
     })
 
     // THE IDREF, RESOLVED AT BOTH ENDS, which CLAUDE.md requires wherever one exists. `aria-controls`
@@ -2347,7 +2574,7 @@ describe('PhrazleBoard', () => {
   //
   // ONE BOX NOW, WHERE THERE WERE TWO. This block used to pin which dimension came off which
   // element -- the section for height, the plate for width -- and the height is gone: a grid that
-  // grows a row per guess cannot be sized to fit a band, so it scrolls and tiles hold their size.
+  // grows a row per guess cannot be sized to fit a band, so the bench scrolls and tiles hold their size.
   // What is left to defend is WHICH BOX OF THE PLATE the width comes off, which is the half that
   // was always the subtle one and the half that was wrong.
   describe('measuring the room the grid has', () => {
@@ -2357,8 +2584,10 @@ describe('PhrazleBoard', () => {
     const paddingWidth = (element: Element | null, width: number): void => {
       Object.defineProperty(element, 'clientWidth', { configurable: true, value: width })
     }
-    // The plate is the section's only div: the sign row above it is a <p>.
-    const plateOf = (board: HTMLElement): Element | null => board.querySelector('div')
+    // The plate is the element right after the sign row. Both are <div>s now -- the sign row was a
+    // <p> until it began carrying a stacked layout with the hint control laid over it -- so the plate
+    // is found by its place beside the row rather than as the section's first div.
+    const plateOf = (board: HTMLElement): Element | null => board.querySelector(':scope > .lull-signrow + div')
 
     // THE CONTENT BOX, NOT THE PADDING BOX, and that is the whole of what this row now says. The
     // plate is the right element -- the box the tiles are actually laid out inside -- and it was

@@ -124,17 +124,18 @@ const fold = (
   const probe = grow(data, mapping, spent, seed)
   if (probe.length > 0) return probe
 
-  // A SOLVED BOARD HAS NOTHING LEFT TO CHOOSE, AND THE BAND STILL HAS TO STAND. A fully correct
+  // A SOLVED BOARD HAS NOTHING LEFT TO CHOOSE, AND THE CONTROL STILL HAS TO STAND. A fully correct
   // mapping is the only state that empties this fold on a drawable pack -- every rung aims at a
   // cipher letter the player has not got right -- and it arrives on the winning KEYSTROKE, for the
-  // player who bought nothing, which is most of them. An empty ladder is null, null unmounts a 60px
-  // `shrink-0` band, and the grid would re-lay itself out at the instant of the solve. Worse, an
-  // UNLOCKED square can still be cleared, so the band flickered as a player toggled the last letter.
+  // player who bought nothing, which is most of them. An empty ladder is null, and null takes the
+  // hint control off the sign row at the instant of the solve; when the bar was a 60px `shrink-0`
+  // band it re-laid the grid out as well. Worse, an UNLOCKED square can still be cleared, so the
+  // control flickered as a player toggled the last letter.
   //
   // So a solved board shows the ladder a fresh one would have shown. That is honest rather than a
   // placeholder: the rungs are speculative, HintBar draws only `slice(0, opened)`, and a player who
   // has already won reads a hint about a square that is standing right in front of them. What it buys
-  // is the band -- and with it the answer reveal, which `controlLabel` reaches only through a ladder.
+  // is the control -- and with it the answer reveal, which `controlLabel` reaches only through a ladder.
   //
   // It cannot fire on a pack this board refuses to draw: `hintDataOf` answers with '' for a field
   // that never arrived, so the fresh fold is empty too and the frame draws no bar at all, which is

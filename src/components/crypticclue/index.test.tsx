@@ -69,11 +69,11 @@ describe('CrypticClueBoard', () => {
     // load-bearing anyway, for the reason the wire gives it -- the clue is stored byte-identical to
     // the string the verifier proved, so a clue needing a trim is one the backend REJECTED rather
     // than one this board tidies. So the whole paragraph is pinned by value, which also nails the
-    // single space before the parenthetical and the run-on of the sr-only twin.
+    // single space before the parenthetical.
     it('renders the clue exactly as the pack wrote it', () => {
       const { container } = setup()
 
-      expect(cluePlate(container)).toHaveProperty('textContent', `${CLUE} (5)5 letters.`)
+      expect(cluePlate(container)).toHaveProperty('textContent', `${CLUE} (5 letters)`)
     })
 
     // A cryptic clue is a grammatical English sentence whose surface reading IS the joke, so there
@@ -90,22 +90,33 @@ describe('CrypticClueBoard', () => {
       expect(screen.queryByRole('img')).not.toBeInTheDocument()
     })
 
-    it('shows the enumeration the way a printed cryptic does', () => {
+    // ONE STRING, SEEN AND HEARD. The bare `(5)` of a printed cryptic assumed the player knew the
+    // convention, and spoken it was the word "five" at the end of a sentence about dancing -- so it
+    // used to be drawn aria-hidden beside an sr-only "5 letters." that translated it. Saying the unit
+    // on screen serves both at once, so there is one span and nothing hidden from anyone.
+    it('says the enumeration with its unit', () => {
       setup()
 
-      expect(screen.getByText('(5)')).toHaveAttribute('aria-hidden', 'true')
+      // Present is not the whole property. Put aria-hidden on the span and a listener loses the
+      // enumeration while a presence check stays green.
+      expect(screen.getByText('(5 letters)')).not.toHaveAttribute('aria-hidden')
     })
 
-    // Spoken, "(5)" is the bare word "five" at the end of a sentence about dancing -- a number with
-    // no unit attached. The sr-only sibling is not a duplicate, it is the translation of a
-    // typographic convention into words.
-    it('says how many letters, in words, for a listener', () => {
-      setup()
+    it('keeps no second rendering of the enumeration', () => {
+      const { container } = setup()
 
-      // Present is not the property this test is named for. Put aria-hidden on that span and the
-      // listener loses the enumeration entirely while a presence check stays green -- so the
-      // attribute is asserted here exactly as its visible twin's is asserted above.
-      expect(screen.getByText('5 letters.')).not.toHaveAttribute('aria-hidden')
+      expect(screen.queryByText('(5)')).toBeNull()
+      expect(screen.queryByText('5 letters.')).toBeNull()
+      expect(cluePlate(container)?.querySelector('.sr-only')).toBeNull()
+    })
+
+    it.each<[string, number[], string]>([
+      ['a one-letter answer in the singular', [1], '(1 letter)'],
+      ['a multi-part answer with commas', [3, 5], '(3, 5 letters)'],
+    ])('says %s', (_description, enumeration, text) => {
+      const { container } = setup({ ...crypticCluePuzzle, data: { ...crypticCluePuzzle.data, enumeration } })
+
+      expect(cluePlate(container)).toHaveProperty('textContent', `${CLUE} ${text}`)
     })
 
     // The one arm a well-formed pack never takes, and it is shipped code, so it gets a state and a
@@ -130,7 +141,7 @@ describe('CrypticClueBoard', () => {
 
       expect(cluePlate(container)).toHaveTextContent(CLUE)
       expect(screen.queryByText('()')).toBeNull()
-      expect(screen.queryByText('letters.', { exact: false })).toBeNull()
+      expect(screen.queryByText('letter', { exact: false })).toBeNull()
     })
 
     // THE CONTENTS, not the shape. `join` stringifies anything, so these are not crashes -- they
@@ -151,7 +162,7 @@ describe('CrypticClueBoard', () => {
       })
 
       expect(cluePlate(container)).toHaveProperty('textContent', CLUE)
-      expect(screen.queryByText('letters.', { exact: false })).toBeNull()
+      expect(screen.queryByText('letter', { exact: false })).toBeNull()
     })
 
     // THE CLUE ITSELF OFF THE NETWORK, and these rows document rather than defend. `isValidPuzzle`
@@ -172,19 +183,18 @@ describe('CrypticClueBoard', () => {
     // `answer` are each guarded against one field over, and the asymmetry is real; it is recorded
     // here so the next person weighs it, rather than pinned as though a crash were the intent.
     it.each<[string, unknown, string]>([
-      ['left out of the pack', undefined, ' (5)5 letters.'],
-      ['null', null, ' (5)5 letters.'],
-      ['a number', 5, '5 (5)5 letters.'],
+      ['left out of the pack', undefined, ' (5 letters)'],
+      ['null', null, ' (5 letters)'],
+      ['a number', 5, '5 (5 letters)'],
     ])('draws the plate when the clue arrived %s', (_description, clue, text) => {
       const { container } = setup({ ...crypticCluePuzzle, data: { ...crypticCluePuzzle.data, clue: clue as string } })
 
       expect(cluePlate(container)).toHaveProperty('textContent', text)
     })
 
-    // No sign row: `category` is absent by design for this type, because the definition half of the
-    // clue IS the category and shipping one would say which words are the definition for free. So
-    // there is nothing true to put in a band, and an empty band reads as chrome that failed to
-    // load. The reveal's <h2> is the other thing this pins, and it has not been won yet.
+    // No category heading: `category` is absent by design for this type, because the definition
+    // half of the clue IS the category and shipping one would say which words are the definition for
+    // free. The reveal's <h2> is the other thing this pins, and it has not been won yet.
     it('draws no heading before the win', () => {
       const { container } = setup()
 
@@ -198,6 +208,18 @@ describe('CrypticClueBoard', () => {
   // The two elements the shell orders into its bands. The component renders both and learns nothing
   // about either band; index.css does the placing, keyed off these classes.
   describe('the bench bands', () => {
+    // AN EMPTY SIGN ROW, first in the board. There is nothing true to write in it -- see the heading
+    // test above -- but the shell lays its hint control over its right end, and index.css finds it
+    // by `.lull-signrow`. Read as a class because the class IS the contract the shell's reserve and
+    // sticky rule are written against, and jsdom lays nothing out that could show either.
+    it('opens the board with an empty sign row for the hint control to sit on', () => {
+      const { container } = setup()
+
+      const row = container.querySelector('.lull-board')?.firstElementChild
+      expect(row).toHaveClass('lull-signrow')
+      expect(row).toBeEmptyDOMElement()
+    })
+
     it('puts the clue in the board band and not in the instrument', () => {
       const { container } = setup()
 
@@ -723,7 +745,7 @@ describe('CrypticClueBoard', () => {
     })
 
     // THE ONE CLASS ASSERTION IN THIS FILE, and it is here because the failure it defends cannot be
-    // reached any other way. The band holding this line is `overflow-x-hidden`, so an explanation
+    // reached any other way. The band holding this line is `overflow-x-clip`, so an explanation
     // carrying one unbroken run wider than a 320 viewport is clipped outright -- no scrollbar, no
     // ellipsis, and nothing on screen admitting text was cut. jsdom performs no layout, so a
     // narrow-viewport test would be green on the clipping board too; the class is the only part of
@@ -762,9 +784,9 @@ describe('CrypticClueBoard', () => {
       // identical either way -- so the reveal is what proves the board reached the state this test
       // is named for.
       expect(screen.getByRole('region', { name: REGION })).toBeInTheDocument()
-      expect(cluePlate(container)).toHaveProperty('textContent', `${CLUE} (5)5 letters.`)
+      expect(cluePlate(container)).toHaveProperty('textContent', `${CLUE} (5 letters)`)
       // No element boundary is spliced into the clue in either state, so the plate holds one text
-      // node plus the enumeration's two spans. A returning <mark> would be caught here.
+      // node plus the enumeration's span. A returning <mark> would be caught here.
       expect(container.querySelector('mark')).toBeNull()
     })
 

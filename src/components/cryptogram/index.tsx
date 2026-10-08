@@ -157,12 +157,14 @@ const LOCKED_ELSEWHERE = (cipher: string, plain: string): string =>
 // reads straight across as a line of text rather than as a footnote inside each box.
 //
 // The scroll margins are for the caret effect's `scrollIntoView`, and they sit on the square because
-// the square is what it targets. The sign row is `sticky top-0` inside the scrollport, so it covers
-// the top 34px of it plus its two 1px rules, and `block: 'nearest'` knows nothing about that: 36px
-// on top keeps a square from landing under it. The 14px below is the caption, CAPTION_GAP plus a line
-// of at most 10px, so the cipher letter comes into view with its square. Neither margin moves layout.
+// the square is what it targets. The scrollport is the bench, and two sticky bands stand inside it
+// that `block: 'nearest'` knows nothing about. On top, the sign row: 46px border-box, hairlines
+// included, so 46px keeps a square from landing under it. Below, the floor: the instrument sticks to
+// the bench's bottom edge and is --lull-seam tall plus the safe-area inset, and the extra 14px is the
+// caption, CAPTION_GAP plus a line of at most 10px, so the cipher letter comes into view with its
+// square rather than under the ribbon. Neither margin moves layout.
 const SQUARE =
-  'scroll-mt-[36px] scroll-mb-[14px] ' +
+  'scroll-mt-[46px] scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bottom)+14px)] ' +
   'flex cursor-pointer items-center justify-center rounded-[var(--lull-r-sm)] ' +
   'border border-[var(--lull-rule)] bg-[var(--lull-raised)] leading-none text-[var(--lull-ink)] ' +
   'shadow-[inset_0_1px_1px_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.09)] ' +
@@ -223,7 +225,7 @@ const CIPHER_SELECTED = 'leading-none tracking-[0.09em] font-semibold text-[var(
 // min-h-0 the plate shrinks below its own content on a short viewport and the squares below the cut
 // render on the bare ground with the plate's background stopping behind them. Left at the automatic
 // minimum size, the plate is never shorter than what is on it, and the OVERFLOW goes where
-// index.css already sends it: the board band scrolls, plate and all.
+// index.css already sends it: the bench scrolls, plate and all.
 const PLATE =
   'flex flex-1 flex-col bg-[var(--lull-plate)] pt-[var(--lull-s5)] pr-[var(--lull-gutter-right)] ' +
   'pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]'
@@ -232,10 +234,12 @@ const PLATE =
 // ground, hairlines and gutter -- because the writing bench and the guess bench draw the same one,
 // and a band that three benches share is the grammar rather than a string copied four times.
 //
-// Sticky, so the two facts it holds do not scroll away with the sentence. The board is the one band
-// that flexes and therefore the one that scrolls, and on a phone a sentence of several rows always
-// scrolls -- which would take "10 of 52 squares filled" off the top of the screen with it, the
-// number a player checks most and the only place it is written.
+// Sticky, so the two facts it holds do not scroll away with the sentence. The bench is the one
+// scroller, and on a phone a sentence of several rows always scrolls it -- which would take "10 of 52
+// squares filled" off the top of the screen with it, the number a player checks most and the only
+// place it is written. It is also the row the shell lays the hint control over, at its right end:
+// the reserve for that control is index.css's, through `.lull-bench[data-hint-dock]`, so nothing here
+// knows the control is there.
 const SIGN_ROW = 'lull-signrow sticky top-0'
 
 // A KEY'S ONE COLOR SOURCE, drawn on the floor, where the ink and the rule are the floor's own
@@ -251,9 +255,17 @@ const SIGN_ROW = 'lull-signrow sticky top-0'
 // `text-[var(--lull-floor-accent)]`, so `Undo` and `Delete` carried both and which one painted was
 // down to the order Tailwind happened to emit them in. The guess bench had already split its own
 // for exactly that reason.
+//
+// The press state is `data-[down=true]:`, never `active:`. Keypad commits on release and lets a finger
+// slide to the key it meant, and reads a touch 6px above where it landed; `:active` stays on the
+// element first touched, so after a slide or that lift it would light a key the player is not on.
+// `data-down` is set by the pad on the key the gesture will commit, and on that key alone.
+// `[&:focus-visible:active]` beside it is the keyboard's flash -- Space or Enter held on a focused key
+// sets `:active` and no `data-down` -- and a touch or mouse press never matches `:focus-visible`, so
+// it cannot bring the wrong-key light back.
 const TONE =
-  'bg-[var(--lull-floor)] text-[var(--lull-floor-ink)] ' +
-  'hover:text-[var(--lull-floor-accent)] active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
+  'bg-[var(--lull-floor)] text-[var(--lull-floor-ink)] hover:text-[var(--lull-floor-accent)] ' +
+  'data-[down=true]:bg-[var(--lull-floor-ink)] data-[down=true]:text-[var(--lull-floor)] [&:focus-visible:active]:bg-[var(--lull-floor-ink)] [&:focus-visible:active]:text-[var(--lull-floor)]'
 
 // The two utility keys, accented so the rectangle reads as 26 letters and two tools rather than as
 // 28 undifferentiated keys. Their words say which is which; the accent only groups them. It is the
@@ -269,7 +281,8 @@ const TONE =
 // still, so the shipped face is the worst case. `Erase` was the shorter real word held in reserve
 // and was not needed.
 const TONE_UTILITY =
-  'bg-[var(--lull-floor)] text-[var(--lull-floor-accent)] hover:text-[var(--lull-floor-ink)] active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
+  'bg-[var(--lull-floor)] text-[var(--lull-floor-accent)] hover:text-[var(--lull-floor-ink)] ' +
+  'data-[down=true]:bg-[var(--lull-floor-ink)] data-[down=true]:text-[var(--lull-floor)] [&:focus-visible:active]:bg-[var(--lull-floor-ink)] [&:focus-visible:active]:text-[var(--lull-floor)]'
 const KEY_NOTE = 'text-[9.5px] leading-none font-normal tracking-[0.07em] text-[var(--lull-floor-accent)]'
 
 interface Square {
@@ -385,8 +398,8 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // reset: resetting first makes the flag always false where it is read, which makes the whole gate a
   // no-op. Resetting before the early return is what keeps it from stranding.
   //
-  // THE SCROLL DOES NOT STAND DOWN WITH IT. A sentence wraps to several rows and the board band shows
-  // little more than one of them on a phone, so the caret routinely moves to a square below the
+  // THE SCROLL DOES NOT STAND DOWN WITH IT. A sentence wraps to several rows and the bench shows
+  // only a few of them on a phone, so the caret routinely moves to a square below the
   // fold -- and a pad press, which keeps focus on the key, is exactly the move that leaves nothing
   // else to bring it back. Scrolling moves no focus, so it runs on every cursor change. `nearest`
   // does nothing when the square is already in view.
@@ -1017,9 +1030,9 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     // it is what makes the bench playable after a pad key has quietly kept focus.
     //
     // An arrow does not. It scrolls whatever is under it and it drives whatever widget has focus,
-    // and this bench puts three such things on screen at once: the hint sheet is `tabIndex={0}`
-    // precisely so a keyboard user can scroll it, the board band scrolls, and below 504px so does
-    // the bench column. Unscoped, every one of those was dead -- the arrow was swallowed, the caret
+    // and this bench puts two such things on screen at once: the hint sheet is `tabIndex={0}`
+    // precisely so a keyboard user can scroll it, and the bench column scrolls, carrying the board
+    // with it. Unscoped, both of those were dead -- the arrow was swallowed, the caret
     // moved on a board the sheet was covering, and `move` set `hasMoved`, so the focus effect then
     // pulled focus out of whatever the player was using and into the phrase.
     if (event.key.startsWith('Arrow') && !onBench) return
@@ -1148,39 +1161,46 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   const resting = solved ? solvedMessage() : ''
 
   return (
-    // Exactly two elements, and they are siblings: the frame wraps them in `display: contents` and
-    // index.css orders one into the board band and the other into the floor. Neither knows the
-    // other is there, and the shell's hint bar is ordered between them without either noticing.
+    // Exactly two elements, and they are siblings: the frame puts them in its play column, the
+    // board first and the floor after it, and index.css makes the floor stick to the bench's bottom
+    // edge. Neither knows the other is there.
     <>
-      {/* The geometry of this band belongs to index.css -- it is the ONE band that flexes, and the
-          seam depends on that -- so nothing here sets flex, height or vertical scrolling.
-          overflow-x is the exception, and it has to be stated: a box with `overflow-y: auto` and no
-          overflow-x of its own computes overflow-x to `auto` as well, which is a sideways drag
-          across the phrase. Hidden, never auto, so no such drag can exist anywhere on this board.
+      {/* The geometry of this band belongs to index.css -- it grows to fill the play column, and
+          the seam depends on that -- so nothing here sets flex, height or vertical scrolling.
+          overflow-x is the exception, and it has to be stated: no band may drag the bench
+          sideways, so the phrase is clipped at the board's edge. CLIP, never hidden: `hidden` on
+          one axis forces the other to compute to `auto`, which would make this board a scroll
+          container again -- and the sticky sign row would then pin to a box that never scrolls
+          instead of to the bench that does. `clip` cuts the same edge and creates no scroller.
 
           A <section> with a name is a landmark, which is what lets the shell and the page find the
           board without either reaching into it. */}
       <section
         aria-label="Cryptogram"
         // A flex column so the plate below can fill the band. This sets no flex, height or
-        // vertical scrolling of its own -- all three belong to index.css, because this is the ONE
-        // band that flexes and the seam depends on it. Laying out its own children is not the same
-        // decision as sizing itself.
-        className="lull-board flex flex-col overflow-x-hidden"
+        // vertical scrolling of its own -- all three belong to index.css, because the seam depends
+        // on how this band is sized. Laying out its own children is not the same decision as
+        // sizing itself.
+        className="lull-board flex flex-col overflow-x-clip"
       >
         {/* The sign over the working surface, read the way a wayfinding sign is read: what this is
             on the left, where you stand on the right. Both are facts about the sentence and neither
             is a heading -- the board already sits under the page's h1, and a lone <h2> above it
-            would buy a heading level for a word. */}
-        <p className={SIGN_ROW}>
+            would buy a heading level for a word.
+
+            A <div>, not the <p> it was: the band now stacks its two lines and has the shell's hint
+            control laid over its right end, and a <p> was only ever valid because it held a line
+            of phrasing content. It is the FIRST CHILD of the board, which is where the shell
+            expects the row its control is aligned with. */}
+        <div className={SIGN_ROW}>
           {category !== undefined && (
             <span className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</span>
           )}
-          {/* Last, and pushed right by justify-between whether or not a category stands opposite
-              it: a pack stored before categories shipped at every difficulty has none, and the
-              tally stays where it is rather than sliding left. */}
-          <span className="ms-auto shrink-0">{tally}</span>
-        </p>
+          {/* Second, on a line of its own under the category -- the band stacks. A pack stored
+              before categories shipped at every difficulty has none, and the tally then stands
+              alone on the first line. */}
+          <span className="shrink-0">{tally}</span>
+        </div>
 
         {/* The measured box is the PLATE, not the section: the squares are laid out inside this
             element's padding, so the section's width would overstate the room by a gutter a side
@@ -1191,7 +1211,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
               later message. It stays for the whole session -- the ribbon says what just happened,
               this says what the bench does, and those are different jobs. */}
           {/* 12.5px, the size every quiet annotation on this design is set at, and not the body
-              size it used to be. The board is the one band that flexes, so every pixel this
+              size it used to be. The board shares the bench with a fixed floor, so every pixel this
               standing line spends is a pixel of phrase -- and at 14px with 24px under it, on a
               laptop window rather than a phone, it took four lines and pushed the last row of
               squares below the fold on a board that had not been typed into yet. */}

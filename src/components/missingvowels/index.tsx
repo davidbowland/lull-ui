@@ -150,20 +150,33 @@ export const MissingVowelsBoard = ({
 
   return (
     <>
-      {/* Exactly two siblings, and the frame's wrapper is `display: contents`, so this element and
-          the floor below become flex items of the screen column and index.css orders them into
-          their bands. Nothing but the band class and its own column layout goes on it: the SHELL
-          owns this box's flex, min-height and vertical overflow, because a board that forgot to
-          flex would take the floor down with it. */}
-      <div className="lull-board flex flex-col overflow-x-hidden">
-        {/* The same 34px strip of ground the cipher bench draws, holding the same kind of fact.
+      {/* Exactly two siblings, inside the frame's `.lull-play` column: this board, then the floor
+          below. Nothing but the band class and its own column layout goes on it: the SHELL owns
+          this box's flex and min-height, because a board that forgot to grow would leave the floor
+          floating mid-bench.
+
+          `overflow-x-clip`, NEVER `overflow-x-hidden`. `hidden` computes `overflow-y` to `auto`,
+          which makes this box a scroll container -- and the sticky sign row below would stick to a
+          box that never scrolls instead of to the bench that does. `clip` cuts the same edge and
+          makes no scroll container. */}
+      <div className="lull-board flex flex-col overflow-x-clip">
+        {/* The same 46px strip of ground the cipher bench draws, holding the same kind of fact.
             Two benches that look nothing alike still say what this phrase IS in the same place, in
-            the same band -- that is the shared grammar, as against a shared container. */}
-        {category !== undefined && (
-          <h2 className="lull-signrow">
-            <span className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</span>
-          </h2>
-        )}
+            the same band -- that is the shared grammar, as against a shared container.
+
+            ALWAYS DRAWN, and sticky, even with no category in it. The shell lays its hint control
+            over this row's right end, so a pack that hides the category still needs the row: without
+            it the control would float over the phrase. The HEADING is what is conditional -- a
+            hidden category is a hidden tier, and an empty <h2> would be a heading with no name.
+
+            `truncate` is on the <h2>, a block, because `overflow` does nothing on an inline box: on
+            the span it used to sit on, a long category ran on under the hint control instead of
+            ending in an ellipsis. */}
+        <div className="lull-signrow sticky top-0">
+          {category !== undefined && (
+            <h2 className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</h2>
+          )}
+        </div>
 
         <div className="flex flex-1 flex-col gap-[var(--lull-s5)] bg-[var(--lull-plate)] pt-[var(--lull-s5)] pr-[var(--lull-gutter-right)] pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]">
           {/* The bezel goes here and nowhere else on this bench. One raised plate reads as raised;
@@ -181,8 +194,8 @@ export const MissingVowelsBoard = ({
 
       {/* The band class rides a wrapper rather than FloorBar itself because FloorBar takes no
           `className` -- `children`, `message`, `resting` and `variant` are the whole of its props,
-          and this component may not edit it. The wrapper is what the screen column sees, so it is
-          what has to carry the order.
+          and this component may not edit it. The wrapper is what the play column sees, so it is
+          what has to carry the class index.css pins to the bottom of the bench.
 
           THE ONE BENCH WITHOUT THE SEAM, and it is stated here rather than left to be discovered.
           This floor used to reserve the full seam on the grounds that an OS keyboard was about to

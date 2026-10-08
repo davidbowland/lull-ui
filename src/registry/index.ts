@@ -296,7 +296,7 @@ export const REGISTRY: Record<PuzzleType, RegistryEntry> = {
     // which is why this type stopped shipping one.
     //
     // IT MOVES NO TILE AND IT DOES MOVE THE BOARD, and this entry used to claim the second half was
-    // free. The rungs are sentences in the shell's docked bar, and they are sentences about the
+    // free. The rungs are sentences in the shell's hint sheet, and they are sentences about the
     // ALPHABET -- so the pad strikes the letters one rules out and fills the letters one names, which
     // is the only place on this bench where the alphabet is drawn. The seam is unchanged: the rung
     // goes into the board's own progress string through `merge`, and the board decodes it off the

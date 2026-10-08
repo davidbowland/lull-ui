@@ -95,6 +95,12 @@ and `PuzzleFrame` reads `useDictionary()` and hands the set down at its one moun
 may never call that hook.** The rule is not "no hooks in a board"; it is that the contract is
 readable off `PuzzleComponentProps`, and a hook is exactly the thing that is not.
 
+**A board on a bench with a hint dock (every bench but the tile bench) renders a sticky
+`.lull-signrow` as the first child of `.lull-board`.** The shell lays its hint control over that
+row's right end; the row reserves the space through `.lull-bench[data-hint-dock]`. This is a layout
+convention, not a prop: the control stays outside the board so a reveal's remount cannot take focus
+or the sheet with it.
+
 **Never let the service worker answer for the manifest.** `public/sw.js` bails out before
 intercepting `/site.webmanifest`. Firefox fetches the manifest inside `requestIdleCallback` with no
 try/catch, and one non-2xx answer silently degrades install to a plain bookmark for the whole page
@@ -158,9 +164,10 @@ const id = control.getAttribute('aria-controls')
 expect(document.getElementById(id ?? '')).toBeInTheDocument()
 ```
 
-That is observable DOM, not a style assertion, and it is asserted today at both ends of the only
-such reference in the app — the hint sheet's, which `gofigure` follows to decide whether to freeze
-its keyboard.
+That is observable DOM, not a style assertion, and it is asserted today wherever one exists: Up
+Next's and the shelf's disclosures, and the hint sheet's — which `gofigure` and `phrazle` both
+follow to decide whether to freeze their keyboards, so it is asserted from their suites as well as
+from `hint-bar`'s.
 
 **Duplicate `id`s** genuinely have no behavioral equivalent, but nothing here can produce one: the
 only id sources are `useId()`, which React makes unique per instance, and `answer-${puzzle.id}` in

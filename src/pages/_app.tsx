@@ -68,8 +68,8 @@ export default function App({ Component, pageProps }: AppProps) {
           home for it in the Pages Router.
 
           viewport-fit=cover is what makes env(safe-area-inset-*) resolve to anything. Without it
-          iOS insets the layout viewport itself, every inset reads 0, and the docked cryptogram
-          column's pb-[env(safe-area-inset-bottom)] reserves nothing -- so the bottom keypad row
+          iOS insets the layout viewport itself, every inset reads 0, and the pinned floor's
+          env(safe-area-inset-bottom) reserves nothing -- so the bottom keypad row
           renders inside the home indicator strip and the system swallows taps there.
 
           It is page-wide and cannot be scoped to one puzzle type: /p/<id> is ONE exported document
@@ -81,8 +81,9 @@ export default function App({ Component, pageProps }: AppProps) {
           safe place for a text field. The default is resizes-visual: the software keyboard is
           drawn OVER a layout viewport that does not change, so 100dvh keeps its old value, the
           bench keeps its old height, and the floor stays pinned behind the keyboard. Under
-          resizes-content the ICB shrinks to the space above the keyboard, the bench's flex column
-          re-lays out, and the board band absorbs the loss.
+          resizes-content the ICB shrinks to the space above the keyboard, the bench's ceiling
+          shrinks with it, and the board shows less of itself above a floor that stays pinned to the
+          bench's bottom edge.
 
           WHERE EXACTLY THE INSTRUMENT LANDS IS NOT SETTLED HERE, and the earlier claim that it sits
           on the keyboard's top edge was one measurement too confident. The floor adds

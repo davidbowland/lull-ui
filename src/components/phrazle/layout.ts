@@ -25,7 +25,7 @@ export const GUESS_GAP = 8
 // Target Size (Minimum) -- a criterion about CONTROLS. A Phrazle tile is not a control: it is never
 // tapped, has no handler, and carries role="img" rather than a button role, because the player types
 // from the pad and only from the pad. So 2.5.8 does not reach a tile and the floor here is
-// READABILITY, which is 18. Below it the tile stops shrinking and .lull-board scrolls instead.
+// READABILITY, which is 18. Below it the tile stops shrinking and the bench scrolls instead.
 export const MIN_TILE = 18
 // The ceiling. It was set below the pad's 44px key, because a tile the size of a key reads as a key
 // and the one thing this bench must not teach is that a tile can be pressed -- and that argument no
@@ -58,9 +58,9 @@ export const DEFAULT_WIDTH = 358
  * WHAT PAYS FOR IT IS THE WRAP, which this board already draws and already has a gap for. A guess
  * whose words do not fit the width breaks BETWEEN words -- words never break, because word shape is
  * a solving cue and a broken word reads as two words -- at WRAP_GAP, with GUESS_GAP and a hairline
- * still separating one guess from the next. So a long phrase costs height, which .lull-board is
- * built to spend (index.css gives it `flex: 1 1 0%` and `overflow-y: auto`), instead of costing
- * legibility, which nothing gives back. WORD_GAP is therefore not in the arithmetic below: it is
+ * still separating one guess from the next. So a long phrase costs height, which the bench is
+ * built to spend (it is the one scroller, and .lull-board simply grows with what it holds), instead
+ * of costing legibility, which nothing gives back. WORD_GAP is therefore not in the arithmetic below: it is
  * spent between words on a line the browser decides, and a size computed against gaps that may not
  * be drawn would shrink the tile to pay for them anyway.
  *

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent, { UserEvent } from '@testing-library/user-event'
 import React from 'react'
 
@@ -27,7 +27,7 @@ describe('HintBar', () => {
     jest.mocked(readHints).mockReturnValue(0)
   })
 
-  const renderBar = (variant?: 'bare' | 'docked' | 'inline'): ReturnType<typeof render> =>
+  const renderBar = (variant?: 'bare' | 'sign'): ReturnType<typeof render> =>
     render(<HintBar hints={hints} puzzleId={puzzleId} variant={variant} />)
 
   // Takes the test's ONE `userEvent` instance rather than building its own, and the difference is a
@@ -45,7 +45,9 @@ describe('HintBar', () => {
   // reach it.
   const openRungs = (): string[] => screen.queryAllByRole('listitem').map((rung) => String(rung.textContent))
 
-  const sheet = (): HTMLElement | null => screen.queryByRole('region', { name: 'Open hints' })
+  // The sheet is a modal dialog named by its own "Hints" heading. Queried by role, so a shut sheet --
+  // `hidden`, out of the accessibility tree -- reads as absent.
+  const sheet = (): HTMLElement | null => screen.queryByRole('dialog', { name: 'Hints' })
 
   // Finds the control by the name a SCREEN READER hears and returns the text a sighted player SEES,
   // so one call carries both halves of the split and the WCAG 2.5.3 relationship between them is
@@ -98,16 +100,16 @@ describe('HintBar', () => {
       renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await press(user, 'Hide')
+      await press(user, 'Close hints')
 
       expect(painted('Show 1 hint')).toBe('1 hint')
     })
 
     // The one state whose two halves are the same string, and it is the split applied rather than
     // the split skipped. There is no noun that says what this press does -- "Hints" would be a
-    // heading, not a control, it would collide with the band's own visible "Hints" label on the
-    // docked variant, and it breaks 2.5.3's containment on case. "Hide" alone would put a second
-    // button reading exactly "Hide" beside the sheet's own, one inch away, doing the same thing.
+    // heading, not a control, it would not say whether the press opens or shuts, and it breaks
+    // 2.5.3's containment on case. "Hide" alone would be a bare verb one inch from the sheet's own
+    // Close, doing the same thing under a different word.
     // It is also ten characters against "Hint 1 of 3"'s eleven, so it never binds the row.
     it('paints the hide state whole, because it has nothing to drop', async () => {
       const user = userEvent.setup({ delay: null })
@@ -119,12 +121,11 @@ describe('HintBar', () => {
       expect(painted('Hide hints')).toBe('Hide hints')
     })
 
-    // Split in every variant, not only in the one that has to be. `controlLabel` takes no variant,
-    // so there is one code path and one set of words -- and on the phrase benches the shorter text
-    // is better copy rather than merely narrower, since the band beside it is already headed
-    // "Hints" and the old label said the word twice within an inch.
-    it('paints the same short text on the docked and inline benches', () => {
-      renderBar('inline')
+    // Split in every variant. `controlLabel` takes no variant, so there is one code path and one set
+    // of words -- and on the sign row the short text is also the only text that fits: the control is
+    // a fixed 116px laid over the row, where "Open hint 1 of 3" would need about 148.
+    it('paints the same short text on the sign row', () => {
+      renderBar('sign')
 
       expect(painted('Open hint 1 of 3')).toBe('Hint 1 of 3')
     })
@@ -225,15 +226,9 @@ describe('HintBar', () => {
       renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await press(user, 'Hide')
+      await press(user, 'Close hints')
 
       expect(screen.getByRole('button', { name: 'Show 1 hint' })).toBeInTheDocument()
-    })
-
-    it('sets the bar inline when asked to', () => {
-      renderBar('inline')
-
-      expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
     })
 
     // The case `hintsOf` newly admits, and the one goFigure hands the bar in controlled mode: a
@@ -603,7 +598,7 @@ describe('HintBar', () => {
       expect(painted('Show answer')).toBe('Show answer')
 
       await press(user, 'Show answer')
-      await press(user, 'Hide')
+      await press(user, 'Close hints')
       expect(painted('Show answer')).toBe('Show answer')
     })
   })
@@ -690,7 +685,7 @@ describe('HintBar', () => {
 
       await press(user, 'Open hint 1 of 3')
 
-      expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Close hints' })).toBeInTheDocument()
     })
 
     // The guard against putting `opened` into state, and the only test that can tell the two
@@ -726,7 +721,7 @@ describe('HintBar', () => {
       await press(user, 'Open hint 1 of 3')
 
       expect(sheet()).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Close hints' })).toBeInTheDocument()
     })
 
     it('still reads and writes storage when it is left uncontrolled', async () => {
@@ -739,18 +734,58 @@ describe('HintBar', () => {
     })
   })
 
-  // Only the control and the sheet it opens. `inline` was built for the tile bench and does not fit
-  // this one: its `py-2` makes 60px out of a 44px row, and its `px-4` re-applies a gutter the tray
-  // already carries.
+  // THE SHELL'S VARIANT, and the default: the control the hint dock lays over the right end of the
+  // board's sign row. It is a landmark of its own because it sits outside the board, and it is named
+  // by `aria-label` rather than by a visible heading -- the docked band's "Hints" label and its three
+  // rung markers went with the band, since the control's own words already count the ladder.
+  describe('the sign variant', () => {
+    it('is what a bar renders when no variant is named', () => {
+      renderBar()
+
+      expect(screen.getByRole('region', { name: 'Hints' })).toContainElement(
+        screen.getByRole('button', { name: 'Open hint 1 of 3' }),
+      )
+    })
+
+    it('names its region without drawing the name', () => {
+      renderBar('sign')
+
+      expect(screen.getByRole('region', { name: 'Hints' })).toBeInTheDocument()
+      expect(screen.queryByText('Hints')).not.toBeInTheDocument()
+    })
+
+    // The rung markers were the one aria-hidden thing the docked band drew. With them gone, nothing
+    // on the row is hidden from a reader at all, and the control's words are the only carrier of the
+    // count -- which is asserted in `describe('the control label')`.
+    it('draws no rung markers', () => {
+      const { container } = renderBar('sign')
+
+      expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0)
+    })
+
+    // BOTH ENDS OF THE IDREF, shut and open. The shut sheet is `hidden`, so the reference has to
+    // resolve to an element in the document even when no role query can reach it; open, it has to
+    // be the element holding the sheet. goFigure and Phrazle follow this attribute to find the sheet.
+    it('names the sheet it controls, shut and open', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBar('sign')
+      const control = screen.getByRole('button', { name: 'Open hint 1 of 3' })
+      const target = (): HTMLElement | null => document.getElementById(control.getAttribute('aria-controls') ?? '')
+
+      expect(target()).toBeInTheDocument()
+
+      await user.click(control)
+
+      expect(target()).toContainElement(sheet())
+    })
+  })
+
+  // Only the control and the sheet it opens, in a row goFigure's tray already owns.
   describe('the bare variant', () => {
-    // The labeled <section> goes WITH the label, not after it. Dropping the visible "Hints" text
-    // alone would leave `aria-labelledby` pointing at an id no longer in the document, and the
-    // section that carried it would then be an UNNAMED region nested inside the tray's own region.
-    //
-    // Which is why the check is `queryAllByRole('region')` and not the named query alone: a region
-    // whose name resolved to nothing is exactly what the half-done removal produces, and a query for
-    // the name "Hints" cannot see it. Asking for regions of ANY name is what catches the dangling
-    // reference through the only thing it changes that a test can observe -- an extra landmark.
+    // No landmark of its own: the tray is its own region, and a second one nested inside it would
+    // name one row of controls twice. Asked as `queryAllByRole('region')` rather than by name, so an
+    // UNNAMED region -- what a half-removed label leaves behind -- is caught too; a query for the
+    // name "Hints" cannot see one.
     it('renders no region of its own', () => {
       renderBar('bare')
 
@@ -872,7 +907,7 @@ describe('HintBar', () => {
       const user = userEvent.setup({ delay: null })
       renderBar()
       await press(user, 'Open hint 1 of 3')
-      await user.click(screen.getByRole('region', { name: 'Open hints' }))
+      await user.click(screen.getByRole('dialog', { name: 'Hints' }))
 
       await user.keyboard('{Escape}')
 
@@ -900,7 +935,7 @@ describe('HintBar', () => {
       renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await press(user, 'Hide')
+      await press(user, 'Close hints')
 
       expect(sheet()).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Show 1 hint' })).toBeInTheDocument()
@@ -911,7 +946,7 @@ describe('HintBar', () => {
       renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await press(user, 'Hide')
+      await press(user, 'Close hints')
 
       expect(screen.getByRole('button', { name: 'Show 1 hint' })).toHaveFocus()
     })
@@ -923,7 +958,7 @@ describe('HintBar', () => {
       renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await press(user, 'Hide')
+      await press(user, 'Close hints')
 
       expect(writeHints).toHaveBeenCalledTimes(1)
     })
@@ -931,38 +966,169 @@ describe('HintBar', () => {
     it('offers no way to hide a sheet with nothing in it', () => {
       renderBar()
 
-      expect(screen.queryByRole('button', { name: 'Hide' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Close hints' })).not.toBeInTheDocument()
     })
 
-    // THE SHEET ITSELF IS A TAB STOP, and it has to be: it scrolls, every rung inside it is plain
-    // text, and a scrollable box with no focusable descendant cannot be scrolled from the keyboard
-    // at all. Nothing automated finds this in jsdom -- nothing is laid out, so the box never reports
-    // itself as scrollable and the rule that would fire never sees anything to fire on. Tabbing to
-    // it is the only check there is.
-    //
-    // Backwards from the control, because the sheet is drawn BEFORE the control in the document and
-    // the press that opened it left focus on the control. Two steps: the sheet's own Hide button
-    // first, then the sheet.
-    it('is reachable from the keyboard, so a player can scroll it', async () => {
+    // INTO THE POPUP ON OPEN. A modal dialog that left focus on the control behind it would leave a
+    // keyboard player outside the thing that just covered the screen.
+    it('puts focus on its Close button when it opens', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBar()
+
+      await press(user, 'Open hint 1 of 3')
+
+      expect(screen.getByRole('button', { name: 'Close hints' })).toHaveFocus()
+    })
+
+    it('puts focus on its Close button when a returning player reopens it', async () => {
+      const user = userEvent.setup({ delay: null })
+      jest.mocked(readHints).mockReturnValueOnce(2)
+      renderBar('bare')
+
+      await press(user, 'Show 2 hints')
+
+      expect(screen.getByRole('button', { name: 'Close hints' })).toHaveFocus()
+    })
+
+    // THE TAB CYCLE. Focus never leaves for the covered board: from Close, Tab and Shift+Tab both
+    // reach the hint control -- the one stop outside the dialog, kept in the ring because it is the
+    // only way to buy the next rung from the keyboard -- and from there they come back to Close.
+    // jsdom lays nothing out, so the dialog never scrolls and its body is never a stop here.
+    it('cycles Tab between Close and the control and reaches nothing else', async () => {
+      const user = userEvent.setup({ delay: null })
+      render(
+        <>
+          <button type="button">The board</button>
+          <HintBar hints={hints} puzzleId={puzzleId} />
+          <button type="button">The keypad</button>
+        </>,
+      )
+      await press(user, 'Open hint 1 of 3')
+
+      await user.tab()
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toHaveFocus()
+
+      await user.tab()
+      expect(screen.getByRole('button', { name: 'Close hints' })).toHaveFocus()
+
+      await user.tab({ shift: true })
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toHaveFocus()
+
+      await user.tab({ shift: true })
+      expect(screen.getByRole('button', { name: 'Close hints' })).toHaveFocus()
+    })
+
+    // What the control is in the ring FOR: the next rung, bought without a pointer.
+    it('lets the keyboard buy the next rung from inside the cycle', async () => {
       const user = userEvent.setup({ delay: null })
       renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await user.tab({ shift: true })
-      await user.tab({ shift: true })
+      await user.tab()
+      await user.keyboard('{Enter}')
 
-      expect(sheet()).toHaveFocus()
+      expect(openRungs()).toEqual([texts[0], texts[1]])
     })
 
-    it('is reachable from the keyboard on the bare bench too', async () => {
+    // Focus on the dialog's body -- where a click on a rung's text puts it -- counts as standing on
+    // Close, so the cycle carries on from there rather than letting Tab out to the page.
+    it('carries the cycle on from the dialog body', async () => {
       const user = userEvent.setup({ delay: null })
-      renderBar('bare')
+      renderBar()
+      await press(user, 'Open hint 1 of 3')
+      await user.click(screen.getByText(texts[0]))
+
+      await user.tab()
+
+      expect(screen.getByRole('button', { name: 'Open hint 2 of 3' })).toHaveFocus()
+    })
+
+    // The scrim is aria-hidden scenery with no role, so it is found by its hook attribute. A click
+    // on it is the pointer's way out, and it hands focus back exactly as Close and Escape do.
+    it('closes on a click on the scrim and hands focus back to the control', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { container } = renderBar()
       await press(user, 'Open hint 1 of 3')
 
-      await user.tab({ shift: true })
-      await user.tab({ shift: true })
+      await user.click(container.querySelector('[data-hint-scrim]') as HTMLElement)
 
-      expect(sheet()).toHaveFocus()
+      expect(sheet()).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Show 1 hint' })).toHaveFocus()
+    })
+
+    it('draws the scrim on the bare bench too, and closes on it', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { container } = renderBar('bare')
+      await press(user, 'Open hint 1 of 3')
+
+      await user.click(container.querySelector('[data-hint-scrim]') as HTMLElement)
+
+      expect(sheet()).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Show 1 hint' })).toHaveFocus()
+    })
+
+    // A shut bar draws nothing over the bench, so nothing is dimmed and nothing takes a press.
+    it('draws no scrim while it is shut', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { container } = renderBar()
+      await press(user, 'Open hint 1 of 3')
+
+      await press(user, 'Close hints')
+
+      expect(container.querySelector('[data-hint-scrim]')).toBeNull()
+    })
+
+    it('hides its scrim from a reader', async () => {
+      const user = userEvent.setup({ delay: null })
+      const { container } = renderBar()
+
+      await press(user, 'Open hint 1 of 3')
+
+      expect(container.querySelector('[data-hint-scrim]')).toHaveAttribute('aria-hidden', 'true')
+    })
+
+    // A MODAL DIALOG, named by its own heading, and the IDREF the boards follow still resolves to
+    // the wrapper around it -- shut, where no role query can reach the dialog, and open.
+    it('is a modal dialog named Hints, inside the element the control names', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBar()
+      const control = screen.getByRole('button', { name: 'Open hint 1 of 3' })
+      const target = (): HTMLElement | null => document.getElementById(control.getAttribute('aria-controls') ?? '')
+
+      expect(target()).toBeInTheDocument()
+      expect(target()).toHaveAttribute('hidden')
+
+      await user.click(control)
+
+      const dialog = screen.getByRole('dialog', { name: 'Hints' })
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(target()).toContainElement(dialog)
+      expect(target()).not.toHaveAttribute('hidden')
+      expect(control).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    // The name comes from the heading through `aria-labelledby`, so the heading is asserted as one
+    // -- the dialog's one heading, the word a sighted player reads at its top.
+    it('heads itself with the word it is named by', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBar()
+
+      await press(user, 'Open hint 1 of 3')
+
+      expect(
+        within(screen.getByRole('dialog', { name: 'Hints' })).getByRole('heading', { level: 2 }),
+      ).toHaveTextContent('Hints')
+    })
+
+    // The visible word is "Close" and the name is "Close hints": the name contains the label
+    // (WCAG 2.5.3), and the X beside the word is hidden from it.
+    it('paints its close button with the word the name starts with', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBar()
+
+      await press(user, 'Open hint 1 of 3')
+
+      expect(painted('Close hints')).toBe('Close')
     })
 
     it('ignores Escape while it is already shut', async () => {
@@ -1166,7 +1332,7 @@ describe('HintBar', () => {
       const user = userEvent.setup({ delay: null })
       const { rerender } = renderResettable(0)
       await press(user, 'Open hint 1 of 3')
-      screen.getByRole('button', { name: 'Hide' }).focus()
+      screen.getByRole('button', { name: 'Close hints' }).focus()
 
       rerenderWith(rerender, 1)
 
@@ -1240,7 +1406,7 @@ describe('HintBar', () => {
       expect(screen.getByRole('status').textContent).toBe('')
     })
 
-    // The same property, checked on the two callers the docked bar's own arrangement says nothing
+    // The same property, checked on the two callers the sign row's own arrangement says nothing
     // about. `bare` drops the band's label and its rung markers, and a controlled bar reads its
     // count off a prop instead of off storage -- either could have put something inside the region
     // on the first render without the test above noticing. All three hold for the same structural

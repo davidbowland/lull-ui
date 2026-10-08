@@ -43,14 +43,13 @@ const PuzzlePage = (): React.ReactNode => {
         <meta content="A puzzle to pass the time" name="twitter:description" />
         <meta content="https://lull.dbowland.com/og-image.png" name="twitter:image" />
       </Head>
-      {/* gap-6 and py-10 live in PuzzleFrame's own <Flowed> wrapper rather than here, so a docked
-          type can decline them: a keypad pinned to the bottom of the viewport needs the page to be
-          a full-height column with no vertical padding above it to spend. The page cannot make that
-          call itself -- the id is in the URL and the pack is on the device, so only the frame knows
-          what type this is. */}
+      {/* No gap and no vertical padding here. Every bench pins its floor to the bottom of the bench,
+          so the page has to be a full-height column with no vertical padding above it to spend; the
+          one screen that wants breathing room -- PuzzleFrame's DeadEnd, for a puzzle that cannot be
+          shown -- pays for its own inside the frame. */}
       {/* The gutter is NOT here, and it is not on the bench column inside either. Every band of a
           bench is full width and pays for its own text inset out of --lull-gutter-*, because the
-          breadcrumb, the sign row and the hint bar are strips of ground whose rules have to reach
+          breadcrumb and the sign row are strips of ground whose rules have to reach
           both edges, and the board's own plate is the working surface rather than a card laid on
           one. A column that padded them would stop every one of those rules 16px short. So this
           element carries only the measure. See index.css, where the alternative -- padding the

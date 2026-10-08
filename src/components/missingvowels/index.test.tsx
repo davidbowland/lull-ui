@@ -69,6 +69,27 @@ describe('MissingVowelsBoard', () => {
       expect(screen.queryByRole('heading')).not.toBeInTheDocument()
     })
 
+    // THE ROW IS THE SHELL'S HINT CONTROL'S PLACE, so it is drawn whether or not it has a category in
+    // it: the frame lays its control over the right end of the board's first child, and index.css
+    // finds that child by `.lull-signrow`. Read as a class because the class IS the contract here --
+    // it is the hook the shell's reserve and sticky rule are written against, and jsdom lays nothing
+    // out that could show either.
+    it('opens the board with the sign row, category and all', () => {
+      const { container } = setup()
+
+      const row = container.querySelector('.lull-board')?.firstElementChild
+      expect(row).toHaveClass('lull-signrow')
+      expect(row).toContainElement(screen.getByRole('heading', { level: 2, name: 'Film' }))
+    })
+
+    it('opens the board with the sign row when the category is hidden, and leaves it empty', () => {
+      const { container } = setup(hiddenCategoryPuzzle)
+
+      const row = container.querySelector('.lull-board')?.firstElementChild
+      expect(row).toHaveClass('lull-signrow')
+      expect(row).toBeEmptyDOMElement()
+    })
+
     it('shows the respaced consonants', () => {
       setup()
 
@@ -127,7 +148,7 @@ describe('MissingVowelsBoard', () => {
   // nothing about either band; index.css does the placing, keyed off these classes.
   describe('the bench bands', () => {
     // Inverted from "puts the phrase and the answer box in the board band", deliberately rather
-    // than deleted. The board band is the one that scrolls, so a field that drifts back into it
+    // than deleted. The board band scrolls with the bench under a pinned floor, so a field that drifts back into it
     // is the original defect returning, and this pair is the only thing that would notice.
     it('puts the answer box in the instrument band', () => {
       const { container } = setup()

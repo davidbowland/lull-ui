@@ -182,8 +182,10 @@ const notInList = (word: string): string => `${word} isn’t in the word list.`
 const FINISHED = 'This board is finished. Press Again to start over.'
 // goFigure's sentence verbatim, because it is the same refusal for the same reason on another
 // bench: a sheet is lying over the board and the keyboard is writing underneath it. A player who
-// learns what it means on one bench meets the same words on this one.
-const HIDE_TO_TYPE = 'Hide the hints to type.'
+// learns what it means on one bench meets the same words on this one. "Close" because that is the
+// word on the sheet's own button; the scrim takes every pointer press while the sheet is up, so only
+// a hardware keyboard ever reaches this.
+const CLOSE_TO_TYPE = 'Close the hints to type.'
 // Refuses to invent a maxGuesses or an answer, and refuses to crash. Only reachable from a corrupt
 // pack, because isValidPuzzle deliberately leaves `data` opaque.
 const INCOMPLETE = 'This puzzle didn’t arrive complete. Reload while you’re online.'
@@ -213,21 +215,32 @@ const SIGN_ROW = 'lull-signrow sticky top-0'
 // NOTHING IS EVER DISABLED. A ruled-out key stays a live control that types its letter: a player
 // spelling a word that happens to contain a dead letter is doing something ordinary, and 26 keys
 // that come and go under a thumb is a keyboard that cannot be learned.
+//
+// THE PRESSED LOOK KEYS OFF `data-down`, NEVER `:active`. The pad commits on release and lets a
+// thumb slide to the neighboring key before lifting, and it reads a touch 6px above where it landed
+// -- so the key that will type is often not the element the finger first touched. `:active` stays
+// on that first element for the whole press and would light the wrong key; Keypad sets
+// `data-down="true"` on the key the gesture currently resolves to, and only on that one.
+//
+// `[&:focus-visible:active]` beside it is the KEYBOARD's flash. Holding Space or Enter on a focused
+// key sets `:active` and no `data-down`, so without it a keyboard press lit nothing. It cannot bring
+// back the wrong-key light: a touch or a mouse press never matches `:focus-visible`.
 const TONE: Record<KeyStatus, string> = {
   absent:
     'bg-[var(--lull-floor)] text-[var(--lull-floor-muted)] hover:text-[var(--lull-floor-ink)] ' +
-    'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]',
+    'data-[down=true]:bg-[var(--lull-floor-ink)] data-[down=true]:text-[var(--lull-floor)] [&:focus-visible:active]:bg-[var(--lull-floor-ink)] [&:focus-visible:active]:text-[var(--lull-floor)]',
   present:
-    'bg-[var(--lull-floor-accent)] text-[var(--lull-floor)] hover:bg-[var(--lull-floor-ink)] active:bg-[var(--lull-floor-ink)]',
+    'bg-[var(--lull-floor-accent)] text-[var(--lull-floor)] hover:bg-[var(--lull-floor-ink)] data-[down=true]:bg-[var(--lull-floor-ink)] [&:focus-visible:active]:bg-[var(--lull-floor-ink)]',
   untried:
     'bg-[var(--lull-floor)] text-[var(--lull-floor-ink)] hover:text-[var(--lull-floor-accent)] ' +
-    'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]',
+    'data-[down=true]:bg-[var(--lull-floor-ink)] data-[down=true]:text-[var(--lull-floor)] [&:focus-visible:active]:bg-[var(--lull-floor-ink)] [&:focus-visible:active]:text-[var(--lull-floor)]',
 }
 // The two utility keys take no state -- Guess and Delete are not letters and are never ruled out --
-// so they keep the accent ink they have always had, now as their only color source.
+// so they keep the accent ink they have always had, now as their only color source. Their press
+// variant is `data-[down=true]:` for TONE's reason.
 const TONE_UTILITY =
   'bg-[var(--lull-floor)] text-[var(--lull-floor-accent)] hover:text-[var(--lull-floor-ink)] ' +
-  'active:bg-[var(--lull-floor-ink)] active:text-[var(--lull-floor)]'
+  'data-[down=true]:bg-[var(--lull-floor-ink)] data-[down=true]:text-[var(--lull-floor)] [&:focus-visible:active]:bg-[var(--lull-floor-ink)] [&:focus-visible:active]:text-[var(--lull-floor)]'
 // `relative` IS FOR THE CHIP AND IT SITS ON THE SHARED CLASS, which means it reaches committed tiles
 // too. That is inert rather than sloppy: a tile's only descendants are a static letter span and
 // Bar's flex span, neither of which is absolutely positioned, so a positioning context nothing
@@ -522,11 +535,25 @@ export const PhrazleBoard = ({
   // sentence that belongs on screen.
   const [message, setMessage] = useState({ detail: '', nonce: 0, text: '' })
   // A WIDTH, not a box. The height went with the guess limit: a grid that grows cannot be sized to
-  // fit a band, so it scrolls instead and the tiles hold their size.
+  // fit a band, so the bench scrolls instead and the tiles hold their size.
   const [width, setWidth] = useState(DEFAULT_WIDTH)
 
   const plateRef = useRef<HTMLDivElement>(null)
   const composingRef = useRef<HTMLDivElement>(null)
+  // The last row spent, which is what an accepted Guess shows the player. See the scroll effects
+  // below for when each of these two refs is the target.
+  const lastMarkedRef = useRef<HTMLDivElement>(null)
+  // "A guess was just marked and the player has not started the next one." Set by an accepted,
+  // unsolved commit; cleared by the first letter that lands in the new row, and by Again. A ref,
+  // not state: nothing is drawn from it, and setting it must not cost a render.
+  const revealPending = useRef(false)
+  // Bumped once per "start of the next guess", so the effect that scrolls the composing row runs
+  // after the render that drew the letter rather than before it. It is 0 at mount, and the mount
+  // scroll is the same effect running for the first time.
+  const [scrollNonce, setScrollNonce] = useState(0)
+  // The guess count the last commit effect saw, so that effect can tell a GROWN count (a guess was
+  // accepted) from a shrunk one (Again) and from the mount, none of which but the first may scroll.
+  const seenGuesses = useRef(guesses.length)
 
   useEffect(() => {
     const plate = plateRef.current
@@ -546,8 +573,9 @@ export const PhrazleBoard = ({
       // section was rejected for overstating it by. tileSize is documented and tested as taking the
       // CONTENT width, so the tiles were sized against 32px of room no row has, and a long word
       // overflowed -- at 320 a nine-letter word drew a 329px grid inside a 320px box, and
-      // .lull-board computes `overflow-x: auto` (index.css gives it `overflow-y: auto`), so the
-      // board really did scroll sideways. `contentRect` is the content box and the callback is
+      // .lull-board, which was its own vertical scroller then and so computed `overflow-x: auto`,
+      // really did scroll sideways. (It is no scroller now: the bench is, and the section below
+      // clips its horizontal overflow outright.) `contentRect` is the content box and the callback is
       // handed it for free: no second measurement, and no reading a gutter back out of a stylesheet
       // to subtract it.
       //
@@ -596,25 +624,57 @@ export const PhrazleBoard = ({
     reported.current = solved
   }, [onSolved, solved])
 
-  // KEYED TO guesses.length, NOT TO typed. Scrolling on every keystroke would fight a player who has
-  // scrolled up to re-read row 1 while typing row 4, which is exactly the thing this bench asks
-  // people to do. Once at mount and once per commit is the whole of it.
+  // THE SCROLL WAITS FOR THE FIRST LETTER. Pressing Guess used to scroll the NEW, EMPTY composing
+  // row into view, and on a phone that was the wrong row: a three-line phrase is ~126px a guess, so
+  // bringing the next row up pushed the row that had just been marked off the top -- the player
+  // pressed Guess and was shown blank tiles instead of their result. What a player does after Guess
+  // is read the marking; what they do next is start typing. So each moment gets its own scroll:
   //
-  // `nearest` rather than `center`, so on a viewport where everything fits it does nothing at all.
-  // This is the guess bench's version of goFigure's non-negotiable: the two rows a player is
-  // comparing are the one being typed and the one just marked, and they are adjacent, so keeping the
-  // bottom of the grid in view keeps both.
+  //   - An accepted Guess shows THE MARKED ROW (the effect keyed on `guesses.length`).
+  //   - The first letter of the next guess shows THE COMPOSING ROW (the effect keyed on
+  //     `scrollNonce`), because that letter is the player saying "I've read it, I'm moving on".
+  //   - Nothing else scrolls: not later letters, not Delete, not a refused Guess, not a key refused
+  //     while the hint sheet is up. Scrolling on every keystroke would fight a player who has
+  //     scrolled up to re-read row 1 while typing row 4, which is exactly what this bench asks of
+  //     people.
   //
-  // THE REF IS OPTIONAL AND THE METHOD IS NOT. `composingRef.current` is null on a finished board
-  // and on an undrawable pack -- both draw no composing row, so there is nothing to keep in view --
-  // and both arms are exercised by the suite. The call itself is written plainly: a `?.()` there
+  // `nearest` EVERYWHERE, so a row already fully on screen does not move at all. That is the common
+  // case after Guess -- the player was looking at the row they typed, which is the row that is now
+  // marked -- and in it the board stays perfectly still. Otherwise the bench moves the least
+  // distance that shows the whole row, and the row's scroll margins (see the row below) keep it
+  // clear of the sticky sign row on top and the sticky floor underneath.
+  //
+  // THE REFS ARE OPTIONAL AND THE METHOD IS NOT. `composingRef.current` is null on a finished board
+  // and on an undrawable pack -- both draw no composing row. The finished board then scrolls its
+  // winning row (below); the undrawable pack draws no rows at all, so both refs are null and nothing
+  // scrolls. Both arms are exercised by the suite. The call itself is written plainly: a `?.()` there
   // would make a real browser losing this method silent, and the honest failure is a loud one.
   //
   // jsdom implements no scrolling at all, so `Element.prototype.scrollIntoView` does not exist and
   // this board's suite installs it in a beforeAll and removes it in an afterAll. It is the only
   // suite that mounts this component: puzzle-frame's mocks `entryFor` and mounts a recorder.
+  //
+  // MOUNT IS THIS SAME EFFECT running with the nonce at 0, which is the one scroll a restored board
+  // owes: the player arrives at the row they will type into.
+  //
+  // A FINISHED BOARD HAS NO SUCH ROW, so its mount falls back to the last marked one -- the winning
+  // row. That is the row "Show answer" fills in: the frame reveals by rebuilding this board from the
+  // solved progress it wrote, so the answer arrives as a mount, appended under every guess, and
+  // without this it could sit under the pinned floor with the press seeming to do nothing. Only the
+  // mount can reach the fallback: every later bump of the nonce comes from a letter typed into a
+  // composing row, which by then exists.
   useEffect(() => {
-    composingRef.current?.scrollIntoView({ block: 'nearest' })
+    ;(composingRef.current ?? lastMarkedRef.current)?.scrollIntoView({ block: 'nearest' })
+  }, [scrollNonce])
+
+  // ONLY WHEN THE COUNT GREW. The count also changes when Again empties the board, and it is "seen"
+  // at mount -- neither is a guess the player needs shown, and a scroll on Again would point at a
+  // row that no longer exists. The winning guess lands here too: a solved board draws no composing
+  // row, so the marked row is the only thing there is to show.
+  useEffect(() => {
+    const grew = guesses.length > seenGuesses.current
+    seenGuesses.current = guesses.length
+    if (grew) lastMarkedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [guesses.length])
 
   // The detail DEFAULTS TO EMPTY rather than carrying, so a caller that says one plain sentence
@@ -696,6 +756,14 @@ export const PhrazleBoard = ({
 
     const next = `${typed}${letter}`
     setTyped(next)
+
+    // THE FIRST LETTER AFTER A MARKED GUESS, and only that one, brings the composing row into view.
+    // Below the full-row return above on purpose: a key that changed nothing is not the player
+    // starting anything. See the scroll effects for the whole of the rule.
+    if (revealPending.current) {
+      revealPending.current = false
+      setScrollNonce((nonce) => nonce + 1)
+    }
 
     // THE TWO THRESHOLDS THAT BREAK THE SILENCE, and the test both of them pass is the one this
     // comment has always stated: the ribbon speaks for a change in WHAT GUESS WILL DO. There used to
@@ -795,6 +863,9 @@ export const PhrazleBoard = ({
     // NO LOSS BRANCH, because there is no loss. This is where `Out of guesses. The answer is X.`
     // was said, and the product's only ending is now the one above it.
 
+    // Below the win's return, so a solved board never sets it: there is no next row to start.
+    revealPending.current = true
+
     // TWO ARGUMENTS, AND THE SPLIT IS THE POINT. This was one string handed to a two-line clamp,
     // which is the same division made by the wrong instrument: the head is the guess and the tail is
     // a per-letter transcript of a grid the sighted player is looking at, so the clamp spent both
@@ -818,6 +889,8 @@ export const PhrazleBoard = ({
     setGuesses([])
     setTyped('')
     hush()
+    // A fresh board has no marked row to have read, so its first letter is not a moment to scroll.
+    revealPending.current = false
     // A LIFECYCLE SIGNAL, not game state: onReset says "the player started this puzzle over" and
     // takes no argument and names no destination, so deleting lull:hints:<puzzleId> and resetting
     // the hint bar stay entirely the shell's business.
@@ -841,11 +914,11 @@ export const PhrazleBoard = ({
   }
 
   // THE SHEET IS THE SHELL'S AND IT LIES OVER THIS BOARD, which is why a board that renders no hint
-  // bar still has to ask whether one is open. PuzzleFrame draws HintBar between the two elements
-  // this component returns and the sheet is drawn over the grid, so a keyboard player who opens a
-  // hint to check a row and Tabs once is standing on a `<section aria-label="Open hints">` that
-  // carries tabIndex={0} precisely so it can be scrolled -- and every keystroke made there still
-  // reached this handler. Enter spent one of six attempts on a row the player could not see, and
+  // bar still has to ask whether one is open. PuzzleFrame draws HintBar in a dock laid over this
+  // board's sign row and the sheet drops down over the grid, so a keyboard player who opens a
+  // hint to check a row is standing in a modal dialog -- on its Close button, where opening it puts
+  // focus, or on its body, which is focusable precisely so it can be scrolled -- and every keystroke
+  // made there still reaches this handler, which is on the window. Enter spent one of six attempts on a row the player could not see, and
   // THIS BENCH HAS NO UNDO BY DESIGN: a committed guess is permanent, that is the game, so the loss
   // was irreversible. Letters and Backspace edited the hidden row the same way.
   //
@@ -854,7 +927,7 @@ export const PhrazleBoard = ({
   // the control's `aria-controls`, and the `hidden` attribute on the element it names -- is the same
   // fact a screen reader is told, so a bench that reads it can never disagree with what the player
   // is hearing, and it cannot go stale on a path that shuts the sheet without saying so (Escape and
-  // the sheet's own Hide are both such paths).
+  // the sheet's own Close and its scrim are all such paths).
   //
   // THE ONE DEPARTURE FROM goFigure'S IS THE ROOT: that bench draws the bar inside its own
   // instrument and scopes the lookup to it, and this board draws no bar at all, so there is nothing
@@ -889,7 +962,7 @@ export const PhrazleBoard = ({
     if (target !== null && (target.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName))) return
 
     // RULE 3, AND IT IS NOT A FOOTNOTE ON THIS BENCH. A <button> acts on Enter natively, and the
-    // hint sheet's `Hide` and all 28 pad keys are in reach. Without this, pressing `Hide` with the
+    // hint sheet's `Close` and all 28 pad keys are in reach. Without this, pressing `Close` with the
     // keyboard would both close the sheet and spend a guess.
     //
     // IT COVERS ELEMENTS THAT ACT ON ENTER THEMSELVES, and nothing else. This comment used to list
@@ -909,7 +982,7 @@ export const PhrazleBoard = ({
     // unreachable arm of a condition is worse than no arm.
     if (event.key === 'Enter' && target !== null && /^(A|BUTTON)$/.test(target.tagName)) return
 
-    // AND IT IS ASKED AFTER RULE 3, never before: with the sheet up and focus on its Hide control,
+    // AND IT IS ASKED AFTER RULE 3, never before: with the sheet up and focus on its Close button,
     // Enter is the player closing the sheet, and answering that press with a sentence telling them
     // to close the sheet would refuse the exit while they are taking it.
     //
@@ -920,7 +993,7 @@ export const PhrazleBoard = ({
     // nothing here to hand the sheet and nothing to decline without saying why.
     if ((event.key === 'Enter' || event.key === 'Backspace' || /^[A-Za-z]$/.test(event.key)) && sheetIsOpen()) {
       event.preventDefault()
-      say(HIDE_TO_TYPE)
+      say(CLOSE_TO_TYPE)
       return
     }
 
@@ -1014,55 +1087,56 @@ export const PhrazleBoard = ({
   const announced = message.text === '' ? '' : `${message.text}${REPEAT_MARK.repeat(message.nonce % 2)}`
 
   return (
-    // Exactly two elements, and they are siblings: the frame wraps them in `display: contents` and
-    // index.css orders one into the board band and the other into the floor, with the shell's hint
-    // bar between them. Neither knows the other is there.
+    // Exactly two elements, and they are siblings: the frame wraps them in `.lull-play`, where the
+    // board comes first and the floor sticks to the bottom of the bench beneath it. The shell's
+    // hint dock sits before that wrapper, laid over this board's sign row. Neither element knows
+    // the other is there.
     <>
       {/* A <section> with a name is a landmark, which is what lets the shell and the page find the
           board without either reaching into it. The name is the TYPE, because a reader moving by
           landmark is choosing a band and not reading content.
 
-          This band's geometry belongs to index.css -- it is the ONE band that flexes and the seam
-          depends on that -- so nothing here sets flex, height or vertical scrolling. It does not set
-          overflow-x either, and that is a change from the cipher bench rather than an oversight: a
-          board may not restyle the shell's geometry, and clamping the container from inside would
-          hide a wide grid rather than remove it. The guarantee instead is that nothing is ever wider
-          than the container -- the word groups below are a flex-wrap row, so the widest phrase the
-          corpus can produce wraps rather than extending.
+          THIS BAND DOES NOT SCROLL; THE BENCH DOES. It used to be the one scroller on the bench,
+          with the breadcrumb, title and hint bar standing still above it, and that is what left a
+          phone a 173px window onto the grid. Now the whole bench column scrolls, the crown scrolls
+          away, and this band simply grows with its rows -- index.css owns that geometry, so nothing
+          here sets flex, height or vertical scrolling.
 
-          tabIndex={0} SO A KEYBOARD PLAYER CAN SCROLL IT, which is HintBar's sheet verbatim and for
-          the identical reason. Nothing inside this band is focusable -- a tile is role="img" with no
-          handler, deliberately, because 126 buttons is 126 tab stops for elements nothing can do
-          anything with -- and the pad lives in the floor, in the other element this component
-          returns. A scrollable region with no focusable content inside it and no tabIndex of its own
-          cannot be scrolled from a keyboard at all.
+          `overflow-x-clip`, NOT `overflow-x-hidden`, and the difference is the whole layout. Any
+          `overflow-x` other than `visible` or `clip` forces `overflow-y` to compute to `auto`,
+          which would make this section a scroll container again -- one that never scrolls, and
+          that the sticky sign row would pin itself to instead of the bench. `clip` clips the same
+          way and creates no scroll container. It is a backstop rather than the guarantee: the word
+          groups below are a flex-wrap row, so the widest phrase the corpus can produce wraps rather
+          than extending, and the clip exists so no band can ever drag the bench sideways.
 
-          IT BECAME NECESSARY WHEN THE GRID STARTED GROWING. This band could always scroll in
-          principle (§8.11's three-by-seven phrase at 320 floors its tiles and overflows), but that
-          was one dense phrase at one width; a board with no guess limit scrolls in every long game.
-          The composing row is kept in view by the effect above, so a player can always see what they
-          are typing -- what they could not otherwise do is scroll BACK to re-read guess 1 while
-          typing guess 12, which is the exact thing that effect's own comment says this bench asks
-          people to do.
+          NO tabIndex. It had one so a keyboard player could scroll this band, because nothing
+          inside it is focusable -- a tile is role="img" with no handler, deliberately, because 126
+          buttons is 126 tab stops for elements nothing can do anything with. That reason went with
+          the scrolling. The scroller is the bench now, and the bench holds focusable controls in
+          every state (the breadcrumb's links, the hint control, the pad's keys), so focus on any
+          of them lets the arrow and Page keys scroll it, and a Tab back to the breadcrumb brings
+          the crown into view. WCAG 2.1.1 still holds, one level up. */}
+      <section aria-label="Phrazle" className="lull-board flex flex-col overflow-x-clip">
+        {/* Sticky, because the count is the one number a player checks constantly and the bench
+            scrolls under it. It is the board's FIRST child, which is the layout convention every
+            hint-dock bench follows: the shell lays its hint control over this row's right end and
+            the row reserves the room (`.lull-bench[data-hint-dock]` in index.css). A <div> rather
+            than the <p> it was, because it now carries a stacked layout with a control laid over it.
 
-          ONE TAB STOP, and it lands here first because this element is first. It is named already,
-          so a screen reader announces the landmark rather than an unlabeled box. */}
-      <section aria-label="Phrazle" className="lull-board flex flex-col" tabIndex={0}>
-        {/* Sticky, because the count is the one number a player checks constantly and the grid is
-            the one band that scrolls. The category stands on the left, read the way the cipher
-            bench reads it: what this phrase IS opposite where the player stands. A pack stored
-            before Phrazle shipped a category has none, so the slot is empty and `ms-auto` keeps the
-            count on the right either way. */}
+            The two lines STACK: the category on top, read the way the cipher bench reads it --
+            what this phrase IS -- and the count beneath it. A pack stored before Phrazle shipped a
+            category has none, so the top line is absent and the count stands alone. */}
         {/* `Guess 7`, never `Guess 7 of N`. There is no N: the board grows a row whenever the
             player needs one, so an "of" would have to name either a limit that does not exist or the
             row count the player can already see, which counts nothing. What is left is the one
             number that still means something -- how many attempts this phrase has taken. */}
-        <p className={SIGN_ROW}>
+        <div className={SIGN_ROW}>
           {category !== undefined && (
             <span className="truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase">{category}</span>
           )}
-          {drawable && <span className="ms-auto shrink-0">{`Guess ${spent}`}</span>}
-        </p>
+          {drawable && <span className="shrink-0">{`Guess ${spent}`}</span>}
+        </div>
 
         <div className={PLATE} ref={plateRef}>
           {/* SIBLINGS of the live region and in another band entirely, never inside it: text present
@@ -1092,6 +1166,10 @@ export const PhrazleBoard = ({
               const done = index < guesses.length
               const isComposing = !over && index === guesses.length
               const letters = done ? guesses[index].replace(/ /g, '') : typed
+              // The composing row, or the last row spent (which, on a solved board, is the winning
+              // one), or neither. Lifted out of the JSX so the attribute is not a nested ternary.
+              const lastMarked = index === guesses.length - 1
+              const rowRef = isComposing ? composingRef : lastMarked ? lastMarkedRef : undefined
 
               return (
                 // A FRAGMENT, so the hairline is a SIBLING of the row rather than a child of it.
@@ -1111,24 +1189,31 @@ export const PhrazleBoard = ({
                     // `Guess 3`, matching the sign row, for the same reason: there is no total to be
                     // three of.
                     aria-label={isComposing ? composingName : `Guess ${index + 1}, ${guesses[index]}`}
-                    // `scroll-mt` IS THE OTHER HALF OF THE STICKY SIGN ROW, and it is on the row
-                    // because `scrollIntoView` above is what puts the row where it lands. The strip
-                    // is `sticky top-0` inside the scrollport, so it OVERLAYS the top of it -- and a
-                    // browser aligning `block: 'nearest'` knows nothing about that and will tuck the
-                    // composing row underneath. Scroll margin is the property that exists for exactly
-                    // this, and it is inert everywhere else: it moves no layout and affects only a
-                    // scroll that targets this element.
+                    // THE SCROLL MARGINS ARE THE OTHER HALF OF THE TWO STICKY BANDS, and they are on
+                    // the row because `scrollIntoView` above is what puts the row where it lands. The
+                    // sign row is `sticky top-0` in the bench and the floor is sticky at its bottom,
+                    // so each OVERLAYS an edge of the scrollport -- and a browser aligning
+                    // `block: 'nearest'` knows nothing about either and would tuck the row under one
+                    // of them. Scroll margin is the property that exists for exactly this, and it is
+                    // inert everywhere else: it moves no layout and affects only a scroll that
+                    // targets this element.
                     //
-                    // 42px = the strip's 34 plus its two 1px rules, plus the 6 the not-in-the-
-                    // word-list chip hangs above the tile it sits on. The chip is what makes the last
-                    // term more than tidiness -- clearing the row but clipping its mark is the same
-                    // bug one channel smaller.
-                    className="flex scroll-mt-[42px] flex-wrap"
-                    // The one row worth keeping in view, so the effect above has something to point
+                    // TOP, 52px = the sign row's 46 (a border-box band, its two 1px rules included)
+                    // plus the 6 the not-in-the-word-list chip hangs above the tile it sits on. The
+                    // chip is what makes the last term more than tidiness -- clearing the row but
+                    // clipping its mark is the same bug one channel smaller.
+                    //
+                    // BOTTOM, the seam plus the device's bottom inset: --lull-seam is the floor's
+                    // whole height (ribbon, pad and safe strip), and the inset is what the safe strip
+                    // grows by on a phone with a home indicator. Without it a `nearest` scroll that
+                    // moves DOWN to show a row would align the row's bottom with the bench's bottom,
+                    // which is underneath the keypad.
+                    className="flex scroll-mt-[52px] scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bottom))] flex-wrap"
+                    // The two rows worth scrolling to, so the effects above have something to point
                     // at. Undefined on every other row: React would otherwise call a cleanup callback
-                    // with null for every spent row on every render and leave the ref holding whichever
-                    // row rendered last.
-                    ref={isComposing ? composingRef : undefined}
+                    // with null for every spent row on every render and leave the ref holding
+                    // whichever row rendered last.
+                    ref={rowRef}
                     role="group"
                     // WRAP_GAP, never GUESS_GAP. This is the gap a SINGLE guess breaks at when its
                     // words do not fit the width, and the two were one constant until a sixteen-letter
@@ -1137,7 +1222,7 @@ export const PhrazleBoard = ({
                   >
                     {/* WORDS NEVER BREAK: word shape is a solving cue and a broken word reads as two
                         words. The row wraps BETWEEN words instead, identically on every row because
-                        every row has identical word lengths, and the grid gets taller and scrolls. */}
+                        every row has identical word lengths, and the grid gets taller and the bench scrolls. */}
                     {wordsOf(letters).map((word, wordIndex) => {
                       // THE COMPOSING ROW AND ONLY THE COMPOSING ROW. `rejected` is derived from
                       // `typed`, so it says nothing about a spent row's letters -- and a spent row

@@ -8,7 +8,12 @@
    `--lull-hair` is the one token with no recorded ratio, and that is deliberate: it is
    decorative — section separators and the outer bezel of a nested enclosure — and must
    never draw a boundary that identifies a control or its state. Those use
-   `--lull-rule` or `--lull-accent`. */
+   `--lull-rule` or `--lull-accent`.
+
+   `--lull-scrim` has no recorded ratio either, for the same reason: it is decorative. It is
+   the dimming laid over the bench while the hint popup is open, carries no text and no
+   boundary, and nothing is ever read against it -- the sheet and the control above it keep
+   their own grounds. */
 :root {
   --lull-ground: #dcd8d3;
   --lull-plate: #ebe9e6;
@@ -27,6 +32,10 @@
   --lull-floor-muted: #b4adaa;
   --lull-floor-accent: #e7a0a2;
   --lull-floor-rule: #7c7476;
+  /* The dark ground at 55%: dark in BOTH themes, because a scrim that lightened in light mode
+     would not read as "this is covered". Restated in html.dark below, deeper -- see there. See
+     hint-bar's SCRIM. */
+  --lull-scrim: rgba(25, 23, 24, 0.55);
 
   --lull-s1: 4px;
   --lull-s2: 8px;
@@ -106,7 +115,7 @@
              108
 
      It exists because the hint sheet is the one box on a bench that is drawn OUT OF FLOW and has to
-     be told where the board ends. Every other band is a flex item and simply cannot overrun its
+     be told where the bands above the board end. Every other band is a flex item and simply cannot overrun its
      neighbor. The sheet is absolute (or fixed) and bounded by a height expression, and that
      expression used to subtract a flat --lull-s7 as "clearance from the top of the screen" — which
      is not the same thing as the top of the board, and is 68px short of it. A three-rung ladder with
@@ -114,34 +123,66 @@
      "Phrazle" and "About 5 min" in half. Naming the number is what lets the sheet's own bound read
      as "the board's height" rather than as an arithmetic nobody can check.
 
-     It is a token rather than a literal in that one expression because TWO expressions read it — the
-     docked sheet's and the bare one's — and because a band added above the board is a change to this
-     number, which is the edit most likely to be made without ever opening hint-bar. */
+     It is a token rather than a literal in that one expression because TWO expressions read it —
+     SHEET_DROP's (the sheet that drops from the sign row on every bench with a hint dock) and
+     SHEET_FIXED's (goFigure's), both in hint-bar — and because a band added above the board is a
+     change to this number, which is the edit most likely to be made without ever opening hint-bar.
+
+     THE CROWN NOW SCROLLS AWAY, and it is still 108px. Both sheets are sized for the worst case —
+     the crown still on screen, which is how every bench opens — so the number is what they
+     subtract even though a player who has scrolled has those 108px back. The seam is no longer
+     subtracted by either: the sheet is a modal popup over a scrim now, drawn over the keypad rather
+     than kept off it, so the crown is the only band below the screen's top edge its bound names. */
   --lull-crown: 108px;
 
   /* How tall a bench is allowed to get once the window stops being a phone. Derived, not picked:
 
-       fixed chrome 408  (spine 44 + title 64 + hint bar 60 + seam 240)
+       fixed chrome 348  (spine 44 + title 64 + seam 240)
        board        460
        -----------------
-                    868
+                    808
 
-     460 for the board because the board has to hold two things at once. A cryptogram sentence is
-     about 180-310px on a desktop measure, and an open hint sheet is drawn upward from the hint bar and is at most
-     420 but typically 170 — so 460 is what keeps a three-rung ladder sitting UNDER the squares
-     rather than over them, which is the whole reason the cap is a number rather than `none`.
+     and the value is 868, sixty more than that sum. The sixty is what the 60px hint bar used to
+     cost; the bar is gone — its control rides the sign row now — and the cap was kept rather than
+     cut, so the board got the band back. It used to be kept for the hint sheet as well, which had
+     to open in full between the sign row and the floor; the sheet is a popup over a scrim now and
+     may cover the floor, so its bound at the cap (SHEET_DROP in hint-bar) is 868 − crown 108 − sign
+     row 46 − 8 − 16 = 690, far more than any ladder needs, and the cap no longer answers to it.
+
+     460 for the board is still what a cryptogram sentence wants on a desktop measure (about
+     180-310px) with room around it; it is no longer what keeps a ladder off the squares, because
+     a sheet that drops from the top of the board overlays them at every size.
 
      Only a ceiling. Below it the bench is whatever the window is, so nothing changes on a phone,
-     and a bench whose board wants more than 460 scrolls that band exactly as it always did. */
+     and a board that wants more than the cap scrolls the bench, as every board now does. */
   --lull-bench-max: 868px;
+
+  /* The bench's own height — the visible window less any software keyboard — named once because
+     three things read it: the bench's ceiling, the minimum height of the play wrapper under the
+     crown, and SHEET_DROP's height bound in hint-bar. Restated inside the ≥768px query below, where
+     the desktop cap joins it, so every reader gets the capped value without repeating the min(). */
+  --lull-bench-h: calc(100dvh - var(--lull-kb));
+
+  /* The hint control's width, FIXED so the sign row can reserve exactly that much at its right end
+     and its text can never run under the control laid over it. Measured from the control's visible
+     labels (hint-bar's controlLabel): "Show answer" and "Hint 1 of 3" are the longest, about 110px
+     at 13.5px semibold plus the pill's own px-3 (hint-bar's SIGN_PILL). Every ladder in the catalog
+     is three rungs today; a two-digit ladder ("Hint 10 of 12") would need this measured again. */
+  --lull-hint-w: 116px;
 
   /* How much of the window a software keyboard is covering, written from JS by useKeyboardInset
      and zero the rest of the time. It is a token rather than an inline style on the bench because
-     three declarations across two elements read it, and because a geometry fact that moves the
+     several declarations on several elements read it, and because a geometry fact that moves the
      seam belongs beside the other numbers that do.
 
+     It is written on <html> (useKeyboardInset sets it on document.documentElement), and that is
+     what lets --lull-bench-h below be declared on :root at all: a custom property substitutes its
+     var() references where it is DECLARED, so a bench-h declared here would read a stale zero if the
+     inset were ever moved onto the bench element instead.
+
      Declared here so the token has a value before any JS runs, and so the number lives beside the
-     other geometry rather than being repeated as a `, 0px` at every read site. That is the same
+     other geometry rather than being repeated as a `, 0px` at every read site. Its readers now go
+     through --lull-bench-h above. That is the same
      reason --lull-gutter-* is declared once, and it is worth being clear about what it does NOT
      buy: a declaration and a fallback both answer an UNDECLARED token, and neither answers a
      declared one that does not parse. `calc(100dvh - <garbage>)` is invalid at computed-value
@@ -169,6 +210,11 @@ html.dark {
   --lull-floor-muted: #a79f9d;
   --lull-floor-accent: #e7a0a2;
   --lull-floor-rule: #6e686a;
+  /* Deeper than the light theme's, and black rather than the ground: laid over a board that is
+     already near-black, the dark ground at 55% changed it by almost nothing, and the popup did not
+     read as being on top. 70% black takes the tiles and the keypad well down while the sheet keeps
+     its own raised ground. */
+  --lull-scrim: rgba(0, 0, 0, 0.7);
 }
 
 html {
@@ -199,15 +245,26 @@ body {
 }
 
 /* The band order, declared in one place because that is the only place the whole order
-   can be read. The board and the instrument both come out of the SAME puzzle component —
-   which is what keeps its six-prop contract intact — but they belong in different bands,
-   with the shell's own hint bar between them. The frame gives the component's wrapper
-   `display: contents`, so both become flex items of the screen column directly and `order`
-   puts them in their bands. Neither side learns anything about the other.
+   can be read. The bench is ONE scroller, and these are its four children:
 
-   Every band is numbered, including the three the frame renders itself. A band left on the
-   default 0 would sit wherever the DOM happened to put it — ahead of all of these, since 0
-   sorts before 1 — so the next reordering would move it without touching this rule. */
+     1  .lull-spine      the breadcrumb, 44px            scrolls away
+     2  .lull-title      the title row, 64px             scrolls away
+     3  .lull-hintdock   0px tall, sticky at the top     holds the shell's hint control
+     4  .lull-play       at least one bench tall         the component's board and floor
+
+   The first two are the CROWN (--lull-crown, 108px). They scroll off the top on the first swipe,
+   and what is left pinned is the board's own sign row with the hint control laid over its right
+   end, and the floor pinned at the bottom.
+
+   The board and the instrument both come out of the SAME puzzle component — which is what keeps
+   its six-prop contract intact — and they now sit in one wrapper in DOM order, with nothing of the
+   shell's between them: the hint bar that used to be ordered in there is gone, and its control
+   rides the sign row from the dock above. So `.lull-play` is a real box rather than a
+   `display: contents` one, and neither the board nor the instrument carries an `order` any more.
+
+   Every child of the bench is numbered. A band left on the default 0 would sit wherever the DOM
+   happened to put it — ahead of all of these, since 0 sorts before 1 — so the next reordering would
+   move it without touching this rule. */
 .lull-spine {
   flex: 0 0 auto;
   order: 1;
@@ -233,7 +290,7 @@ body {
 
    So the bands are the full width, nothing is negative anywhere, and the overflow is zero
    because there is nothing to overflow. The bench's field is the RAISED plate, with strips of
-   the darker ground ruled across it — the breadcrumb, the sign row, the hint bar. That is the
+   the darker ground ruled across it — the breadcrumb and the sign row. That is the
    inversion the day directory does not make: there you are choosing between things that sit ON
    a surface, so the surface recedes; here you are working ON the surface, so it comes forward
    and the chrome sinks. */
@@ -246,8 +303,12 @@ body {
      that is actually visible instead.
 
      The page's min-height carries the same term for the same reason; without it the ≥768px
-     centering below would center the bench in the window and push it under the keyboard. */
-  max-height: calc(100dvh - var(--lull-kb));
+     centering below would center the bench in the window and push it under the keyboard.
+
+     Read through --lull-bench-h, which `.lull-play` reads too: the ceiling and the play wrapper's
+     minimum are the same number on purpose, and that equality is what guarantees the crown can
+     always be scrolled away (see `.lull-play`). */
+  max-height: var(--lull-bench-h);
 }
 
 /* The page column. Only /p/<id> carries this class. */
@@ -261,59 +322,123 @@ body {
 
    It is drawn on the bench's own plate with NO rule under it, which is what keeps the working
    surface continuous. The bands that are ruled off are the ones drawn in the darker ground -- the
-   breadcrumb above and, on the three benches that have one, the sign row below. They are told apart
+   breadcrumb above and, on the five benches that have one, the sign row below. They are told apart
    by their ground, not by a border on their neighbor.
 
    The sign row belongs to the PUZZLE COMPONENT rather than to this file, because everything on it
    is read off the puzzle's own data, which the shell deliberately cannot see. It holds up to two
-   facts — a category on the left and how far the board has got on the right. A pack stored
-   before every difficulty shipped a category leaves the left slot empty. Its band is
+   facts, stacked — a category on the first line and how far the board has got on the second. A
+   pack stored before every difficulty shipped a category leaves that line empty. Its band is
    `.lull-signrow`. */
 .lull-title {
   flex: 0 0 auto;
   order: 2;
 }
 
-/* The ONE band that flexes, and the only one that may. Everything below it is fixed, so a
-   longer phrase, a third line of status, or an opened hint is absorbed here instead of
-   pushing the instrument down — which is what makes --lull-seam a constant rather than a
-   hope. The min-height is the floor the band arithmetic is checked against, and the
-   tightest case in the product clears it comfortably: the fixed chrome is spine 44 +
-   title 64 + hint bar 60 + seam 240 = 408, so the cipher bench at 320×568 gives the board
-   160px, of which the component spends 34 on its own sign row. Below 504px of viewport the
-   bands cannot all fit at all, and the frame's column switches from clipping to scrolling
-   rather than amputating the seam — see the comment on that column.
+/* The hint dock: the shell's hint control, laid over the right end of the board's sign row.
 
-   The geometry is the SHELL's even though the content is the component's. A board that
-   forgot to flex would take the seam with it, and no board can be trusted with a promise
-   the other three benches also depend on. */
-.lull-board {
-  flex: 1 1 0%;
-  min-height: 96px;
+   A positioned, full-width box ZERO pixels tall, stuck to the top of the bench. It sits in the column
+   immediately above `.lull-play`, and the sign row is the first thing inside `.lull-play`'s board —
+   so the dock and the sign row start at the same y, both stick at `top: 0`, and they coincide at
+   every scroll position without either one being measured. The dock occupies no flow, so the board
+   below it is laid out exactly as if it were not there.
+
+   WHY THE SHELL AND NOT THE BOARD. The control could have been handed to the board as a prop and
+   rendered inside its sign row, and that was the obvious version. It is wrong because the frame
+   rebuilds the board on every answer reveal (the board's `key`): a control inside it would be
+   destroyed on the very press that reveals, dropping focus to <body> (WCAG 2.4.3), shutting the
+   sheet that is showing the answer, and rebuilding the bar's live region in front of the reader.
+   Out here it is outside that subtree, and the six-prop contract stays six props.
+
+   The HintBar root inside is in flow and NOT positioned (`variant="sign"` in hint-bar), which is
+   what makes this box — not the 116px control — the containing block of the absolutely positioned
+   sheet, so the sheet's gutter offsets span the bench.
+
+   `z-index: 2` puts the control and the sheet over the sign row (rank 1); see the scale on
+   `.lull-signrow`. Only a bench whose `data-hint-dock` is set has one — every bench but the tile
+   bench, whose control lives in its own tray. */
+.lull-hintdock {
+  flex: 0 0 auto;
+  height: 0;
   order: 3;
-  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
-.lull-hintbar {
+/* The component's board and floor, in one box, in DOM order. It used to be `display: contents` so
+   `order` could put the shell's hint bar between them; the bar is gone, so the box is real.
+
+   THE MIN-HEIGHT IS THE WHOLE TRICK. At least one bench tall means the column's content is always
+   at least crown + bench tall, so EXACTLY the crown (108px) can always be scrolled away — even on a
+   fresh board with three lines of content. Nothing is measured: the floor's height is inside the
+   same box, so "board + floor fill the bench" is one constraint rather than a sum somebody keeps.
+
+   `flex: 0 0 auto` and not the default shrink: this is an item of the bench's flex column, and the
+   bench has a ceiling. A shrinkable item with an explicit min-height shrinks down to that
+   min-height, so a long board would overflow this box instead of growing it, and the sticky floor
+   would stick to the bottom of a box shorter than its own content. */
+.lull-play {
+  display: flex;
   flex: 0 0 auto;
+  flex-direction: column;
+  min-height: var(--lull-bench-h);
   order: 4;
 }
 
-/* The sign row: a 34px strip of the darker ground ruled across the raised working surface, holding
-   what this phrase IS on the left and where the player stands on the right.
+/* The board: the band that grows. It fills whatever `.lull-play` leaves above the floor and, past
+   that, grows with its own content — and the BENCH scrolls, not the board. The board used to be the
+   only scroller (`flex: 1 1 0%; overflow-y: auto`) under a crown and a hint bar that never moved;
+   that pinned 168px of chrome over a 270px window on a 712px phone, and the cut is to let the chrome
+   scroll away instead.
 
-   It is a class here rather than a string in one component because three benches draw it and it is
-   the same band on all three -- the shared grammar this design is built out of, as opposed to a
+   The seam survives because the floor is sticky at the bottom of the bench (`.lull-instrument`),
+   so the keypad holds its constant position while the column moves under it. A longer phrase or a
+   third line of status still never pushes the instrument down; it lengthens the column.
+
+   THE MIN-HEIGHT AND THE SHORT-VIEWPORT LINE. The crown is on screen when a puzzle opens, so the
+   least that must fit with the floor pinned is crown 108 + sign row 46 + this 96 + seam 240 = 490px
+   (plus the bottom inset, which is zero in landscape). Below that a pinned floor would cover the
+   board at load -- at 844x390 the crown, the sign row and the floor alone come to 394px, and the
+   puzzle would open with none of itself on screen -- so the query at the end of this group lets
+   everything scroll end to end instead, as the old fallback did.
+
+   NO `overflow-y`, and the boards' own horizontal clip is `overflow-x: clip`, never `hidden`.
+   `overflow-x: hidden` computes `overflow-y` to `auto`, which would keep each board a scroll
+   container — a scroller that never scrolls, since it is as tall as its content — and its sticky
+   sign row would then stick to that box and ride off the top with it. `clip` cuts the same edge and
+   creates no scroll container, so the sign row's `sticky` resolves against the bench.
+
+   The geometry is the SHELL's even though the content is the component's. A board that forgot to
+   grow would leave the floor floating mid-bench, and no board can be trusted with a promise the
+   other benches also depend on. */
+.lull-board {
+  flex: 1 0 auto;
+  min-height: 96px;
+}
+
+/* The sign row: a 46px strip of the darker ground ruled across the raised working surface, holding
+   what this phrase IS on its first line and where the player stands on its second, with the shell's
+   hint control laid over its right end.
+
+   It is a class here rather than a string in one component because five benches draw it and it is
+   the same band on all of them -- the shared grammar this design is built out of, as opposed to a
    shared container. What changes between benches is what stands in it -- the guess bench ships no
-   category, so its left slot is empty -- and the band itself never does. It stays inside the puzzle
-   components because those facts are read off the puzzle's own data, which the shell deliberately
-   cannot see.
+   category, Cryptic Clue ships nothing at all and draws the strip empty so the hint control has a
+   row to sit on -- and the band itself never does. It stays inside the puzzle components because
+   those facts are read off the puzzle's own data, which the shell deliberately cannot see.
 
-   THE z-index IS WHAT MAKES `sticky` MEAN ANYTHING HERE, and it is the only one in this stylesheet.
-   All three benches mount this strip as `sticky top-0` inside `.lull-board`, which scrolls, so the
-   grid passes underneath it -- and "underneath" is a paint order, not a position. A sticky element
-   paints with the POSITIONED boxes, in tree order, and the sign row is the first child of the board.
-   Anything positioned after it therefore paints on top, background and all.
+   STACKED, NOT SPREAD. The right end belongs to the hint control now, so the two facts that used to
+   sit at opposite ends share the left: category over tally. `align-items: stretch`, NOT
+   `flex-start` — a nowrap `truncate` child sized to its content would overrun the reserve below and
+   never reach its ellipsis; stretched, it is exactly as wide as the row allows and truncates there.
+   46px border-box: two 1px hairlines, and two lines of 12.5px at 1.3.
+
+   THE z-index IS WHAT MAKES `sticky` MEAN ANYTHING HERE. Every bench with a hint dock mounts this strip as
+   `sticky top-0` as the first child of `.lull-board`, and since the BENCH scrolls the board's
+   content passes underneath it -- and "underneath" is a paint order, not a position. A sticky
+   element paints with the POSITIONED boxes, in tree order, and the sign row is the first child of
+   the board. Anything positioned after it therefore paints on top, background and all.
 
    For a long time nothing in a grid was positioned, so the rule was not needed and its absence cost
    nothing. Phrazle's not-in-the-word-list chip changed that: the chip is absolutely positioned, which
@@ -325,40 +450,65 @@ body {
    is right whatever the grid happens to contain, and a grid is free to position whatever it likes
    without having to know a header is above it.
 
-   THERE ARE NOW TWO RANKS, and this is the whole scale:
+   THERE ARE TWO RANKS, and this is the whole scale:
 
-     1  this strip, over the grid that scrolls under it
-     2  the hint sheet, over the board it overlays — declared as `z-2` on SHEET and SHEET_FIXED in
-        src/components/hint-bar/index.tsx, where the rest of the sheet's geometry is
+     1  this strip, over the board content that scrolls under it; and `.lull-instrument`, the
+        sticky floor, over the board content that scrolls behind it at the bottom
+     2  `.lull-hintdock`, over this strip AND over the instrument — and the hint bar's scrim,
+        SHEET_DROP and the control inside it, which inherit the dock's rank rather than declaring
+        their own. Inside the dock's stacking context they rank among themselves: scrim `z-1`,
+        sheet `z-2`, control `z-3`. The scrim is fixed to the viewport, so through the dock's rank
+        it covers the board, the sign row and the keypad alike, while the sheet and the pressed
+        control paint above it.
 
-   The second rank arrived because `1` was written when there was nothing else to rank against, and
-   that stopped being true. The sheet is positioned and left at `z-index: auto`, and the bar it hangs
-   from is `relative` with no z-index of its own — so the bar creates NO stacking context, the sheet
-   competes in the root one, and a positive rank beats `auto` no matter which came first in the tree.
-   An open sheet was therefore sliced across by this strip: `Guess 1` and its ground, painted over the
-   middle of the hints. Raising the strip over the grid and raising the sheet over both is one
-   ordering, and the reason it is written out here rather than at either site is that a rank is
-   meaningless alone — the sheet's `z-2` says what it beats only if this list exists.
+   The sheet has to beat this strip, and an open sheet that lost to it was once sliced across by
+   `Guess 1` and its ground. Raising the strip over the board and the dock over both is one
+   ordering, and it is written out here rather than at either site because a rank is meaningless
+   alone — a `2` says what it beats only if this list exists.
+
+   GO FIGURE'S SHEET IS NESTED, NOT RANKED. SHEET_FIXED in hint-bar keeps its `z-2`, and the scrim
+   its `z-1`, but both render inside `.lull-instrument`, which is sticky with `z-index: 1` and is
+   therefore a stacking context: they rank inside the instrument and 1 against the page. That is
+   enough to dim the board and draw the sheet over it, and only because of what that bench lacks —
+   Go Figure has no dock and no sign row, and nothing on its board has a z-index — so nothing at
+   rank 1 or 2 outside the instrument is there to beat. A bench that grew
+   both a `bare` control and a sticky strip would need this revisited.
 
    NOTHING IN THE SUITE DEFENDS THIS, and that is a property of the fix rather than an omission.
    Testing standards here forbid style assertions and jsdom lays nothing out, so paint order is
    unobservable to Jest either way -- what caught it was rendering the board at a 500px viewport, and
    that is what will catch it again. */
 .lull-signrow {
-  align-items: center;
+  align-items: stretch;
   background-color: var(--lull-ground);
   border-bottom: 1px solid var(--lull-hair);
   border-top: 1px solid var(--lull-hair);
   color: var(--lull-muted);
   display: flex;
   flex: 0 0 auto;
+  flex-direction: column;
   font-size: 12.5px;
-  gap: var(--lull-s3);
-  height: 34px;
-  justify-content: space-between;
+  gap: 0;
+  height: 46px;
+  justify-content: center;
+  line-height: 1.3;
   padding-left: var(--lull-gutter-left);
   padding-right: var(--lull-gutter-right);
   z-index: 1;
+}
+
+/* THE RESERVE: the room the hint control is laid over, kept clear of the row's own text. The
+   control's width is a token for exactly this, and the gap is one --lull-s3 on top of the gutter
+   the control itself sits inside.
+
+   Keyed on the BENCH's `data-hint-dock` attribute, which the frame sets from the same predicate it
+   uses to render the dock (`hasHintDock` in puzzle-frame), so the reserve and the control cannot
+   disagree about which benches have one. Not `:has(.lull-hintdock)`: a selector an older WebKit
+   does not understand matches nothing and fails silently, and the failure here is the row's text
+   running under the control. A pack with no ladder keeps the attribute and an empty reserve — the
+   cheaper wrong. */
+.lull-bench[data-hint-dock] .lull-signrow {
+  padding-right: calc(var(--lull-gutter-right) + var(--lull-hint-w) + var(--lull-s3));
 }
 
 /* The one band that takes NO gutter, only the physical inset. The keypad is a QWERTY keyboard —
@@ -373,17 +523,59 @@ body {
 
    The four-row alphabet pad this replaced was 7 columns of 44.86 and spent the same 179px; see
    src/components/keypad/layout.ts, which holds the height arithmetic and the reason for the
-   order. */
+   order.
+
+   STICKY AT THE BOTTOM, and that is the seam now. The bench scrolls as one column, so the floor is
+   pinned to the bottom of it rather than ending a column that never moves; the keypad keeps its
+   constant position while the crown and the board scroll above it. Its `z-index: 1` keeps board
+   content that scrolls behind it from painting through, and makes it a stacking context — see the
+   scale on `.lull-signrow` for what that means for Go Figure's sheet. */
 .lull-instrument {
   /* The floor's own ground, on the WRAPPER and not only on FloorBar inside it. The inset padding
      below belongs to this element, so without a background here that strip paints the bench's
      plate — a light band down one side of a near-black instrument, on exactly the devices the
      inset exists for. */
   background-color: var(--lull-floor);
+  bottom: 0;
   flex: 0 0 auto;
-  order: 5;
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  position: sticky;
+  z-index: 1;
+}
+
+/* THE SHORT BENCH. Below 490px of viewport — crown 108 + sign row 46 + board minimum 96 + seam 240,
+   see `.lull-board` — a pinned floor would cover the board when the puzzle opens, so nothing is
+   pinned: the column scrolls end to end, keypad included, which costs the constant
+   position only where no constant position exists.
+
+   THE DOCK AND THE SIGN ROW LET GO TOGETHER, because their sticky ranges differ. The dock is a child
+   of the bench and could stick for the whole column; the sign row is a child of the board and is
+   carried off with it. On a column that scrolls past the board, a sticky dock would leave the hint
+   control floating over the keypad with no row under it. Unstuck, both sit at the top of
+   `.lull-play` and move as one.
+
+   The dock goes `relative` rather than `static`, and that is the one place this departs from "not
+   sticky" meaning "static": the dock is the containing block of the hint sheet (see
+   `.lull-hintdock`), and a static dock would hand that job to the initial containing block, which
+   would pin the sheet to the top of the page instead of under the sign row. Relative keeps it in
+   flow at the same spot, keeps it the containing block, and keeps its rank.
+
+   The query tests the VIEWPORT, not the bench, and that is enough: the 240px seam the line depends
+   on belongs to the keypad benches, which never raise the OS keyboard. The writing benches, which
+   do, have a compact floor (about 60px unsolved), so their least-fit height is 108 + 46 + 96 + 60 =
+   310px of bench, above what any phone leaves over its keyboard in portrait; in landscape with the
+   keyboard up a writing bench can fall below that, and its floor then stays sticky over a very
+   short board, as the old clipping-to-scrolling fallback did. */
+@media (max-height: 489px) {
+  .lull-instrument,
+  .lull-signrow {
+    position: static;
+  }
+
+  .lull-hintdock {
+    position: relative;
+  }
 }
 
 /* THE DESKTOP BENCH.
@@ -402,9 +594,10 @@ body {
    The first attempt sized the board by its content and let auto margins do the centering, and it was
    wrong twice over. The margins ate everything the board did not use, so a 900px window opened with
    135px of nothing above the breadcrumb; and a board with no slack in it left the hint sheet — which
-   is out of flow and drawn UPWARD from the hint bar — nowhere to land but on top of the phrase. Both
-   are the same mistake: space the reader needs went to the margins. Capping the bench gives it back
-   to the board, where an open hint has room to sit under the squares rather than over them.
+   was then out of flow and drawn UPWARD from a hint bar under the board — nowhere to land but on top
+   of the phrase. Both are the same mistake: space the reader needs went to the margins. Capping the
+   bench gives it back to the board. (The sheet now drops from the sign row and overlays the board at
+   every size; what the cap still buys it is room to open in full — see --lull-bench-max.)
 
    Centering is `justify-content` on the page, NOT `margin-block: auto` on the bench, and the two are
    not interchangeable. Per flexbox, free space distributed to auto margins is taken BEFORE flex
@@ -412,7 +605,7 @@ body {
    board back to its content size and undo the cap.
 
    The seam survives all of it, which is the point. It is measured from the bottom edge OF THE
-   BENCH, and the bench still ends at the instrument, so the pad sits --lull-seam up from the bottom
+   BENCH, and the instrument is sticky at that edge, so the pad sits --lull-seam up from the bottom
    of the thing the player is looking at exactly as it does on a phone.
 
    Scoped by width rather than by a pointer or hover query: a tablet held in portrait has the same
@@ -422,14 +615,22 @@ body {
     justify-content: center;
   }
 
-  /* min() with 100dvh restated, not left to the base `.lull-bench` rule above: this declaration
-     sets the same property on the same element and simply replaces that one, so a cap named here
-     without 100dvh in it would let the bench outgrow a short window.
+  /* The cap goes on the TOKEN, so every reader of --lull-bench-h — the bench's ceiling, the play
+     wrapper's minimum, SHEET_DROP's bound — gets the capped value at once. If the ceiling were
+     capped and the play wrapper's minimum were not, the wrapper would be a full window tall inside
+     an 868px bench and a desktop player would scroll a window of empty board to reach the floor.
 
-     --lull-kb is restated here for the same reason 100dvh is: this declaration replaces the base
-     one wholesale, so a term dropped here is a term the desktop bench does not have. */
+     min() with 100dvh restated, not left to the base declaration on :root: this one replaces that
+     one wholesale, so a cap named here without 100dvh in it would let the bench outgrow a short
+     window. --lull-kb is restated for the same reason. */
+  :root {
+    --lull-bench-h: min(calc(100dvh - var(--lull-kb)), var(--lull-bench-max));
+  }
+
+  /* Restated though it reads the same token as the base rule, so the desktop bench's ceiling can be
+     read off this query without chasing the token back to :root. */
   .lull-bench {
-    max-height: min(calc(100dvh - var(--lull-kb)), var(--lull-bench-max));
+    max-height: var(--lull-bench-h);
   }
 }
 
@@ -451,6 +652,15 @@ body {
    on every other surface is correct as it stands. */
 .lull-floor :focus-visible {
   outline-color: var(--lull-floor-accent);
+}
+
+/* The sign row's hint control is a 44px transparent target around a 32px pill, and the PILL draws
+   the ring (see SIGN_TARGET in hint-bar). The target's own ring has to be removed HERE, unlayered,
+   because the rule above is unlayered: a `focus-visible:outline-none` utility sits in
+   `@layer utilities` and loses to it regardless of specificity, which drew a second, square ring the
+   scroller clipped. The ring is moved, never removed: the pill shows it whenever this has focus. */
+.lull-hint-target:focus-visible {
+  outline: none;
 }
 
 /* Weightless float: things rise and settle without apparent mass. The resting state is

@@ -92,9 +92,9 @@ describe('the themed anagrams hint adapter', () => {
       expect(texts(buy(3))).toEqual(texts(''))
     })
 
-    // A WON BOARD KEEPS ITS BAND. Every row is right, so the fold has nothing left to choose -- and
-    // an empty ladder is null, which unmounts a 60px band on the winning keystroke and re-lays the
-    // board out underneath it. So the ladder a won board shows is the one a fresh board would have
+    // A WON BOARD KEEPS ITS CONTROL. Every row is right, so the fold has nothing left to choose --
+    // and an empty ladder is null, which takes the hint control off the sign row on the winning
+    // keystroke (and, when the bar was a 60px band, re-laid the board out underneath it). So the ladder a won board shows is the one a fresh board would have
     // shown. Nothing is displayed unless the player buys it, and the answer they would be buying it
     // about is already in the box beside it.
     it('keeps a ladder to draw once all four are solved', () => {

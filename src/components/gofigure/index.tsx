@@ -45,8 +45,8 @@ const OPERATOR_SYMBOLS: Record<Operator, string> = {
   '/': '÷',
 }
 
-// The graft, and the whole reason the tile bench spends the 94px it saves by dropping the
-// sign row and the docked hint bar. Left-to-right is the one rule in Lull nobody can guess,
+// The graft, and the whole reason the tile bench spends the 46px it saves by drawing no
+// sign row -- its hint control is in its own tray rather than laid over one. Left-to-right is the one rule in Lull nobody can guess,
 // and the paragraph that used to sit here ("Signs apply left to right, not by PEMDAS")
 // states it without teaching it: a player who has never questioned PEMDAS reads the
 // sentence, agrees with it, and then taps ×7 expecting 64.
@@ -113,9 +113,13 @@ const ALREADY_EMPTY = 'That square is already empty.'
 // board had stopped listening, which from the inside is indistinguishable from a broken board.
 //
 // It is said for the WRITING keys only. The arrows are declined so the sheet can have them -- it is
-// `tabIndex={0}` precisely so a keyboard player can scroll it -- so telling that player to hide the
+// focusable precisely so a keyboard player can scroll it -- so telling that player to close the
 // hints would be advice against the thing they are in the middle of doing.
-const HIDE_TO_TYPE = 'Hide the hints to type.'
+//
+// "Close", and not the "Hide" it used to say, because that is the word on the sheet's own button
+// now. The scrim over the bench takes every pointer press while the sheet is up, so this is only
+// ever reached from a hardware keyboard -- whose player is told to do exactly what the button says.
+const CLOSE_TO_TYPE = 'Close the hints to type.'
 
 // The tile's ink is --lull-floor-ink, which measures 13.0:1 on the light floor and 15.4:1 on the
 // dark one, and its edge is drawn with --lull-floor-rule, the floor's load-bearing 3:1 boundary.
@@ -947,15 +951,15 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // That bench scopes arrows to "on the bench" and its sheet sits outside the two bands, so the scope
   // excludes the sheet for free. Here the bar is a control in the tray's own row and its sheet is
   // drawn over the board from inside the instrument, so "on the bench" contains it -- and the sheet
-  // is `tabIndex={0}` precisely so a keyboard player can scroll it. An unscoped handler would eat
+  // is focusable precisely so a keyboard player can scroll it. An unscoped handler would eat
   // every arrow that would do the scrolling, which is the failure cryptogram's own comment names.
   //
   // It reads the state off the DOM rather than mirroring it in a ref, and that is the stronger of the
   // two. What HintBar PUBLISHES -- the control's `aria-controls`, and the `hidden` attribute on the
   // element it names -- is the same fact a screen reader is told, and a bench that reads it can never
   // disagree with what the player is hearing. A boolean mirrored through a callback can: it would go
-  // stale on any path that shuts the sheet without telling us, and Escape and the Hide control are
-  // both such paths today.
+  // stale on any path that shuts the sheet without telling us, and Escape, the Close button and the
+  // scrim are all such paths today.
   //
   // IT FOLLOWS `aria-controls` TO THE SHEET rather than trusting the first `[aria-expanded="true"]`
   // in the tray, and the difference is what happens to the NEXT disclosure anyone puts down here.
@@ -1008,8 +1012,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // lands when nothing has focus, which is the state this board deliberately arrives in.
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       // SILENTLY, and before `preventDefault`. The arrow is being handed to the sheet, which is
-      // `tabIndex={0}` precisely so a keyboard player can scroll it -- so the press is not refused
-      // at all, it is spent somewhere else, and a sentence telling the player to hide the hints
+      // focusable precisely so a keyboard player can scroll it -- so the press is not refused
+      // at all, it is spent somewhere else, and a sentence telling the player to close the hints
       // would be advice against the thing they are doing. Preventing the default here would be
       // worse than saying nothing: it would eat the scroll the guard exists to protect.
       if (sheetOpen) return
@@ -1038,7 +1042,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       // declined. Telling a player that square 2 takes a sign, when what actually stopped them is a
       // sheet lying over the board, sends them to fix the wrong thing.
       if (sheetOpen) {
-        refuse(HIDE_TO_TYPE)
+        refuse(CLOSE_TO_TYPE)
         return
       }
       if (isLocked(state, cursor)) {
@@ -1064,7 +1068,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     if (event.key === '+' || event.key === '-' || event.key === '*' || event.key === '/') {
       event.preventDefault()
       if (sheetOpen) {
-        refuse(HIDE_TO_TYPE)
+        refuse(CLOSE_TO_TYPE)
         return
       }
       if (isLocked(state, cursor)) {
@@ -1088,7 +1092,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       event.preventDefault()
       // A WRITING KEY, so it speaks. Backspace is the one edit only the keyboard can make, which
       // makes it the one edit whose silent refusal a pointer player could never have reported.
-      if (sheetOpen) refuse(HIDE_TO_TYPE)
+      if (sheetOpen) refuse(CLOSE_TO_TYPE)
       else backspace()
     }
   }
@@ -1158,10 +1162,11 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
 
   return (
     <>
-      {/* Band 4. The shell owns this band's flex, min-height and vertical overflow in index.css --
-          it is the one band that flexes, and the seam depends on that -- so nothing here sets
-          them. What this file does own is the ORDER OF SACRIFICE inside the band, and on this
-          bench that order is not negotiable:
+      {/* The board band. The shell owns this band's flex and min-height in index.css -- it is the
+          band that grows, and the seam depends on that -- so nothing here sets them. It is NOT a
+          scroller: the bench is the one scroller now, the board grows with its content, and the
+          floor is pinned at the bench's bottom edge. What this file does own is the ORDER OF
+          SACRIFICE inside the band, and on this bench that order is not negotiable:
 
             THE GOAL AND THE EXPRESSION ARE NEVER BOTH OFF SCREEN, BECAUSE NEITHER IS EVER OFF
             SCREEN.
@@ -1172,10 +1177,14 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
           draft put the worked example between them because the design was drawn that way, and at
           a 372x608 window it pushed the expression clean off the bottom.
 
-          So the goal and the squares are shrink-0 and the TEACHING is what scrolls. It is the only
-          thing here that can: it says the same three lines on every puzzle, it is read once, and
-          on a short window the sliver still shows its first line, which is the rule itself. */}
-      <section aria-label="Go Figure!" className="lull-board flex flex-col overflow-x-hidden" ref={boardRef}>
+          So the goal and the squares are shrink-0 and come first, and the TEACHING comes last. It is
+          the part that goes below the fold on a short window: it says the same three lines on every
+          puzzle and is read once.
+
+          `overflow-x-clip`, NEVER `overflow-x-hidden`. `hidden` computes `overflow-y` to `auto` and
+          makes this band a scroll container of its own, which is the one thing a board must not be
+          now that the bench scrolls; `clip` cuts the same edge and makes none. */}
+      <section aria-label="Go Figure!" className="lull-board flex flex-col overflow-x-clip" ref={boardRef}>
         <div className="flex min-h-0 flex-1 flex-col gap-[var(--lull-s2)] bg-[var(--lull-plate)] py-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
           {/* One of exactly two double-bezels in the whole product -- the other is the date
               plate on the day directory. Bezelling every container turns the technique into
@@ -1291,11 +1300,12 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
               would be the shared frame this redesign rejects, and the other three benches have
               nothing to teach that a hint cannot carry.
 
-              THE ONE THING ON THIS BOARD THAT SCROLLS, in a box of its own rather than by letting
-              the band scroll -- because a band that scrolls takes the goal with it. Where the
-              window is tall the whole example is in view and nothing scrolls at all; where it is
-              short the box shrinks to a sliver and the first line, which is the rule, is what
-              stays in it.
+              IT USED TO SCROLL IN A BOX OF ITS OWN, and it no longer does. While the board was a
+              bounded band that did not scroll, this box was the one thing that could shrink, down to
+              a sliver showing the rule. The board now grows with its content and the BENCH scrolls,
+              so the box is as tall as the example and its `min-h-0 flex-1 overflow-y-auto` never
+              bind; on a short window the example is reached by scrolling the bench, below the goal
+              and the squares rather than instead of them.
 
               An ordered list, because the steps only mean anything in order. The markers are
               drawn as tokens and hidden from assistive tech -- the list already numbers itself,
@@ -1465,8 +1475,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                 Clear
               </Button>
               {/* `bare` because this row already owns its gutter, its ground and its 44px: the
-                  `inline` variant's py-2 would make 60px out of a 44px row and its px-4 would
-                  re-apply a gutter that is already here.
+                  only other variant, `sign`, is the shell's control laid over a sign row from the
+                  hint dock, and this bench has neither.
 
                   CONTROLLED, which is what keeps this subtree free of storage. goFigure's rungs do
                   something to the squares rather than only saying something about them, so the

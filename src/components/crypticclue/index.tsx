@@ -88,7 +88,7 @@ const CLUE =
 const REVEAL_HEADING = 'text-[12.5px] font-semibold tracking-[0.11em] uppercase text-[var(--lull-muted)]'
 
 // `break-words` for the same reason CLUE carries it, and copying it here is not symmetry: this line
-// is arbitrary network text too, and the band below sets `overflow-x-hidden`. One unbroken run
+// is arbitrary network text too, and the band below sets `overflow-x-clip`. One unbroken run
 // wider than a 320 viewport -- a long source word in a deletion, a quoted definition with no space
 // in it -- is then CLIPPED, with no scrollbar, no ellipsis and nothing on screen admitting text was
 // cut. That is the confidently-wrong failure this board refuses everywhere else, and it is worse
@@ -99,6 +99,12 @@ const REVEAL_HEADING = 'text-[12.5px] font-semibold tracking-[0.11em] uppercase 
 // would pass on the broken version too; naming the class is the same call the dense case and the
 // focus ring already record in the inventory.
 const REVEAL_LINE = 'text-[14px] leading-[1.45] break-words text-[var(--lull-ink)]'
+
+// The enumeration with its unit: `(5 letters)`, `(1 letter)`, and -- provisionally -- `(3, 5 letters)`
+// for a multi-part answer. Singular only for a single part of one; a multi-part total is letters
+// whatever its parts are. The caller guards the array's shape and contents.
+const enumerationText = (parts: number[]): string =>
+  `(${parts.join(', ')} ${parts.length === 1 && parts[0] === 1 ? 'letter' : 'letters'})`
 
 // --lull-rule, never --lull-hair: this border is the whole of what tells a player where the box they
 // type into begins, and hair is decoration that must never identify a control. `min-w-0 flex-1`
@@ -229,18 +235,28 @@ export const CrypticClueBoard = ({
 
   return (
     <>
-      {/* Exactly two siblings, and the frame's wrapper is `display: contents`, so this element and
-          the floor below become flex items of the screen column and index.css orders them into
-          their bands. Nothing but the band class and its own column layout goes on it: the SHELL
-          owns this box's flex, min-height and vertical overflow.
+      {/* Exactly two siblings, inside the frame's `.lull-play` column: this board, then the floor
+          below. Nothing but the band class and its own column layout goes on it: the SHELL owns
+          this box's flex and min-height.
 
-          NO SIGN ROW. `category` is absent by design for this type -- the definition half of the
-          clue is the category, and shipping one alongside would say which words are the definition
-          for free -- so there is nothing true to put in the band, and a 34px strip of ground with
-          nothing in it reads as chrome that failed to load. There is no `category !== undefined`
-          branch here either: copying the sibling bench's would be a dead arm no fixture can
-          exercise and no reader can explain. */}
-      <div className="lull-board flex flex-col overflow-x-hidden">
+          `overflow-x-clip`, NEVER `overflow-x-hidden`. `hidden` computes `overflow-y` to `auto`,
+          which makes this box a scroll container -- and the sticky sign row below would stick to a
+          box that never scrolls instead of to the bench that does. `clip` cuts the same edge and
+          makes no scroll container, and it clips exactly as `hidden` did, which REVEAL_LINE above
+          relies on. */}
+      <div className="lull-board flex flex-col overflow-x-clip">
+        {/* AN EMPTY SIGN ROW, on purpose. `category` is absent by design for this type -- the
+            definition half of the clue is the category, and shipping one alongside would say which
+            words are the definition for free -- so there is nothing true to WRITE in the band. It
+            used to be left out for that reason, because a strip of ground with nothing in it read as
+            chrome that failed to load.
+
+            It is drawn now because it is no longer empty on screen: the shell lays its hint control
+            over this row's right end, from the hint dock above the board, and the row is what that
+            control sits on and what pins it while the clue scrolls. Without it the control would
+            float over the clue. There is still no `category !== undefined` branch: copying the
+            sibling bench's would be a dead arm no fixture can exercise and no reader can explain. */}
+        <div className="lull-signrow sticky top-0" />
         <div className="flex flex-1 flex-col gap-[var(--lull-s5)] bg-[var(--lull-plate)] pt-[var(--lull-s5)] pr-[var(--lull-gutter-right)] pb-[var(--lull-s4)] pl-[var(--lull-gutter-left)]">
           {/* The bezel goes here and nowhere else on this board. The clue IS the puzzle, so it is
               the thing that carries the weight, and a second bezel further down would turn the
@@ -262,27 +278,31 @@ export const CrypticClueBoard = ({
                     after, which is what a solver re-reading a clue character by character wanted
                     from it in the first place. */}
                 {clue}
-                {/* TWO RENDERINGS OF ONE FACT, and neither is optional. `(5)` is the convention
-                    every printed cryptic uses and the only thing a sighted solver needs. Spoken, it
-                    is the bare word "five" at the end of a sentence about dancing -- a number with
-                    no unit attached -- so the listener gets the sentence instead.
+                {/* ONE RENDERING, WITH ITS UNIT. `(5)` is the convention every printed cryptic
+                    uses, and it assumes the player knows it; spoken, it is the bare word "five" at
+                    the end of a sentence about dancing. `(5 letters)` says its unit to everyone, by
+                    eye and by ear, so the sr-only twin that used to translate it is gone and there
+                    is one string to keep right instead of two. Singular for a one-letter answer.
+                    `(3, 5 letters)` is the provisional form for a multi-part enumeration; it is
+                    always one part today.
 
-                    Guarded on a non-empty array because both halves come off the network: an empty
-                    field paints a bare "()" beside the clue and an sr-only " letters." with a
-                    leading space, and an absent one throws on `.join`. The join handles a
-                    multi-part enumeration without a branch; it is always length 1 today.
+                    Guarded on a non-empty array because it comes off the network: an empty field
+                    would paint a bare "( letters)" beside the clue, and an absent one throws on
+                    `.join`.
 
                     AND ON THE CONTENTS, not only the shape. `join` stringifies whatever it holds, so
-                    `[{}]` is not a crash -- it paints `([object Object])` on the plate and reads
-                    `[object Object] letters.` to a listener. That is the confidently-wrong class this
-                    board takes seriously everywhere else: nothing on screen says the number is
-                    wrong, and a solver counting letters against it is being lied to. The wire says
-                    `number[]`; `every(Number.isInteger)` is what makes the render agree. */}
+                    `[{}]` is not a crash -- it paints `([object Object] letters)` on the plate. That
+                    is the confidently-wrong class this board takes seriously everywhere else:
+                    nothing on screen says the number is wrong, and a solver counting letters against
+                    it is being lied to. The wire says `number[]`; `every(Number.isInteger)` is what
+                    makes the render agree.
+
+                    `whitespace-nowrap` so the parenthetical never breaks across lines and leaves
+                    "letters)" alone at the start of the next one. */}
                 {Array.isArray(enumeration) && enumeration.length > 0 && enumeration.every(Number.isInteger) && (
                   <>
                     {' '}
-                    <span aria-hidden="true">({enumeration.join(',')})</span>
-                    <span className="sr-only">{enumeration.join(', ')} letters.</span>
+                    <span className="whitespace-nowrap">{enumerationText(enumeration)}</span>
                   </>
                 )}
               </p>

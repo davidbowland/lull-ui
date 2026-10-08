@@ -82,41 +82,49 @@ const isEntry = (entry: unknown): entry is AnagramEntry => arrangementsOf(entry)
 const SOLVED = 'Solved. You got all four.'
 
 // What a shuffle says, and it is said because a press that changes only the letters on the plate
-// changes NOTHING a screen reader is watching: the four runs are inside role="img" elements whose
-// names are re-computed silently, so without this sentence the control is a button that does
-// nothing at all for the one reader who cannot check the plate.
+// changes NOTHING a screen reader is watching: the runs are inside role="img" elements whose names
+// are re-computed silently, so without this sentence the control is a button that does nothing at
+// all for the one reader who cannot check the plate.
 //
-// It reports the whole of what happened and claims nothing about the rows it left alone. A solved
-// row keeps its letters -- see `reshuffle` -- and `Letters shuffled.` is still true of a board where
-// three of the four moved, where `All the letters moved.` would not be.
-const SHUFFLED = 'Letters shuffled.'
+// IT NAMES THE ROW, because a press moves exactly one. The board-wide `Letters shuffled.` this
+// replaced was true of a control that stepped every row in play at once; a per-row press that said
+// it would claim three rows moved that did not. The ordinal is 1-based and matches the button's own
+// name and the box's `Answer N of 4`, so the three things a reader hears about one row agree.
+const shuffledRow = (index: number): string => `Row ${index + 1} shuffled.`
 
-// The `d` of one path, stroked with no fill, like every other glyph in this product. A ring with a
-// gap in the top right and an arrow turning clockwise out of it -- the refresh mark every player
-// already knows, which is the whole reason this control can be an icon rather than a word.
+// Lucide's `shuffle` (Lucide, ISC license), five subpaths stroked with no fill, like every other glyph in this product:
+// two crossing lines with an arrowhead on each right-hand end. It replaced a refresh mark -- a ring
+// with an arrow turning out of it -- which players read as "refresh" and pressed expecting the
+// puzzle to reload. Crossing arrows are the mark every music player uses for "play in another
+// order", which is exactly what this press does to a row's letters.
 //
-// A 0 0 24 24 VIEWBOX DRAWN AT 18px, where the shelf's chips are a 12 box drawn at 12. The size is
-// what the arrowhead needs: at a 16 box the head has about two units of run against a 1.5-unit
-// stroke and renders as a blob with a ring behind it, which is what the first draft of this did.
-// Rasterized and looked at, not reasoned about. 2/24 of 18px is 1.5px on screen -- the same hairline
-// every other glyph here draws.
-//
-// TWO SUBPATHS IN ONE `d`, the way the shelf's state glyphs are written: the ring with its tangent
-// tail, then the right-angle bracket that caps the tail. A BRACKET AND NOT A CHEVRON, because the
-// chevron's two arms meet at a point that fills in at this weight while the bracket's meet at a
-// corner that does not. The arc is a 300-degree sweep, which is why the large-arc flag is 1 -- at 0
-// the same two endpoints describe the 60-degree stub the gap is cut out of, and the mark becomes a
-// comma.
-const REFRESH_GLYPH = 'M18.52 15.04A8 8 0 1 1 16.66 6.64L19.49 9.47M19.49 4.47v5h-5'
+// A 0 0 24 24 VIEWBOX DRAWN AT 18px, the size the refresh mark settled on after being rasterized and
+// looked at: 2/24 of 18px is 1.5px on screen, the same hairline every other glyph here draws, and at
+// 16 the arrowheads close up into blobs.
+const SHUFFLE_GLYPH = [
+  'M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22',
+  'm18 2 4 4-4 4',
+  'M2 6h1.9c1.5 0 2.9.9 3.6 2.2',
+  'M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8',
+  'm18 14 4 4-4 4',
+]
+
+// The shuffle button's box: exactly 44 x 44, the smallest target a thumb can be asked to find (WCAG
+// 2.5.5). Button's BASE already supplies `min-h-11` and `items-center`; `w-11` fixes the width and
+// `justify-center` centers the glyph across it. `size="sm"` is what makes that fit rather than
+// overflow: its 12px padding a side plus the 18px glyph is 42px, inside 44, where `md`'s 16 a side
+// is 50 and the glyph would spill out of a box narrower than its own content.
+const SHUFFLE_BUTTON = 'w-11 shrink-0 justify-center'
 
 // THE STANDING LINE, and it is the one rule of this game nobody can guess on arrival -- the exact
 // analog of the tile bench's left-to-right rule and the cipher bench's one-substitution rule. The
 // theme on the sign row says what the four rows are about; it does not say that all four answers fit
 // it, and that is the fact the puzzle turns on.
 //
-// It goes in the floor rather than under the sign row for two reasons. It sits directly above the
-// control it is about, and the board band is the one that scrolls at 320 -- a rule printed at the top
-// of a scrolling band is a rule that leaves the screen the moment the player starts working.
+// It goes in the floor rather than under the sign row because the floor is pinned to the bottom of
+// the bench while the board scrolls -- a rule printed at the top of the board is a rule that leaves
+// the screen the moment the player starts working. The sign row stays too, but it is one 46px band
+// that already holds the theme and the tally, and a full sentence there would truncate.
 //
 // Passed as FloorBar's `resting`, which is a SIBLING of the live region and never a child: a
 // role="status" element mounted with text already in it is a region NVDA and JAWS were never
@@ -137,8 +145,8 @@ const CONTROL_SLOT = 'min-w-[128px] shrink-0 justify-center'
 // Appended to a repeated message so a live region has something to announce. `say` with an
 // identical string is an Object.is bail-out: the DOM text never changes, and role="status" is keyed
 // to a change rather than to a write. It matters here for exactly one case and that case is real --
-// a player who presses Shuffle letters twice, which says `Letters shuffled.` both times and is the
-// only sentence on this bench that can follow itself. It used to be a second press of Check, which
+// a player who presses the same row's shuffle twice, which says `Row 1 shuffled.` both times and is
+// the only sentence on this bench that can follow itself. It used to be a second press of Check, which
 // is gone: the rows lock themselves on the keystroke that makes them right, so there was never
 // anything to press it for. Written as the escape rather than as
 // the character: a literal zero-width space is invisible in source, so an editor, a formatter or a
@@ -184,14 +192,22 @@ const describeRow = (displayed: string, pinned: ReadonlySet<number>): string => 
 // ground, hairlines and gutter -- because three of the four benches draw the same one, and a band
 // that three benches share is the grammar rather than a string copied four times.
 //
-// Sticky, for the cipher bench's reason: .lull-board is the one band that flexes and therefore the
-// one that scrolls, this board scrolls in three of the four viewport cases, and letting it scroll
-// would take `2 of 4 right` off the top of the screen -- the number a player checks most and the
-// only place it is written. The theme goes with it, and the theme is the fact all four rows are
-// about.
+// Sticky, for the cipher bench's reason: the bench is the one scroller, and once the breadcrumb and
+// title have scrolled away this band pins to its top -- letting it go too would take `2 of 4 right`
+// off the screen, the number a player checks most and the only place it is written. The theme goes
+// with it, and the theme is the fact all four rows are about.
+//
+// A <div> AND THE FIRST CHILD OF THE BOARD, both by convention rather than taste. The shell lays its
+// hint control over this band's right end from outside the board (the band reserves the space through
+// `.lull-bench[data-hint-dock]`), and the two only coincide if this is the first thing in the board.
+// It was a <p> while it held one line of phrasing content; it now stacks the theme over the tally and
+// has a control laid over it, which is a block's job.
+//
+// No `ms-auto` on the tally: the band stacks its two lines in a column, where an auto inline margin
+// would push the tally to the right edge -- under the hint control.
 const SIGN_ROW = 'lull-signrow sticky top-0'
 const THEME = 'truncate text-[11.5px] font-semibold tracking-[0.11em] uppercase'
-const TALLY = 'ms-auto shrink-0'
+const TALLY = 'shrink-0'
 
 // The rows' own column. .lull-board carries no padding of its own -- index.css:254-259 is four
 // declarations and none of them is padding -- so this element supplies the page gutter, the same way
@@ -203,17 +219,31 @@ const ROWS =
   'flex flex-1 flex-col gap-[var(--lull-s4)] bg-[var(--lull-plate)] py-[var(--lull-s4)] ' +
   'pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]'
 
-// The scramble line and the box under it, 4px apart, as one 76px row. They are one object: the
-// thing being worked on and the thing you work on it with, which is what lets the browser's own
+// The scramble line and the box under it, 4px apart, as one row -- 92px where the line holds a
+// shuffle button (44 + 4 + 44), 74 where it holds letters alone. They are one object: the thing
+// being worked on and the thing you work on it with, which is what lets the browser's own
 // reveal-on-focus bring both into view together when the keyboard is up.
 const ROW = 'flex flex-col gap-[4px]'
+
+// The scramble and its shuffle button on one line, the letters at the left and the button at the
+// right end, where it lines up with the box's right edge below. `min-w-0` on the letters (below)
+// is what lets a long run wrap rather than push the button off the row.
+const SCRAMBLE_LINE = 'flex items-center justify-between gap-[var(--lull-s2)]'
+
+// HELD AT 44px ON A ROW THAT HAS A BUTTON TO SHOW, WHETHER OR NOT IT IS SHOWING IT. The button goes
+// the moment the row is right, and a line that shrank with it would drop every row below by 18px on
+// the keystroke that solved this one -- the board jumping under the player at the moment it should
+// sit still. Keyed on the PACK (more than one arrangement) rather than on whether the button is
+// drawn, so a row's height is fixed for the life of the board; a row that never had anywhere to go
+// costs no space for a button it was never going to show.
+const SCRAMBLE_LINE_HELD = 'min-h-11'
 
 // Sign cut and tracked, like the sibling bench's phrase, and smaller: nine letters is not a phrase
 // and this band has four rows to place rather than one. No pl-[0.32em] correction, because these
 // runs are left-aligned rather than centered -- the padding on that bench exists only to re-center
 // a run whose trailing letter-space pushed it off center.
 const SCRAMBLE =
-  'lull-sign text-[clamp(1.25rem,6vw,1.625rem)] leading-[1.2] tracking-[0.28em] break-words text-[var(--lull-ink)]'
+  'lull-sign min-w-0 text-[clamp(1.25rem,6vw,1.625rem)] leading-[1.2] tracking-[0.28em] break-words text-[var(--lull-ink)]'
 
 // A letter a rung pinned into its true position. WEIGHT AND AN UNDERLINE, never hue alone -- the
 // same call the cipher bench makes for its revealed squares, and for the same WCAG 1.4.1 reason: the
@@ -237,17 +267,28 @@ const PINNED = 'font-semibold underline decoration-2 underline-offset-4'
 // `min-width: auto` refuses to shrink below its own content, so without it a long guess pushes the
 // chip off the end of the row instead of scrolling inside the box.
 //
-// scroll-mt-[38px] IS THE ONE MITIGATION NOTHING IN THIS SUITE CAN DEFEND, and it is shipped here
-// rather than in the hardening task because this is the commit that creates the element it goes on.
-// With the keyboard up the board band scrolls, and the browser's own reveal-on-focus would pin the
-// focused box to the top of the scrollport with its scramble just above the fold -- the letters the
-// player needs to read while typing. The scramble line is about 26px and the gap under it is 4, so
-// 30 is the minimum that clears the letters and 38 leaves the row some air. jsdom lays nothing out,
-// and reading the class back would prove a string was written rather than that a box was revealed,
-// so this number is carried by the device check and by this comment.
+// THE TWO SCROLL MARGINS ARE THE MITIGATION NOTHING IN THIS SUITE CAN DEFEND. With the keyboard up
+// the bench scrolls, and the browser's own reveal-on-focus aligns the focused box to an edge of the
+// scrollport -- but the bench's top and bottom edges are covered by sticky bands, so without these
+// the box would land under one of them.
+//
+// scroll-mt-[102px] is the TOP: the sign row (46px, pinned once the crown has scrolled away) plus
+// this row's own scramble line, which has to stay readable above the box because those are the
+// letters the player is typing from. The line is 44px wherever it holds a shuffle button, 4 more is
+// the gap under it, and 8 is air: 46 + 44 + 4 + 8 = 102. On a row with no button the line is ~26px
+// and the margin is generous by 18, which costs nothing.
+//
+// The scroll-mb is the BOTTOM: the floor is a sticky band inside the same scroller, and an unsolved
+// board's floor is the ribbon (52px) and the safe strip (--lull-s2 plus the device's bottom inset).
+// Solved, the floor adds Play again's row, but a solved board's boxes are readOnly and nothing is
+// being typed into them.
+//
+// jsdom lays nothing out, and reading the class back would prove a string was written rather than
+// that a box was revealed, so these numbers are carried by the device check and by this comment.
 const BOX =
-  'min-h-11 min-w-0 flex-1 scroll-mt-[38px] rounded-[var(--lull-r-md)] border border-[var(--lull-rule)] ' +
-  'bg-[var(--lull-raised)] px-[var(--lull-s3)] py-[var(--lull-s2)] text-lg text-[var(--lull-ink)]'
+  'min-h-11 min-w-0 flex-1 scroll-mt-[102px] scroll-mb-[calc(52px+var(--lull-s2)+env(safe-area-inset-bottom))] ' +
+  'rounded-[var(--lull-r-md)] border border-[var(--lull-rule)] bg-[var(--lull-raised)] px-[var(--lull-s3)] ' +
+  'py-[var(--lull-s2)] text-lg text-[var(--lull-ink)]'
 
 // Ink on plate, a pair contrast.test.ts already holds. The check glyph beside it is aria-hidden
 // decoration; the WORD is the carrier, because nothing on this board may be told by a mark alone.
@@ -635,20 +676,20 @@ export const ThemedAnagramsBoard = ({
 
   // The only press on this bench that touches neither the drafts nor storage.
   //
-  // ONE STEP ALONG THE PACK'S OWN LIST, wrapping to the start after the last -- never a fifth
-  // arrangement of this app's invention. Each row wraps on ITS OWN length, because the length varies
-  // per entry: a board holding four and one is normal, and one press moves the first row to its
-  // second arrangement while the second row stays where it is.
+  // ONE ROW, ONE STEP ALONG THE PACK'S OWN LIST, wrapping to the start after the last -- never an
+  // arrangement of this app's invention. ONE ROW because the player is stuck on one word: a single
+  // board-wide control used to step every row in play at once, which churned the three rows they
+  // were reading in order to move the one they were not. Each row wraps on ITS OWN length, because
+  // the length varies per entry: a board holding four and one is normal.
   //
   // IT NEVER CALLS onProgress, and that is the whole of "the new order is not saved". There is
   // nothing to write: the drafts are untouched, so the string the shell already holds is still
   // exactly right, and a call here would hand it an identical value and mark the puzzle started on a
   // board nobody has typed in.
   //
-  // A ROW THAT IS ALREADY RIGHT KEEPS ITS LETTERS. The player finished it, the box is readOnly and
-  // the chip beside it says so; moving the plate under a won row churns the one part of the board
-  // they are done with, and for a moment it reads as though the row came undone. `rights` is this
-  // render's, computed from the same `guesses` the updater is not touching, so the two cannot
+  // NO `rights` GUARD HERE, because a row that is already right has no button to press -- see
+  // `canReshuffleRow`. The old board-wide press had to skip won rows itself; a per-row press is only
+  // ever drawn on a row it may move, so the gate lives in one place rather than two that could
   // disagree.
   //
   // A PINNED LETTER STAYS PUT ACROSS A SHUFFLE, and this function needs no line for it. The cursor
@@ -657,22 +698,22 @@ export const ThemedAnagramsBoard = ({
   // order. So the press cycles exactly what the player has left to work out and leaves what they
   // bought alone -- which is the property that would have been lost had the pinning been folded into
   // `cursors` instead of computed at draw time.
-  const reshuffle = (): void => {
+  const reshuffle = (index: number): void => {
     setCursors((current) =>
-      current.map((cursor, index) => (rights[index] ? cursor : (cursor + 1) % arrangements[index].length)),
+      current.map((cursor, at) => (at === index ? (cursor + 1) % arrangements[index].length : cursor)),
     )
-    say(SHUFFLED)
+    say(shuffledRow(index))
   }
 
-  // WHETHER THERE IS ANYWHERE TO GO, which is the whole of when this control is offered. The
+  // WHETHER THIS ROW HAS ANYWHERE TO GO, which is the whole of when its button is drawn. The
   // contract is explicit that a reshuffle hides itself at length 1 -- there is nothing to cycle to,
   // and a button that visibly does nothing reads as a bug in the app.
   //
-  // Asked per row and only of the rows STILL IN PLAY, which subsumes the two guards this used to
-  // carry separately. A board with no rows has nothing to ask about, and a solved board has no row
-  // in play -- so neither `rows.length > 0` nor `!solved` has to be written out beside it, and there
-  // is one condition rather than three that can disagree.
-  const canReshuffle = rows.some((_entry, index) => !rights[index] && arrangements[index].length > 1)
+  // AND ONLY WHILE THE ROW IS IN PLAY. The player finished a right row, its box is readOnly and the
+  // chip beside it says so; moving the plate under a won row churns the one part of the board they
+  // are done with, and for a moment it reads as though the row came undone. A solved board is four
+  // right rows, so it draws no shuffle at all without `!solved` being written out beside this.
+  const canReshuffleRow = (index: number): boolean => !rights[index] && arrangements[index].length > 1
 
   // Handed to FloorBar SEPARATELY from `announced`, and that separation is the whole reason the prop
   // exists: the resting line is rendered as a sibling of the live region, so a restored solved board
@@ -682,15 +723,20 @@ export const ThemedAnagramsBoard = ({
 
   return (
     // EXACTLY TWO SIBLINGS IN A FRAGMENT -- .lull-board and .lull-instrument -- because the frame
-    // wraps them in a `display: contents` box and index.css orders them into bands with the shell's
-    // hint bar between. Nothing here learns which band it landed in.
+    // wraps them in its `.lull-play` column, where the board grows and the instrument sticks to the
+    // bottom of the bench. Nothing here learns which band it landed in.
     <>
       {/* A named landmark rather than a heading: the board already sits under the page's h1, and a
           lone <h2> above it would buy a heading level for a word. The name is the TYPE, because a
-          reader moving by landmark is choosing a band and not reading content. */}
-      <section aria-label="Themed Anagrams" className="lull-board flex flex-col overflow-x-hidden">
+          reader moving by landmark is choosing a band and not reading content.
+
+          overflow-x-clip, NEVER overflow-x-hidden. Both clip a run that would drag the bench
+          sideways, but `hidden` forces overflow-y to compute to `auto`, which makes the board a
+          scroll container of its own -- and a sticky sign row inside a box that never scrolls never
+          sticks. `clip` makes no scroll container, so the sign row resolves against the bench. */}
+      <section aria-label="Themed Anagrams" className="lull-board flex flex-col overflow-x-clip">
         {/* Both facts are read off the puzzle's own data, which the shell cannot see. */}
-        <p className={SIGN_ROW}>
+        <div className={SIGN_ROW}>
           {/* `data` is JSON off the network that isValidPuzzle deliberately leaves opaque, so `theme`
               can be an object -- and an object rendered as a React child throws `Objects are not
               valid as a React child` DURING RENDER. ErrorBoundary catches it, which is worse than it
@@ -703,7 +749,7 @@ export const ThemedAnagramsBoard = ({
               case at 4 of 4 -- a tally that turns into a sentence at the end is a second string to
               test, and the ribbon already says the win. */}
           <span className={TALLY}>{`${right} of 4 right`}</span>
-        </p>
+        </div>
 
         {/* An <ol> so a reader is told there are four of these and which one they are in. No decimal
             markers: the box's own accessible name carries the ordinal, and two numbering systems on
@@ -747,24 +793,81 @@ export const ThemedAnagramsBoard = ({
 
                   Keyed by position because these are letters at fixed indices of a run this board
                   never sorts or filters -- the same case the row keys above are. */}
-              {pinnedIn(index).size === 0 ? (
-                <p aria-label={spellOut(displayOf(index))} className={SCRAMBLE} role="img">
-                  <span aria-hidden="true">{displayOf(index)}</span>
-                </p>
-              ) : (
-                <p className={SCRAMBLE}>
-                  {[...displayOf(index)].map((letter, at) => (
-                    <span
-                      aria-label={pinnedIn(index).has(at) ? `${letter}, revealed` : letter}
-                      className={pinnedIn(index).has(at) ? PINNED : undefined}
-                      key={at}
-                      role="img"
+              <div
+                className={arrangements[index].length > 1 ? `${SCRAMBLE_LINE} ${SCRAMBLE_LINE_HELD}` : SCRAMBLE_LINE}
+              >
+                {pinnedIn(index).size === 0 ? (
+                  <p aria-label={spellOut(displayOf(index))} className={SCRAMBLE} role="img">
+                    <span aria-hidden="true">{displayOf(index)}</span>
+                  </p>
+                ) : (
+                  <p className={SCRAMBLE}>
+                    {[...displayOf(index)].map((letter, at) => (
+                      <span
+                        aria-label={pinnedIn(index).has(at) ? `${letter}, revealed` : letter}
+                        className={pinnedIn(index).has(at) ? PINNED : undefined}
+                        key={at}
+                        role="img"
+                      >
+                        {letter}
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {/* THE SHUFFLE, one per row, at the right end of the letters it moves. It used to be
+                    one button in the floor that stepped every row in play; on the row it sits beside
+                    the scramble it rearranges, says which row by its name, and costs the floor no
+                    control row while the board is unsolved.
+
+                    DRAWN ONLY WHERE THERE IS SOMEWHERE TO GO -- see `canReshuffleRow`. A right row
+                    and a row whose pack shipped one arrangement both answer no, and the second is the
+                    shape the deployed API still answers with for some entries.
+
+                    AN ICON WITH A NAME, never a bare glyph. WCAG 2.5.3 wants the name to be the words
+                    a speaking player would use, and `Shuffle row 2` is what they would say; the path
+                    is aria-hidden decoration, exactly like the Right chip's tick. It stays icon-only
+                    because this press changes how the letters are ARRANGED and nothing else -- a
+                    worded button on every row would make a view control look like the way you answer.
+
+                    variant="quiet" BECAUSE IT SITS ON THE PLATE, not on the floor. quiet draws in
+                    --lull-muted, which contrast.test.ts holds at 4.5:1 on the plate (6.525:1 light,
+                    6.385:1 dark) -- the floor is where quiet is unreadable, and the old floor button
+                    was `default` for exactly that reason. No border, so four rows do not grow four
+                    boxed controls that read as a second column of answer fields.
+
+                    Tab order per row is this button, then the row's box: the scramble is not
+                    focusable, and DOM order is the order a player meets them.
+
+                    keepsFocusOnPress: the player presses this while typing, and a press that
+                    collapsed the software keyboard would take the rows they are reading with it. */}
+                {canReshuffleRow(index) && (
+                  <Button
+                    aria-label={`Shuffle row ${index + 1}`}
+                    className={SHUFFLE_BUTTON}
+                    keepsFocusOnPress
+                    onClick={() => reshuffle(index)}
+                    size="sm"
+                    variant="quiet"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="shrink-0"
+                      fill="none"
+                      height="18"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                      width="18"
                     >
-                      {letter}
-                    </span>
-                  ))}
-                </p>
-              )}
+                      {SHUFFLE_GLYPH.map((d) => (
+                        <path d={d} key={d} />
+                      ))}
+                    </svg>
+                  </Button>
+                )}
+              </div>
               <div className="flex items-center gap-[var(--lull-s3)]">
                 {/* The label is a SIBLING, never a wrapper: sr-only hides its subtree, so a wrapping
                     label would take the box with it. htmlFor is the whole of the association. */}
@@ -849,80 +952,44 @@ export const ThemedAnagramsBoard = ({
           className -- children, message, resting and variant are the whole of its props, and this
           component may not edit it.
 
-          `compact`, because this bench's instrument is one row: one control, under a ribbon that is
-          the only live region on this bench. */}
+          `compact`, because this bench's instrument is at most one row under the ribbon, and while
+          the board is unsolved it is the ribbon alone: the only live region on this bench, and the
+          standing line resting in it. */}
       <div className="lull-instrument">
         <FloorBar message={announced} resting={resting} variant="compact">
-          {/* The gutters are the band's, matching the rows above, so the verdict control's right
-              edge lines up with the boxes' right edge. `justify-end` because the row is packed to
-              that edge: the boxes these controls are about are on the board, which is the whole
-              trade this bench makes. */}
-          <div className="flex shrink-0 items-center justify-end gap-[var(--lull-s3)] pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
-            {/* THE SHUFFLE, and it is a `{cond && ...}` slot rather than an arm of the one below.
-                JSX children are positional, so `false` occupies this slot when the board is solved
-                and `Play again` keeps the index it has always had -- a control spliced into the list
-                instead of blanked in place would quietly move it.
+          {/* THE CONTROL ROW EXISTS ONLY ONCE THE BOARD IS SOLVED, and it holds `Play again`. The
+              shuffle that used to stand here moved onto the rows, one per row, so an unsolved board
+              has no floor control at all -- and a row of padding around nothing would be 56px taken
+              from the rows on a bench that has the OS keyboard up. The whole row is conditional,
+              not just the button, for exactly that reason.
 
-                OFFERED ONLY WHEN THERE IS SOMEWHERE TO GO -- see `canReshuffle`, which asks the one
-                question the other three conditions were approximations of. A solved board, a board
-                with no rows, and a pack whose every entry shipped a single arrangement all answer it
-                the same way, and the last of those is the shape on the network today.
+              The gutters are the band's, matching the rows above, so the control's right edge lines
+              up with the boxes' right edge. `justify-end` because the row is packed to that edge:
+              the boxes this control is about are on the board, which is the whole trade this bench
+              makes.
 
-                variant="default", never quiet. The floor is dark in BOTH themes and `quiet` is drawn
-                in --lull-muted, which contrast.test.ts asserts is unreadable on the light floor -- it
-                is the same trap the `floorPrimary` paragraph below describes from the other side.
+              variant="default", never floorPrimary. The accent is a scarce mark -- the spine pip,
+              the selected cipher square, one primary action -- and a win that has already been
+              announced, chipped four times and tallied does not need its follow-up shouted.
 
-                AN ICON WITH A NAME, never a bare glyph. WCAG 2.5.3 wants the name to be the words a
-                speaking player would use, and "Shuffle letters" is what they would say; the path is
-                aria-hidden decoration, exactly like the Right chip's tick on the board. It stays
-                icon-only now that it is the only control an unsolved board offers: the argument used
-                to be that a worded button beside `Check` reads as a second offer of equal weight,
-                and what holds it up now is that this press changes how the letters are ARRANGED and
-                nothing else -- a full-width word for it would make a view control look like the way
-                you answer.
+              NOTHING STANDS HERE BEFORE THE WIN, so nothing here can be holding focus when it
+              arrives. It used to be the second arm of a ternary whose first arm was `Check`, and
+              that shape was doing real work: React kept the node and focus stayed on the control
+              the player had just pressed. The focused element at the moment of an in-session win is
+              one of the four BOXES, which are not conditional and are not moved -- and when the
+              last row goes right its shuffle button goes with it, but `SCRAMBLE_LINE_HELD` keeps
+              the line its height, so the box under it does not move either.
 
-                keepsFocusOnPress: the player presses this while typing, and a press that collapsed
-                the software keyboard would take the four rows they are reading with it. */}
-            {canReshuffle && (
-              <Button aria-label="Shuffle letters" className="shrink-0" keepsFocusOnPress onClick={reshuffle}>
-                <svg
-                  aria-hidden="true"
-                  className="shrink-0"
-                  fill="none"
-                  height="18"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  width="18"
-                >
-                  <path d={REFRESH_GLYPH} />
-                </svg>
-              </Button>
-            )}
-            {/* variant="default", never floorPrimary. The accent is a scarce mark -- the spine pip,
-                the selected cipher square, one primary action -- and this screen already spends it
-                on the hint bar's spent rungs, which paint --lull-accent directly above this floor.
-
-                THE ONLY CONTROL AN UNSOLVED BOARD HAS IS THE SHUFFLE, and this one appears beside it
-                only at the win. It used to be the second arm of a ternary whose first arm was
-                `Check`, and that shape was doing real work: React keeps a stable element type at a
-                stable position, so the node survived the swap and focus stayed on the control the
-                player had just pressed. There is no swap left to survive -- nothing stands here
-                before the win, so nothing here can be holding focus when it arrives. The focused
-                element at the moment of an in-session win is one of the four BOXES, which are not
-                conditional and are not moved.
-
-                Play again takes no keepsFocusOnPress. The composer contract exists to hold a
-                software keyboard open over a field being typed in; a solved board's four boxes are
-                readOnly and there is nothing left to type. */}
-            {solved && (
+              Play again takes no keepsFocusOnPress. The composer contract exists to hold a software
+              keyboard open over a field being typed in; a solved board's four boxes are readOnly
+              and there is nothing left to type. */}
+          {solved && (
+            <div className="flex shrink-0 items-center justify-end gap-[var(--lull-s3)] pt-[var(--lull-s3)] pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]">
               <Button className={CONTROL_SLOT} onClick={playAgain}>
                 Play again
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </FloorBar>
       </div>
     </>
