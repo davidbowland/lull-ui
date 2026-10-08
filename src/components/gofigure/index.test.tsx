@@ -1,4 +1,4 @@
-import { getDefaultNormalizer, render, screen } from '@testing-library/react'
+import { fireEvent, getDefaultNormalizer, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 
@@ -10,6 +10,27 @@ describe('GoFigureBoard', () => {
   const onProgress = jest.fn()
   const onSolved = jest.fn()
 
+  // JSDOM IMPLEMENTS NO SCROLLING AT ALL, so Element.prototype.scrollIntoView does not exist, and the
+  // board calls it plainly whenever the Backtrack trail opens or moves. Installed as a shared default
+  // in beforeAll, after phrazle's suite.
+  //
+  // THE DELETE IS NOT OPTIONAL. `clearMocks` clears this mock's calls between tests and knows nothing
+  // about an assignment to a prototype, so leaving it installed poisons every suite that runs after
+  // this one in the same worker.
+  const scrollIntoView = jest.fn()
+
+  beforeAll(() => {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+      writable: true,
+    })
+  })
+
+  afterAll(() => {
+    delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView
+  })
+
   const renderBoard = (
     puzzle: Puzzle<GoFigureData> = goFigurePuzzle,
     progress: string | null = null,
@@ -17,14 +38,15 @@ describe('GoFigureBoard', () => {
     render(<GoFigureBoard onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />)
 
   // The bank is 6,9,7,7, so two tiles show 7. Their accessible names carry the tile
-  // position ("Use 7, tile 3 of 4"), so queries match by prefix, and availability is
-  // aria-disabled rather than disabled -- the tiles stay focusable so a tap does not
-  // blur the button it just activated. Every helper here takes the first still-available
-  // one rather than a fixed index.
+  // position ("Use 7, tile 3 of 4"), so queries match by prefix. A spent tile says so in its
+  // name ("Use 7, tile 3 of 4, used") and stays pressable -- pressing it means "put a 7 here",
+  // which may move a placed 7 -- so the helper skips used tiles by NAME rather than by
+  // aria-disabled. That keeps its contract: tap the first tile with this digit that is not
+  // spent, which is the press that always spends rather than moves.
   const tap = async (user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> => {
     const buttons = screen
       .getAllByRole('button', { name: new RegExp(`^${name}`) })
-      .filter((button) => button.getAttribute('aria-disabled') !== 'true')
+      .filter((button) => !(button.getAttribute('aria-label') ?? '').endsWith(', used'))
     await user.click(buttons[0])
   }
 
@@ -606,7 +628,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add'])
 
-      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4, used' })).toBeInTheDocument()
     })
 
     // Marked by form and not by color, and legible either way: the bank is what the
@@ -644,11 +666,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 7', 'Add'])
 
-      expect(
-        screen
-          .getAllByRole('button', { name: /^Use 7/ })
-          .filter((button) => button.getAttribute('aria-disabled') !== 'true'),
-      ).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^Use 7, tile \d of 4$/ })).toHaveLength(1)
     })
 
     it('spends the tile that was tapped, not the first one showing that digit', async () => {
@@ -658,8 +676,8 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' }))
       await tap(user, 'Add')
 
-      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toBeInTheDocument()
     })
 
     it('returns the tile that was tapped when it is undone', async () => {
@@ -671,8 +689,8 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' }))
       await tap(user, UNDO)
 
-      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
-      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4, used' })).toBeInTheDocument()
     })
 
     it('returns the tile to the bank on Undo', async () => {
@@ -682,7 +700,7 @@ describe('GoFigureBoard', () => {
       await tap(user, 'Use 6')
       await tap(user, UNDO)
 
-      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
     })
 
     // Two digits in a row would read as one two-digit number, which no accepted solution
@@ -985,7 +1003,7 @@ describe('GoFigureBoard', () => {
     it('restores which tiles were already spent', () => {
       renderBoard(goFigurePuzzle, '6+9')
 
-      expect(screen.getByRole('button', { name: /^Use 6/ })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4, used' })).toBeInTheDocument()
     })
 
     // A solved puzzle reopens showing its solution. Replay is emptying the board: solved
@@ -1147,8 +1165,8 @@ describe('GoFigureBoard', () => {
       await tap(user, 'Use 9')
       await user.click(screen.getByRole('button', { name: UNDO }))
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Use 9, tile 2 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, tile 2 of 4' })).toBeInTheDocument()
     })
 
     it('gives a square back the sign a write took over', async () => {
@@ -1174,8 +1192,8 @@ describe('GoFigureBoard', () => {
       await tap(user, 'Use 6')
       await user.click(screen.getByRole('button', { name: UNDO }))
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toBeInTheDocument()
     })
 
     it('returns the tile a write took over to the bank', async () => {
@@ -1190,6 +1208,7 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Square 3, number, empty' }))
 
       expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 9, tile 2 of 4, used' })).toBeInTheDocument()
     })
 
     it('refuses the signs while the caret is on a number square', () => {
@@ -1218,8 +1237,227 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' }))
       await tap(user, 'Add')
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toBeInTheDocument()
+    })
+  })
+
+  // A digit press means "put d here", and the board picks the tile. A used tile is pressable, and
+  // when every tile of a digit is already down, the press MOVES the one placed longest ago into the
+  // caret's square. Typing the digit follows the same rule, so every case below runs three ways --
+  // tapping either 7 or typing one -- and must come out the same.
+  //
+  // Squares 1, 3, 5 and 7 are cells 0, 2, 4 and 6. Progress strings name bank INDICES, so on this
+  // bank (6,9,7,7) tile 3 is written `2` and tile 4 is written `3`.
+  describe('moving a tile', () => {
+    type Press = (user: ReturnType<typeof userEvent.setup>) => Promise<void>
+
+    const SEVENS: [string, Press][] = [
+      ['tapping tile 3', (user) => user.click(screen.getByRole('button', { name: /^Use 7, tile 3 of 4/ }))],
+      ['tapping tile 4', (user) => user.click(screen.getByRole('button', { name: /^Use 7, tile 4 of 4/ }))],
+      ['typing 7', (user) => user.keyboard('7')],
+    ]
+
+    // A spent 7, pressed on purpose. `tap` skips used tiles by contract, so a press that is meant to
+    // move a tile names the used one outright.
+    const USED_SEVEN = 'Use 7, tile 3 of 4, used'
+
+    const square = async (user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> => {
+      await user.click(screen.getByRole('button', { name }))
+    }
+
+    // Both 7s placed THIS SESSION, square 1 first and square 3 second, so `placedOrder` knows which
+    // is older. Then the caret goes to square 5.
+    const placeBothSevens = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' }))
+      await square(user, 'Square 3, number, empty')
+      await user.click(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' }))
+      await square(user, 'Square 5, number, empty')
+    }
+
+    // S-1. The tapped tile is used, but its twin is free, so the twin is spent and nothing moves.
+    it.each(SEVENS)('spends a free twin rather than moving a placed 7, %s', async (_how, press) => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard(goFigurePuzzle, '2______|0|')
+
+      await square(user, 'Square 3, number, empty')
+      await press(user)
+
+      expect(screen.getByRole('button', { name: 'Square 1, number, 7' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Square 3, number, 7' })).toBeInTheDocument()
+      expect(onProgress).toHaveBeenLastCalledWith('2_3____|0|')
+    })
+
+    // S-2, first half. Every 7 is down, so one moves -- the one placed first, whichever 7 was tapped.
+    it.each(SEVENS)('moves the 7 placed longest ago, %s', async (_how, press) => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await placeBothSevens(user)
+      await press(user)
+
+      expect(screen.getByRole('button', { name: 'Square 1, number, empty' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Square 5, number, 7' })).toBeInTheDocument()
+      expect(onProgress).toHaveBeenLastCalledWith('__3_2__|0|')
+    })
+
+    // S-2, second half. A restored board has no placement order, so the leftmost placed 7 counts as
+    // the oldest: with 7s in squares 3 and 5, a 7 for square 1 comes out of square 3.
+    it.each(SEVENS)('moves the leftmost 7 on a restored board, %s', async (_how, press) => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard(goFigurePuzzle, '__3_2__|0|')
+
+      await square(user, 'Square 1, number, empty')
+      await press(user)
+
+      expect(screen.getByRole('button', { name: 'Square 3, number, empty' })).toBeInTheDocument()
+      expect(onProgress).toHaveBeenLastCalledWith('3___2__|0|')
+    })
+
+    // S-3, the player's own case. Two 7s placed in squares 1 then 3. Changing square 5 to 7 takes
+    // square 1's; changing square 7 to 7 then takes square 3's, because the 7 that just moved into
+    // square 5 is now the newest. Square 5 keeps its 7.
+    it.each(SEVENS)('moves a different 7 for each square changed, %s', async (_how, press) => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await placeBothSevens(user)
+      await press(user)
+      await square(user, 'Square 7, number, empty')
+      await press(user)
+
+      expect(screen.getByRole('button', { name: 'Square 5, number, 7' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Square 7, number, 7' })).toBeInTheDocument()
+      expect(onProgress).toHaveBeenLastCalledWith('____2_3|0|')
+    })
+
+    // S-5. A square already showing the digit is left alone. Every later rule would do something
+    // visible to a press that should change nothing: spend a twin, or pull a 7 out of another square.
+    it.each(SEVENS)('refuses a 7 on a square that already shows one, %s', async (_how, press) => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard(goFigurePuzzle, '2______|0|')
+
+      await square(user, 'Square 1, number, 7')
+      await press(user)
+
+      expect(onProgress).not.toHaveBeenCalled()
+      expect(said('Square 1 is already 7.')).toBeInTheDocument()
+    })
+
+    // S-6. A used tile stays pressable while the caret is on a number square, and says it is used
+    // in its name as well as on its face.
+    it('names a used tile as used and leaves it pressable', () => {
+      renderBoard(goFigurePuzzle, '3______|0|')
+
+      const tile = screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })
+      expect(tile).toHaveAttribute('aria-disabled', 'false')
+      expect(within(tile).getByText('Used')).toBeInTheDocument()
+    })
+
+    // S-7. The move names both squares -- the one the 7 went to and the one it left. The total is
+    // left out because the move emptied square 1 and the board has no total without it.
+    it('says where the tile went and which square it left', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await placeBothSevens(user)
+      await user.click(screen.getByRole('button', { name: USED_SEVEN }))
+
+      expect(said('Square 5 is 7. Square 1 is empty. Now on square 6, a sign.')).toBeInTheDocument()
+    })
+
+    it('carries the total when a move changes it', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard(goFigurePuzzle, '0+2+3__|0|')
+
+      await square(user, 'Square 7, number, empty')
+      await user.click(screen.getByRole('button', { name: 'Use 7, tile 3 of 4, used' }))
+
+      expect(said('Square 7 is 7. Square 3 is empty. Running total: 6. Now on square 3, a number.')).toBeInTheDocument()
+    })
+
+    // S-7, Undo. One press puts both squares back, says what each holds, and returns the board to
+    // exactly the progress string it had before the move.
+    it('takes a move back in one Undo', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await placeBothSevens(user)
+      await user.click(screen.getByRole('button', { name: USED_SEVEN }))
+      await user.click(screen.getByRole('button', { name: UNDO }))
+
+      expect(onProgress).toHaveBeenLastCalledWith('2_3____|0|')
+      expect(said('Square 1 is 7. Square 5 is empty. Running total: 7. Now on square 5, a number.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { current: true })).toHaveAttribute('aria-label', 'Square 5, number, empty')
+    })
+
+    // Undo puts the placement ORDER back as well as the squares. Without it, the move would leave
+    // square 1's 7 as the newest, and the same press after Undo would take square 3's 7 instead.
+    it('moves the same tile again after Undo takes a move back', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await placeBothSevens(user)
+      await user.click(screen.getByRole('button', { name: USED_SEVEN }))
+      await user.click(screen.getByRole('button', { name: UNDO }))
+      await user.click(screen.getByRole('button', { name: USED_SEVEN }))
+
+      expect(onProgress).toHaveBeenLastCalledWith('__3_2__|0|')
+    })
+
+    // S-8, overwrite. The tile a write took out of its square goes back to the bank unmarked.
+    it('unmarks the tile an overwrite displaced', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await tap(user, 'Use 6')
+      await square(user, 'Square 1, number, 6')
+      await tap(user, 'Use 9')
+
+      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toBeInTheDocument()
+      expect(screen.getAllByText('Used')).toHaveLength(1)
+    })
+
+    // S-8, move. A 7 moved into a square holding the 6 sends the 6 back to the bank unmarked, and
+    // both 7s stay marked: one moved, and one never left.
+    it('unmarks the tile a move displaced', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard(goFigurePuzzle, '2_3_0__|0|')
+
+      await square(user, 'Square 5, number, 6')
+      await user.keyboard('7')
+
+      expect(onProgress).toHaveBeenLastCalledWith('__3_2__|0|')
+      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toBeInTheDocument()
+      expect(screen.getAllByText('Used')).toHaveLength(2)
+    })
+
+    // S-9. A solved board refuses every tile and every digit key -- moving a tile is not a way back
+    // into a finished puzzle. Play again is.
+    it('refuses tiles and digit keys on a solved board', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard(goFigurePuzzle, '6+9+7*7')
+
+      await user.keyboard('7')
+
+      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4, used' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Square 5, number, 7' })).toBeInTheDocument()
+      expect(onProgress).not.toHaveBeenCalled()
+    })
+
+    // Backspace on the square a move filled is its own entry in the history, so one Undo puts the
+    // moved 7 back in square 5 and leaves the move itself standing.
+    it('lets Undo take back a Backspace on a square a move filled', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await placeBothSevens(user)
+      await user.keyboard('7')
+      await square(user, 'Square 5, number, 7')
+      await user.keyboard('{Backspace}')
+      await user.click(screen.getByRole('button', { name: UNDO }))
+
+      expect(onProgress).toHaveBeenLastCalledWith('__3_2__|0|')
     })
   })
 
@@ -2226,8 +2464,8 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Square 1, number, empty' }))
       await user.keyboard('7+7')
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })).toBeInTheDocument()
     })
 
     it('refuses a digit the bank does not hold', async () => {
@@ -2241,14 +2479,18 @@ describe('GoFigureBoard', () => {
       expect(said(`No 8 in your tiles. ${INSTRUCTION}`)).toBeInTheDocument()
     })
 
-    it('refuses a digit whose every tile is already spent', async () => {
+    // It used to be refused with "No 6 in your tiles." -- the same sentence as a digit the pack never
+    // drew, which was the bug: the player has a 6, it is just in the wrong square. Typing follows
+    // the tap's rule now, so the 6 moves.
+    it('moves a digit whose every tile is already placed', async () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
       await user.click(screen.getByRole('button', { name: 'Square 1, number, empty' }))
       await user.keyboard('6+9+6')
 
-      expect(said('No 6 in your tiles.')).toBeInTheDocument()
+      expect(onProgress).toHaveBeenLastCalledWith('_+1+0__|0|')
+      expect(said('Square 5 is 6. Square 1 is empty.')).toBeInTheDocument()
     })
 
     it('refuses a digit on a sign square', async () => {
@@ -2268,6 +2510,16 @@ describe('GoFigureBoard', () => {
 
       await user.click(screen.getByRole('button', { name: 'Square 2, sign, empty' }))
       await user.keyboard('*')
+
+      expect(screen.getByRole('button', { name: 'Square 2, sign, Multiply' })).toBeInTheDocument()
+    })
+
+    it('reads x as times', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await user.click(screen.getByRole('button', { name: 'Square 2, sign, empty' }))
+      await user.keyboard('x')
 
       expect(screen.getByRole('button', { name: 'Square 2, sign, Multiply' })).toBeInTheDocument()
     })
@@ -2525,13 +2777,1068 @@ describe('GoFigureBoard', () => {
     })
   })
 
+  // BACKTRACK: the player walks the goal down to 0 with their own tiles, one sign and one tile a
+  // step, on a trail of its own. The fixture's bank is 6,9,7,7 and its goal 154, and the trail
+  // ÷ 7, − 9, − 7, − 6 spells 6 + 7 + 9 × 7 forward -- one of the six sums the pack accepts.
+  describe('Backtrack', () => {
+    const BACKTRACK = 'Backtrack from 154'
+    const PANEL = 'Backtracking from 154'
+    const UNDO_STEP = 'Undo the last step'
+    const DONE = 'Done backtracking'
+    const CLEAR_TRAIL = 'Clear steps'
+    const CLOSE_BACKTRACK = 'Close Backtrack'
+    const SQUARES_WAIT = 'Your squares wait while you backtrack. Pick a square or press Done to go back to them.'
+    const BACK = 'Back to your board. Nothing on it changed.'
+
+    const openTrail = async (user: ReturnType<typeof userEvent.setup>, goal = 154): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: `Backtrack from ${goal}` }))
+    }
+
+    // A sign, then the first tile of that digit the trail has not spent -- the tap a player makes.
+    const trailStep = async (user: ReturnType<typeof userEvent.setup>, sign: string, digit: number): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: sign }))
+      await user.click(screen.getAllByRole('button', { name: new RegExp(`^Use ${digit} in Backtrack`) })[0])
+    }
+
+    // The fixture's winning trail: 154 ÷ 7 = 22, 22 − 9 = 13, 13 − 7 = 6, 6 − 6 = 0.
+    const WINNING: [string, number][] = [
+      ['Divide', 7],
+      ['Subtract', 9],
+      ['Subtract', 7],
+      ['Subtract', 6],
+    ]
+
+    const walk = async (user: ReturnType<typeof userEvent.setup>, steps: [string, number][]): Promise<void> => {
+      for (const [sign, digit] of steps) {
+        await trailStep(user, sign, digit)
+      }
+    }
+
+    // By prefix, because two tests here run on the quick puzzle, whose goal is 10.
+    const panel = (): HTMLElement => screen.getByRole('region', { hidden: true, name: /^Backtracking from \d+$/ })
+
+    // The ribbon, as the player hears it: the repeat mark stripped, nothing else.
+    const ribbon = (): string => regions()[0].replace(/\u200b/gu, '')
+
+    const squareNames = (): string[] =>
+      screen.getAllByRole('button', { name: /^Square \d/ }).map((square) => square.getAttribute('aria-label') ?? '')
+
+    describe('the button on the goal plate', () => {
+      it('says Backtrack and names the goal it starts from', () => {
+        renderBoard()
+
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveTextContent('Backtrack')
+      })
+
+      // BOTH ENDS OF THE IDREF. aria-controls contributes nothing to a name, so it can rot in total
+      // silence; the panel is always mounted, so the reference resolves while the trail is shut too.
+      it('controls the trail panel, which is mounted while the trail is shut', () => {
+        renderBoard()
+
+        const button = screen.getByRole('button', { name: BACKTRACK })
+        const id = button.getAttribute('aria-controls')
+        expect(document.getElementById(id ?? '')).toBe(panel())
+        expect(panel()).toHaveAttribute('id', id)
+      })
+
+      it('says whether the trail is open', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'false')
+        await openTrail(user)
+
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+      })
+
+      it('names a four-digit goal', () => {
+        renderBoard({ ...goFigurePuzzle, data: { ...goFigurePuzzle.data, goal: 1540 } })
+
+        expect(screen.getByRole('button', { name: 'Backtrack from 1540' })).toBeInTheDocument()
+      })
+    })
+
+    describe('opening', () => {
+      it('puts the trail in place of the worked example', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByRole('region', { name: PANEL })).toBeInTheDocument()
+        expect(
+          screen.queryByRole('heading', { name: 'Signs apply left to right, not by PEMDAS.' }),
+        ).not.toBeInTheDocument()
+      })
+
+      it('moves focus to the panel, named by its heading', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByRole('region', { name: PANEL })).toHaveFocus()
+        expect(screen.getByRole('heading', { name: PANEL })).toBeInTheDocument()
+      })
+
+      // S-14: the trail starts at the goal with nothing pressed.
+      it('starts at the goal with no presses', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
+        expect(within(panel()).getByText('Each step starts where the last one ended.')).toBeInTheDocument()
+      })
+
+      it('stands a line naming the mode in the floor', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByText('Backtracking from 154. Pick a sign, then a tile.')).toBeInTheDocument()
+      })
+
+      it('brings the live row into view', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        const rows = within(panel()).getAllByRole('listitem')
+        expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(rows.at(-1))
+      })
+    })
+
+    describe('the tray', () => {
+      it('renames both groups for the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByRole('group', { name: 'Numbers for Backtrack' })).toBeInTheDocument()
+        expect(screen.getByRole('group', { name: 'Signs for Backtrack' })).toBeInTheDocument()
+      })
+
+      it('names each tile for the trail and keeps it unavailable until a sign is picked', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByRole('button', { name: 'Use 7 in Backtrack, tile 3 of 4' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        )
+        await user.click(screen.getByRole('button', { name: 'Divide' }))
+        expect(screen.getByRole('button', { name: 'Use 7 in Backtrack, tile 3 of 4' })).toHaveAttribute(
+          'aria-disabled',
+          'false',
+        )
+      })
+
+      // The face carries the board's own "Used" mark -- "In trail" wrapped and overran the tile at
+      // 320 and 390 -- and the NAME is what says which ledger spent it.
+      it('marks a tile spent in Backtrack, by its name and by "Used"', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+
+        const tile = screen.getByRole('button', { name: '7, used in Backtrack, tile 3 of 4' })
+        expect(tile).toHaveAttribute('aria-disabled', 'true')
+        expect(within(tile).getByText('Used')).toBeInTheDocument()
+        expect(screen.getAllByText('Used')).toHaveLength(1)
+      })
+
+      // The trail's ledger, not the board's: a tile in a square is not a tile in the trail.
+      it("shows the trail's ledger rather than the board's", async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await tap(user, 'Use 6')
+        await openTrail(user)
+
+        expect(screen.getByRole('button', { name: 'Use 6 in Backtrack, tile 1 of 4' })).toBeInTheDocument()
+        expect(screen.queryByText('Used')).not.toBeInTheDocument()
+      })
+
+      it('swaps Undo and Clear for the trail’s Undo and Done', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByRole('button', { name: UNDO_STEP })).toHaveTextContent('Undo')
+        expect(screen.getByRole('button', { name: DONE })).toHaveTextContent('Done')
+        expect(screen.queryByRole('button', { name: CLEAR })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: UNDO })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Open hint 1 of 3' })).toBeInTheDocument()
+      })
+
+      it('leaves the squares available while the trail is open', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(screen.getByRole('button', { name: 'Square 3, number, empty' })).toHaveAttribute(
+          'aria-disabled',
+          'false',
+        )
+        expect(screen.queryByRole('button', { current: true })).not.toBeInTheDocument()
+      })
+    })
+
+    describe('a step', () => {
+      // S-11.
+      it('divides the goal by a tile and says what it made', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 1: 154 divided by 7 is 22.')).toBeInTheDocument()
+        // S-20: one sentence in the ribbon for the step, and nothing else beside it.
+        expect(ribbon()).toBe('154 divided by 7 is 22.')
+      })
+
+      // S-20: each step changes the ribbon EXACTLY ONCE. Every notice flips the repeat mark, so one
+      // notice flips it and two leave it where it was -- and two is the bug: a step sentence followed
+      // by a second `say`, which a screen reader hears as the second one only. Read RAW, because
+      // `ribbon()` strips the very mark under test.
+      //
+      // The second case is the one with the most to say -- the step, every tile spent, and a 0 the
+      // pack does not list -- and so the one most likely to say it in two notices.
+      it.each([
+        ['an ordinary step', goFigurePuzzle, [] as [string, number][], ['Divide', 7] as [string, number]],
+        ['a last step the pack does not list', oneRouteOnly, WINNING.slice(0, 3), WINNING[3]],
+      ])('changes the ribbon exactly once for %s', async (_kind, puzzle, before, step) => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(puzzle)
+
+        await openTrail(user)
+        await walk(user, before)
+        await user.click(screen.getByRole('button', { name: step[0] }))
+        const marked = regions()[0].includes('​')
+        await user.click(screen.getAllByRole('button', { name: new RegExp(`^Use ${step[1]} in Backtrack`) })[0])
+
+        expect(regions()[0].includes('​')).toBe(!marked)
+      })
+
+      it('asks for a tile once a sign is picked', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Divide' }))
+
+        expect(ribbon()).toBe('Divide. Now pick a tile to divide 154 by.')
+        expect(within(panel()).getByText('Step 1: 154 divided by. Pick a tile.')).toBeInTheDocument()
+      })
+
+      it.each([
+        ['Add', 'Add. Now pick a tile to add to 154.'],
+        ['Subtract', 'Subtract. Now pick a tile to take from 154.'],
+        ['Multiply', 'Multiply. Now pick a tile to multiply 154 by.'],
+      ])('says what %s asks for', async (sign: string, sentence: string) => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: sign }))
+
+        expect(ribbon()).toBe(sentence)
+      })
+
+      // S-12: each step starts where the last one ended.
+      it('starts each step from the last one’s result', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, [
+          ['Divide', 7],
+          ['Subtract', 7],
+          ['Subtract', 9],
+        ])
+
+        expect(within(panel()).getByText('22 − 7 = 15')).toBeInTheDocument()
+        expect(within(panel()).getByText('15 − 9 = 6')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 4: 6. Pick a sign.')).toBeInTheDocument()
+      })
+
+      it('refuses a tile before a sign', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Use 6 in Backtrack, tile 1 of 4' }))
+
+        expect(ribbon()).toBe('Pick a sign first.')
+      })
+
+      // S-13: an uneven division is refused with its quotient and remainder, and the sign stays.
+      it('refuses an uneven division and keeps the sign', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 9)
+
+        expect(ribbon()).toBe('154 divided by 9 is 17, remainder 1. Each step needs a whole number.')
+        expect(within(panel()).getByText('154 ÷ 9 is 17 remainder 1. Not a whole number.')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 1: 154 divided by. Pick a tile.')).toBeInTheDocument()
+        expect(within(panel()).getAllByRole('listitem')).toHaveLength(1)
+      })
+
+      it('lets the next tile finish the division the uneven one could not', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 9)
+        await user.click(screen.getAllByRole('button', { name: /^Use 7 in Backtrack/ })[0])
+
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
+        expect(within(panel()).queryByText('154 ÷ 9 is 17 remainder 1. Not a whole number.')).not.toBeInTheDocument()
+      })
+
+      it('clears the uneven note on the next sign', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 9)
+        await user.click(screen.getByRole('button', { name: 'Subtract' }))
+
+        expect(within(panel()).queryByText('154 ÷ 9 is 17 remainder 1. Not a whole number.')).not.toBeInTheDocument()
+      })
+
+      // A trail can go below zero, and it is shown with the sign tile's minus and spoken as a word.
+      it('shows and says a value below zero', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(quickPuzzle, null)
+
+        await openTrail(user, 10)
+        await walk(user, [
+          ['Divide', 2],
+          ['Subtract', 4],
+          ['Subtract', 3],
+        ])
+
+        expect(within(panel()).getByText('1 − 3 = −2')).toBeInTheDocument()
+        expect(ribbon()).toBe('1 minus 3 is minus 2.')
+      })
+
+      // By COUNT, because the live row is one DOM node for the trail's whole life -- a step is
+      // inserted ahead of it -- so "the last call was on the last row" holds whether or not the step
+      // scrolled anything. A step also clears the picked sign, which the effect watches too, so the
+      // step alone cannot pin the step count as a dependency. Taking a step back can: it changes the
+      // count and nothing else the effect reads.
+      it('keeps the newest step in view', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Divide' }))
+        const beforeStep = scrollIntoView.mock.calls.length
+        await user.click(screen.getAllByRole('button', { name: /^Use 7 in Backtrack/ })[0])
+
+        expect(scrollIntoView.mock.calls.length).toBeGreaterThan(beforeStep)
+        const rows = within(panel()).getAllByRole('listitem')
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(rows.at(-1))
+
+        const beforeUndo = scrollIntoView.mock.calls.length
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+        expect(scrollIntoView.mock.calls.length).toBeGreaterThan(beforeUndo)
+      })
+
+      it('silently ignores a tile already in the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await user.click(screen.getByRole('button', { name: 'Subtract' }))
+        await user.click(screen.getByRole('button', { name: '7, used in Backtrack, tile 3 of 4' }))
+
+        expect(ribbon()).toBe('Subtract. Now pick a tile to take from 22.')
+        expect(within(panel()).getAllByRole('listitem')).toHaveLength(2)
+      })
+    })
+
+    // S-15: no trail press reaches the squares or the shell.
+    describe('leaving the board alone', () => {
+      it('changes no square and reports no progress across every trail press', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9')
+        const before = squareNames()
+
+        await openTrail(user)
+        await walk(user, [
+          ['Divide', 7],
+          ['Subtract', 9],
+        ])
+        await user.click(screen.getByRole('button', { name: 'Add' }))
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+        await user.click(screen.getByRole('button', { name: CLEAR_TRAIL }))
+        await trailStep(user, 'Divide', 9)
+        await user.click(screen.getByRole('button', { name: DONE }))
+
+        expect(squareNames()).toEqual(before)
+        expect(onProgress).not.toHaveBeenCalled()
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      // S-16.
+      it('takes a typed step without touching the squares', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+        const before = squareNames()
+
+        await openTrail(user)
+        await user.keyboard('/7')
+
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
+        expect(squareNames()).toEqual(before)
+        expect(onProgress).not.toHaveBeenCalled()
+      })
+    })
+
+    // S-17, S-18: reaching 0.
+    describe('reaching 0', () => {
+      it('solves the puzzle when the trail spells an accepted sum', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        expect(squareNames()).toEqual([
+          'Square 1, number, 6',
+          'Square 2, sign, Add',
+          'Square 3, number, 7',
+          'Square 4, sign, Add',
+          'Square 5, number, 9',
+          'Square 6, sign, Multiply',
+          'Square 7, number, 7',
+        ])
+        expect(onSolved).toHaveBeenCalledTimes(1)
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|0|')
+        expect(ribbon()).toBe('Solved. 6 + 7 + 9 × 7 = 154')
+      })
+
+      it('closes and empties the trail and hands focus back to the button', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        const button = screen.getByRole('button', { name: BACKTRACK })
+        expect(button).toHaveAttribute('aria-expanded', 'false')
+        expect(button).toHaveFocus()
+        await openTrail(user)
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
+      })
+
+      // A lock the answer agrees with is a sign the player paid for, and it stays.
+      it('keeps a hint lock the answer agrees with', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, HINTED)
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|1|1')
+        expect(screen.getByRole('button', { name: 'Square 4, sign, Add, from a hint' })).toBeInTheDocument()
+      })
+
+      // A pack can accept more than one operator tuple. A lock the trail's answer contradicts would
+      // make decode reject the stored board, so it goes.
+      it('drops a hint lock the answer contradicts', async () => {
+        const user = userEvent.setup({ delay: null })
+        const timesLadder = [
+          { metadata: { kind: 'gofigure-operator', operator: '*', slot: 1 }, text: 'The 2nd operator is "×".' },
+          ...goFigurePuzzle.data.hints.slice(1),
+        ] as GoFigureHintLadder
+        renderBoard({ ...goFigurePuzzle, data: { ...goFigurePuzzle.data, hints: timesLadder } }, '___*___|1|1')
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|1|')
+        expect(onSolved).toHaveBeenCalledTimes(1)
+      })
+
+      it('says a trail at 0 with tiles left does not count', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(quickPuzzle, null)
+
+        await openTrail(user, 10)
+        await walk(user, [
+          ['Divide', 2],
+          ['Subtract', 4],
+          ['Subtract', 1],
+        ])
+
+        expect(ribbon()).toBe('1 minus 1 is 0, but tiles are left. Use every tile.')
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      it("says a trail at 0 the pack does not list isn't a sum, and stays open", async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        expect(ribbon()).toBe("6 minus 6 is 0. Every tile is used, but this isn't one of the sums for this puzzle.")
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+        expect(onSolved).not.toHaveBeenCalled()
+        expect(onProgress).not.toHaveBeenCalled()
+      })
+
+      it('says a trail that cannot be read forward is not a sum', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(quickPuzzle, null)
+
+        await openTrail(user, 10)
+        await walk(user, [
+          ['Divide', 2],
+          ['Subtract', 4],
+          ['Subtract', 1],
+          ['Multiply', 3],
+        ])
+
+        expect(ribbon()).toBe("0 times 3 is 0. Every tile is used, but this isn't one of the sums for this puzzle.")
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      // A malformed pack: it accepts a sum written with ×, but draws no × sign, so `decode` cannot put
+      // that sum on the board. The trail can still spell it -- a backward ÷ reads forward as × -- and
+      // filling from a string the board refuses would save an empty board over the player's squares.
+      it('does not solve from an accepted sum the board cannot hold', async () => {
+        const user = userEvent.setup({ delay: null })
+        const timesWithoutTimes: Puzzle<GoFigureData> = {
+          ...goFigurePuzzle,
+          data: {
+            ...goFigurePuzzle.data,
+            acceptedSolutions: ['2*2*2*2'],
+            bank: [2, 2, 2, 2],
+            goal: 16,
+            operators: ['-', '/'],
+          },
+        }
+        renderBoard(timesWithoutTimes)
+
+        await openTrail(user, 16)
+        await walk(user, [
+          ['Divide', 2],
+          ['Divide', 2],
+          ['Divide', 2],
+          ['Subtract', 2],
+        ])
+
+        expect(ribbon()).toBe("2 minus 2 is 0. Every tile is used, but this isn't one of the sums for this puzzle.")
+        expect(onSolved).not.toHaveBeenCalled()
+        expect(onProgress).not.toHaveBeenCalled()
+      })
+
+      it('keeps the last step in view once every tile is in the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        const rows = within(panel()).getAllByRole('listitem')
+        expect(rows).toHaveLength(4)
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(rows.at(-1))
+        expect(within(panel()).getByText('Every tile is used.')).toBeInTheDocument()
+      })
+
+      it('refuses a sign once every tile is in the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await walk(user, WINNING)
+        await user.click(screen.getByRole('button', { name: 'Add' }))
+
+        expect(ribbon()).toBe('Every tile is used. Undo a step to try another.')
+        expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-disabled', 'true')
+      })
+    })
+
+    // S-22: Undo, Start over and Backspace.
+    describe('taking steps back', () => {
+      it('takes back a picked sign before a step', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await user.click(screen.getByRole('button', { name: 'Subtract' }))
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+
+        expect(ribbon()).toBe("Sign taken back. You're at 22.")
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
+      })
+
+      it('takes back the last step', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, [
+          ['Divide', 7],
+          ['Subtract', 9],
+        ])
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+
+        expect(ribbon()).toBe("Step 2 taken back. You're at 22.")
+        expect(within(panel()).queryByText('22 − 9 = 13')).not.toBeInTheDocument()
+      })
+
+      // No instruction rides on this refusal, though the board is untouched: the instruction teaches
+      // the squares, and the squares are waiting.
+      it('says there is nothing to undo on an empty trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+
+        expect(ribbon()).toBe('Nothing to undo.')
+      })
+
+      it('undoes with Backspace', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('/7{Backspace}')
+
+        expect(ribbon()).toBe("Step 1 taken back. You're at 154.")
+      })
+
+      it('starts the trail over from the goal', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await user.click(screen.getByRole('button', { name: CLEAR_TRAIL }))
+
+        expect(ribbon()).toBe("Steps cleared. You're back at 154.")
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
+      })
+
+      // Beside an empty trail "Start over" read as the puzzle's own reset. There is nothing to
+      // clear, so there is no button.
+      it('offers Clear steps only once there is something to clear', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        expect(within(panel()).queryByRole('button', { name: CLEAR_TRAIL })).not.toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: 'Divide' }))
+
+        expect(within(panel()).getByRole('button', { name: CLEAR_TRAIL })).toBeInTheDocument()
+      })
+
+      it('clears a picked sign with no steps taken', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Divide' }))
+        await user.click(screen.getByRole('button', { name: CLEAR_TRAIL }))
+
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
+        expect(within(panel()).queryByRole('button', { name: CLEAR_TRAIL })).not.toBeInTheDocument()
+      })
+    })
+
+    // S-20: the ways to close.
+    describe('closing', () => {
+      // WCAG 2.5.3: the name starts with the visible label, so a voice-control player who says
+      // "Close" reaches it -- and it says which of the bench's two popups it shuts.
+      it('puts a Close button in the panel, named for Backtrack', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(within(panel()).getByRole('button', { name: CLOSE_BACKTRACK })).toHaveTextContent('Close')
+      })
+
+      it('closes when a square is pressed and puts the caret and focus there', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Square 3, number, empty' }))
+
+        const square = screen.getByRole('button', { name: 'Square 3, number, empty' })
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'false')
+        expect(square).toHaveFocus()
+        expect(square).toHaveAttribute('aria-current', 'true')
+      })
+
+      it('keeps the steps when a square closes the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await user.click(screen.getByRole('button', { name: 'Square 3, number, empty' }))
+        await openTrail(user)
+
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
+      })
+
+      it('explains a hint-locked square when one closes the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, HINTED)
+
+        await openTrail(user)
+        await user.click(screen.getAllByRole('button', { name: /, from a hint$/ })[0])
+
+        expect(ribbon()).toMatch(/^That sign came from a hint\./)
+      })
+
+      it.each([
+        [
+          'Done',
+          async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: DONE })),
+        ],
+        [
+          'Close',
+          async (user: ReturnType<typeof userEvent.setup>) =>
+            user.click(screen.getByRole('button', { name: CLOSE_BACKTRACK })),
+        ],
+        ['Escape', async (user: ReturnType<typeof userEvent.setup>) => user.keyboard('{Escape}')],
+        [
+          'the Backtrack button',
+          async (user: ReturnType<typeof userEvent.setup>) =>
+            user.click(screen.getByRole('button', { name: BACKTRACK })),
+        ],
+      ])('closes on %s, says the board is unchanged and returns focus', async (_way, close) => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await close(user)
+
+        const button = screen.getByRole('button', { name: BACKTRACK })
+        expect(button).toHaveAttribute('aria-expanded', 'false')
+        expect(button).toHaveFocus()
+        expect(ribbon()).toBe(BACK)
+        expect(screen.getByRole('button', { name: CLEAR })).toBeInTheDocument()
+      })
+
+      it('keeps the steps and drops the picked sign for the next opening', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await user.click(screen.getByRole('button', { name: 'Subtract' }))
+        await user.click(screen.getByRole('button', { name: DONE }))
+        await openTrail(user)
+
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 2: 22. Pick a sign.')).toBeInTheDocument()
+      })
+
+      // The wrong-answer line is held back while the trail is open and comes back on Done. A "Back
+      // to your board" sentence would stand in front of it, so a full board closes silently.
+      it('gives a full, wrong board its wrong-answer line back on Done', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7+7')
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: DONE }))
+
+        expect(ribbon()).toBe('That makes 29, not 154. Undo the last tile and try again.')
+      })
+    })
+
+    // S-21.
+    describe('on a solved board', () => {
+      it('holds Play again back until Done', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7*7')
+
+        await openTrail(user)
+
+        expect(screen.getByRole('button', { name: UNDO_STEP })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Play again' })).not.toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: DONE }))
+        expect(screen.getByRole('button', { name: 'Play again' })).toBeInTheDocument()
+      })
+
+      // Done on a solved board is silent, so the banner is still what the floor says.
+      it('leaves the solved banner standing after Done', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7*7')
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: DONE }))
+
+        expect(ribbon()).toBe('Solved. 6 + 9 + 7 × 7 = 154')
+      })
+
+      it('steps without solving again when the trail reaches 0', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7*7')
+
+        await openTrail(user)
+        await walk(user, WINNING)
+
+        expect(ribbon()).toBe('6 minus 6 is 0. Every tile is used.')
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      it('reopens empty after Play again, and the keys reach the board', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7*7')
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await user.click(screen.getByRole('button', { name: DONE }))
+        await user.click(screen.getByRole('button', { name: 'Play again' }))
+        await openTrail(user)
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: DONE }))
+        await user.keyboard('6')
+
+        expect(screen.getByRole('button', { name: 'Square 1, number, 6' })).toBeInTheDocument()
+      })
+
+      // A rung can win the board while the trail is up. The trail is left open -- the player opened
+      // it and only they close it -- the banner is the news in either mode, and Done says nothing
+      // that would stand in front of it. The board is one sign short of 154; the third rung supplies
+      // it.
+      it('stays open when a rung solves the board, and Done hands back Play again', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '0+1+2_3|2|01')
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Show 2 hints' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 3 of 3' }))
+        await user.click(screen.getByRole('button', { name: 'Close hints' }))
+
+        expect(onSolved).toHaveBeenCalledTimes(1)
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+        expect(ribbon()).toBe('Solved. 6 + 9 + 7 × 7 = 154')
+        await user.click(screen.getByRole('button', { name: DONE }))
+        expect(ribbon()).toBe('Solved. 6 + 9 + 7 × 7 = 154')
+        expect(screen.getByRole('button', { name: 'Play again' })).toBeInTheDocument()
+      })
+    })
+
+    // S-24: the trail's keyboard.
+    describe('the keyboard', () => {
+      const noDivision: Puzzle<GoFigureData> = {
+        ...goFigurePuzzle,
+        data: { ...goFigurePuzzle.data, operators: ['+', '-', '*'] },
+      }
+
+      it('reads x as times', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('x')
+
+        expect(ribbon()).toBe('Multiply. Now pick a tile to multiply 154 by.')
+      })
+
+      it('refuses a digit before a sign', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('7')
+
+        expect(ribbon()).toBe('Pick a sign first.')
+      })
+
+      it('refuses a digit the bank does not have', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('/5')
+
+        expect(ribbon()).toBe('No 5 in your tiles.')
+      })
+
+      it('refuses a digit whose every tile is in the trail', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('/7-7-7')
+
+        expect(ribbon()).toBe('Every 7 is used.')
+      })
+
+      it('refuses a sign the pack does not draw', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(noDivision)
+
+        await openTrail(user)
+        await user.keyboard('/')
+
+        expect(ribbon()).toBe('This puzzle has no Divide sign.')
+      })
+
+      // On a solved board Done leads back to squares that are locked too, so the sentence stops at the
+      // wait rather than promising a way back.
+      it('does not promise the squares back on a solved board', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7*7')
+
+        await openTrail(user)
+        await user.keyboard('{ArrowRight}')
+
+        expect(ribbon()).toBe('Your squares wait while you backtrack.')
+      })
+
+      it('closes on a solved board when a square is pressed, and keeps the banner', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9+7*7')
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: /^Square 1,/ }))
+
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByRole('button', { name: /^Square 1,/ })).toHaveFocus()
+        expect(ribbon()).toBe('Solved. 6 + 9 + 7 × 7 = 154')
+      })
+
+      it('refuses the arrows with the squares-wait sentence and leaves the caret alone', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('{ArrowRight}')
+        expect(ribbon()).toBe(SQUARES_WAIT)
+        await user.click(screen.getByRole('button', { name: DONE }))
+
+        expect(screen.getByRole('button', { current: true })).toHaveAttribute('aria-label', 'Square 1, number, empty')
+      })
+
+      // Backspace is the trail's Undo, never the board's: the square it would have cleared stays.
+      it('never lets Backspace reach a square', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, '6+9')
+
+        await openTrail(user)
+        await user.keyboard('{Backspace}')
+
+        expect(ribbon()).toBe('Nothing to undo.')
+        expect(screen.getByRole('button', { name: 'Square 1, number, 6' })).toBeInTheDocument()
+      })
+
+      it('handles its own keys and leaves every other key alone', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+
+        expect(fireEvent.keyDown(document.body, { key: '/' })).toBe(false)
+        expect(fireEvent.keyDown(document.body, { key: 'q' })).toBe(true)
+        expect(fireEvent.keyDown(document.body, { key: 'Enter' })).toBe(true)
+      })
+
+      // The Backtrack button carries aria-expanded and aria-controls too, and it is expanded. The
+      // sheet check reads HintBar's own control, in the tray, so it is not fooled into declining.
+      it('is not fooled by the open Backtrack button', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('/')
+
+        expect(ribbon()).toBe('Divide. Now pick a tile to divide 154 by.')
+      })
+    })
+
+    // S-19, S-25: the hint sheet over an open trail.
+    describe('with the hint sheet open', () => {
+      it('declines a typed digit and adds no step', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Divide' }))
+        await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+        await user.keyboard('7')
+
+        expect(ribbon()).toBe(CLOSE_TO_TYPE)
+        expect(within(panel()).queryByText('154 ÷ 7 = 22')).not.toBeInTheDocument()
+      })
+
+      // The listener is on `document`, which the press reaches AFTER React's root -- where HintBar's
+      // handler runs -- and BEFORE `window`, where the board's does. So the flag it reads can only
+      // have been set by HintBar; on `window` it would also catch the board marking its own Escape.
+      it('shuts the sheet on Escape and leaves the trail open', async () => {
+        const user = userEvent.setup({ delay: null })
+        const seen: boolean[] = []
+        const listener = (event: KeyboardEvent): void => void seen.push(event.defaultPrevented)
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+        document.addEventListener('keydown', listener)
+        await user.keyboard('{Escape}')
+        document.removeEventListener('keydown', listener)
+
+        expect(seen).toEqual([true])
+        expect(screen.queryByRole('button', { name: 'Close hints' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+      })
+
+      // HintBar spends Escape only when focus is inside its own root. Pressed from anywhere else
+      // with the sheet up, the key arrives unmarked -- and closing the trail then would shut it under
+      // the scrim, out of sight. The sheet stays up and so does the trail.
+      it('leaves the trail open on an Escape from outside the sheet', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
+        fireEvent.keyDown(document.body, { key: 'Escape' })
+
+        expect(screen.getByRole('button', { name: 'Close hints' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+      })
+    })
+  })
+
   describe('accessibility', () => {
     // ONE tab stop for the whole row of squares, not seven. A roving tabIndex is what keeps the
     // board band from standing between the goal and the tray; the arrow keys move between squares.
+    // The Backtrack button on the goal plate comes first, because the plate does.
     it('spends a single Tab on the whole row of squares', async () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
+      await user.tab()
+      expect(screen.getByRole('button', { name: 'Backtrack from 154' })).toHaveFocus()
       await user.tab()
 
       expect(screen.getByRole('button', { name: 'Square 1, number, empty' })).toHaveFocus()
@@ -2541,6 +3848,7 @@ describe('GoFigureBoard', () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
+      await user.tab()
       await user.tab()
       await user.tab()
 
@@ -2570,12 +3878,13 @@ describe('GoFigureBoard', () => {
 
       await user.tab()
       await user.tab()
+      await user.tab()
       const first = screen.getAllByRole('button', { name: /^Use 6/ })[0]
       expect(first).toHaveFocus()
 
       await user.keyboard('{Enter}')
 
-      expect(first).toHaveAttribute('aria-disabled', 'true')
+      expect(first).toHaveAccessibleName('Use 6, tile 1 of 4, used')
       expect(first).toHaveFocus()
     })
 
@@ -2652,7 +3961,11 @@ describe('GoFigureBoard', () => {
         await user.keyboard('{Enter}')
       }
 
-      for (const name of [/^Use 6/, 'Add', /^Use 9/, 'Add', /^Use 7/, 'Multiply', /^Use 7/]) {
+      // Anchored at the end, so a spent tile -- pressable now, and named ", used" -- is never the one
+      // the search stops on. Pressing the spent 7 would still land a 7 (it spends the free twin),
+      // but the walk is meant to be the plain one: each press spends a fresh tile.
+      const fresh = (digit: number): RegExp => new RegExp(`^Use ${digit}, tile \\d of 4$`)
+      for (const name of [fresh(6), 'Add', fresh(9), 'Add', fresh(7), 'Multiply', fresh(7)]) {
         await tabToAndPress(name)
       }
 
@@ -2680,19 +3993,19 @@ describe('GoFigureBoard', () => {
       expect(screen.getByRole('button', { name: 'Square 4, sign, empty' })).toHaveFocus()
     })
 
-    // Every tile spent on a board that does not win. The tiles go unavailable and they stay NAMED
-    // BUTTONS while they do it -- aria-disabled rather than disabled, for the reason the tray gives:
-    // a browser blurs an element that becomes disabled while focused, so a row that really disabled
-    // itself would drop focus to <body> on the tap that filled the last square.
+    // Every tile spent on a board that does not win. The tiles stay NAMED BUTTONS, each saying it is
+    // spent -- and they stay pressable, because the caret is still on a number square and pressing
+    // one is how the player moves a tile to fix the sum. Never `disabled`, for the reason the tray
+    // gives: a browser blurs an element that becomes disabled while focused.
     it('keeps every spent tile a named button on a full board', async () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
       await tapAll(user, ['Use 6', 'Add', 'Use 9', 'Add', 'Use 7', 'Add', 'Use 7'])
 
-      const tiles = screen.getAllByRole('button', { name: /^Use / })
+      const tiles = screen.getAllByRole('button', { name: /^Use \d, tile \d of 4, used$/ })
       expect(tiles).toHaveLength(4)
-      expect(tiles.filter((tile) => tile.getAttribute('aria-disabled') === 'true')).toHaveLength(4)
+      expect(tiles.filter((tile) => tile.getAttribute('aria-disabled') === 'false')).toHaveLength(4)
     })
   })
 })

@@ -2,6 +2,7 @@ import {
   applyHint,
   BoardState,
   CELL_COUNT,
+  chooseTile,
   clearAll,
   clearCell,
   decode,
@@ -12,6 +13,7 @@ import {
   isDigitCell,
   isLocked,
   matchingSolution,
+  moveTile,
   nextCursor,
   runningTotal,
   slotOf,
@@ -442,6 +444,262 @@ describe('valueAt', () => {
 
   test('is null for an empty operator cell', () => {
     expect(valueAt(EMPTY_BOARD, 3, goFigureData.bank)).toBeNull()
+  })
+})
+
+// A board holding these tiles, square by square. Square N is cell N - 1, so the four entries are
+// squares 1, 3, 5 and 7.
+const holding = (digits: (number | null)[]): BoardState => ({ ...EMPTY_BOARD, digits })
+
+// The fixture bank is 6, 9, 7, 7: tiles 2 and 3 are both 7s, and the second is "tile 4 of 4" in the
+// accessible names the component builds. Every case below is about telling those two apart.
+describe('chooseTile', () => {
+  const bank = goFigureData.bank
+
+  test('answers already when the caret square shows the digit, for a tap on its twin', () => {
+    expect(chooseTile(holding([2, null, null, null]), bank, 0, 7, 3, [2])).toEqual({ kind: 'already' })
+  })
+
+  test('answers already when the caret square shows the digit, for a keystroke', () => {
+    expect(chooseTile(holding([3, null, null, null]), bank, 0, 7, null, [3])).toEqual({ kind: 'already' })
+  })
+
+  // The tile-identity fix. Tapping the SECOND 7 must spend the second 7, or the Used mark lands on a
+  // tile the player never touched.
+  test('spends a tapped free tile as tapped, not its lower-index twin', () => {
+    expect(chooseTile(EMPTY_BOARD, bank, 0, 7, 3, [])).toEqual({ kind: 'spend', tile: 3 })
+  })
+
+  test('spends the lowest-index free tile for a keystroke', () => {
+    expect(chooseTile(EMPTY_BOARD, bank, 0, 7, null, [])).toEqual({ kind: 'spend', tile: 2 })
+  })
+
+  // S-1. Tile 3 sits in square 1 and is tapped again with the caret on square 3. Its twin is free,
+  // so the twin is spent and square 1 keeps its 7.
+  test('spends the free twin when the tapped tile is already placed', () => {
+    expect(chooseTile(holding([2, null, null, null]), bank, 2, 7, 2, [2])).toEqual({ kind: 'spend', tile: 3 })
+  })
+
+  test('spends the free twin for a keystroke when one 7 is placed', () => {
+    expect(chooseTile(holding([2, null, null, null]), bank, 2, 7, null, [2])).toEqual({ kind: 'spend', tile: 3 })
+  })
+
+  // S-2. Both 7s placed this session, square 1 first. Either 7 tapped from square 5 takes square 1's.
+  test('moves the 7 placed longest ago when every 7 is placed, whichever is tapped', () => {
+    const state = holding([2, 3, null, null])
+    const expected = { from: 0, kind: 'move', tile: 2 }
+
+    expect([
+      chooseTile(state, bank, 4, 7, 2, [2, 3]),
+      chooseTile(state, bank, 4, 7, 3, [2, 3]),
+      chooseTile(state, bank, 4, 7, null, [2, 3]),
+    ]).toEqual([expected, expected, expected])
+  })
+
+  test('goes by placement order and not by square when the order is known', () => {
+    expect(chooseTile(holding([2, 3, null, null]), bank, 4, 7, null, [3, 2])).toEqual({
+      from: 2,
+      kind: 'move',
+      tile: 3,
+    })
+  })
+
+  // S-2's remount. A restored board has an empty order, so the leftmost 7 goes: square 3's.
+  test('moves the leftmost placed tile when the order is empty', () => {
+    expect(chooseTile(holding([null, 3, 2, null]), bank, 0, 7, null, [])).toEqual({ from: 2, kind: 'move', tile: 3 })
+  })
+
+  // A restored tile was placed before anything this session recorded, so it outranks a listed one
+  // even when it sits further right.
+  test('moves an unlisted placed tile before a listed one', () => {
+    expect(chooseTile(holding([2, 3, null, null]), bank, 4, 7, null, [2])).toEqual({ from: 2, kind: 'move', tile: 3 })
+  })
+
+  // Tile 1 is a 9 that no square holds and tile 0 is a 6 that no square holds: what a reveal or a
+  // trail solve leaves behind. Neither may shift the answer away from what the live entries say.
+  test('ignores order entries for tiles no square holds', () => {
+    expect(chooseTile(holding([2, null, 3, null]), bank, 6, 7, null, [1, 3, 0, 2])).toEqual({
+      from: 4,
+      kind: 'move',
+      tile: 3,
+    })
+  })
+
+  test('keeps the unlisted-first fallback when the only listed entries are stale', () => {
+    expect(chooseTile(holding([3, null, 2, null]), bank, 6, 7, null, [1, 0])).toEqual({
+      from: 0,
+      kind: 'move',
+      tile: 3,
+    })
+  })
+
+  // A caret square showing another digit is overwritten by the move, and its tile is not a candidate.
+  test('moves a 7 onto a square showing a different digit', () => {
+    expect(chooseTile(holding([2, 3, 0, null]), bank, 4, 7, null, [2, 3, 0])).toEqual({
+      from: 0,
+      kind: 'move',
+      tile: 2,
+    })
+  })
+
+  test('answers none when the bank has no such digit', () => {
+    expect(chooseTile(holding([2, 3, 0, 1]), bank, 0, 5, null, [2, 3, 0, 1])).toEqual({ kind: 'none' })
+  })
+
+  test('answers none for a digit missing from an empty board', () => {
+    expect(chooseTile(EMPTY_BOARD, bank, 0, 5, null, [])).toEqual({ kind: 'none' })
+  })
+
+  // Three 9s and one 3. Rules 2 and 3 choose by index and rule 4 by order, so a bank of repeats is
+  // still deterministic.
+  describe('with the repeated bank 9, 3, 9, 9', () => {
+    const nines = [9, 3, 9, 9]
+
+    test('spends the tapped 9 as tapped', () => {
+      expect(chooseTile(EMPTY_BOARD, nines, 0, 9, 3, [])).toEqual({ kind: 'spend', tile: 3 })
+    })
+
+    test('spends the lowest free 9 for a keystroke', () => {
+      expect(chooseTile(holding([0, null, null, null]), nines, 2, 9, null, [0])).toEqual({ kind: 'spend', tile: 2 })
+    })
+
+    test('moves the 9 placed longest ago once all three are placed', () => {
+      expect(chooseTile(holding([0, 2, 3, null]), nines, 6, 9, null, [3, 0, 2])).toEqual({
+        from: 4,
+        kind: 'move',
+        tile: 3,
+      })
+    })
+
+    test('moves the leftmost 9 once all three are placed and the order is empty', () => {
+      expect(chooseTile(holding([3, 0, 2, null]), nines, 6, 9, null, [])).toEqual({ from: 0, kind: 'move', tile: 3 })
+    })
+  })
+
+  // The report this rule answers. Two 4s placed in squares 1 then 3; changing square 5 to 4 and then
+  // square 7 to 4 must take two DIFFERENT tiles, and square 5 must keep its 4. The order list is
+  // updated here the way the component keeps it: the moved tile goes to the end and the tile it
+  // displaced comes out.
+  describe('changing two squares to the same digit in turn', () => {
+    const fours = [4, 2, 4, 8]
+
+    test('takes square 1 first and then square 3', () => {
+      const start = holding([0, 2, 1, 3])
+
+      const first = chooseTile(start, fours, 4, 4, null, [0, 2, 1, 3])
+      const afterFirst = moveTile(start, 0, 4)
+      const second = chooseTile(afterFirst, fours, 6, 4, null, [2, 3, 0])
+      const afterSecond = moveTile(afterFirst, 2, 6)
+
+      expect([first, second]).toEqual([
+        { from: 0, kind: 'move', tile: 0 },
+        { from: 2, kind: 'move', tile: 2 },
+      ])
+      expect(afterSecond.digits).toEqual([null, null, 0, 2])
+      expect(valueAt(afterSecond, 4, fours)).toBe('4')
+    })
+
+    test('takes two different tiles on a restored board too', () => {
+      const start = holding([0, 2, 1, 3])
+
+      const first = chooseTile(start, fours, 4, 4, null, [])
+      const afterFirst = moveTile(start, 0, 4)
+      const second = chooseTile(afterFirst, fours, 6, 4, null, [0])
+
+      expect([first, second]).toEqual([
+        { from: 0, kind: 'move', tile: 0 },
+        { from: 2, kind: 'move', tile: 2 },
+      ])
+    })
+
+    // S-3 on the fixture bank, tapping rather than typing.
+    test('does the same for the fixture 7s, tapped', () => {
+      const start = holding([2, 3, 0, 1])
+
+      const first = chooseTile(start, bank, 4, 7, 3, [2, 3, 0, 1])
+      const afterFirst = moveTile(start, 0, 4)
+      const second = chooseTile(afterFirst, bank, 6, 7, 2, [3, 1, 2])
+      const afterSecond = moveTile(afterFirst, 2, 6)
+
+      expect([first, second]).toEqual([
+        { from: 0, kind: 'move', tile: 2 },
+        { from: 2, kind: 'move', tile: 3 },
+      ])
+      expect(afterSecond.digits).toEqual([null, null, 2, 3])
+    })
+  })
+})
+
+describe('moveTile', () => {
+  test('puts the tile in the new square and empties the old one', () => {
+    expect(moveTile(holding([2, null, null, null]), 0, 4).digits).toEqual([null, null, 2, null])
+  })
+
+  test('displaces the tile the new square held, back to the bank', () => {
+    expect(moveTile(holding([2, 3, 0, null]), 0, 4).digits).toEqual([null, 3, 2, null])
+  })
+
+  test('leaves the signs, the locks and the rung count alone', () => {
+    const hinted = applyHint(place(EMPTY_BOARD, SOLUTION), goFigureHints[2], 3)
+    const moved = moveTile(hinted, 0, 2)
+
+    expect([moved.operators, moved.locked, moved.opened]).toEqual([hinted.operators, hinted.locked, hinted.opened])
+  })
+
+  test('leaves the board it was given alone', () => {
+    const state = holding([2, null, null, null])
+    moveTile(state, 0, 4)
+    expect(state.digits).toEqual([2, null, null, null])
+  })
+
+  // Spreads rather than mutates, so a board built straight off the frozen singleton moves cleanly.
+  test('moves a tile on a board written from EMPTY_BOARD', () => {
+    expect(moveTile(write(EMPTY_BOARD, 0, 2), 0, 6).digits).toEqual([null, null, null, 2])
+  })
+
+  test('refuses a sign cell as the source', () => {
+    const state = place(EMPTY_BOARD, SOLUTION)
+    expect(moveTile(state, 1, 4)).toBe(state)
+  })
+
+  test('refuses a sign cell as the destination', () => {
+    const state = holding([2, null, null, null])
+    expect(moveTile(state, 0, 3)).toBe(state)
+  })
+
+  test('refuses an empty source square', () => {
+    const state = holding([null, 3, null, null])
+    expect(moveTile(state, 0, 4)).toBe(state)
+  })
+
+  // Write-then-clear on one square would empty the square the player was aiming at.
+  test('refuses a move onto its own square', () => {
+    const state = holding([2, null, null, null])
+    expect(moveTile(state, 0, 0)).toBe(state)
+  })
+
+  test('refuses a square past the end of the board', () => {
+    const state = holding([2, null, null, null])
+    expect(moveTile(state, 0, 8)).toBe(state)
+  })
+
+  test('refuses a negative square', () => {
+    const state = holding([2, null, null, null])
+    expect(moveTile(state, -2, 0)).toBe(state)
+  })
+
+  // S-10. `decode` rejects a tile held twice, so a move that duplicated one would come back from the
+  // next load as an empty board.
+  test('writes a board that decode takes back whole', () => {
+    const moved = moveTile(applyHint(place(EMPTY_BOARD, SOLUTION), goFigureHints[2], 3), 0, 2)
+    expect(decode(encode(moved), goFigureData)).toEqual(moved)
+  })
+
+  test('never leaves one tile in two squares', () => {
+    const moved = moveTile(place(EMPTY_BOARD, SOLUTION), 6, 0)
+    const held = moved.digits.filter((tile) => tile !== null)
+
+    expect([held.length, new Set(held).size]).toEqual([3, 3])
   })
 })
 

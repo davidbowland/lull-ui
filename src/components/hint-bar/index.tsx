@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 
 import { Button } from '@components/button'
+import { CloseMark } from '@components/button/close-mark'
 import { readHints, writeHints } from '@services/storage'
 import { HintLadder } from '@types'
 
@@ -170,24 +171,6 @@ const SCRIM = 'fixed inset-0 z-1 bg-[var(--lull-scrim)]'
 // Positioned so its `z-3` applies; on the `sign` bar it is the SPAN that is positioned and never the
 // root, whose absence of `relative` is what makes the dock the sheet's containing block.
 const CONTROL_LAYER = 'relative z-3'
-
-// The Close button's mark: two strokes, drawn in the button's own ink. Hidden from the name, which
-// is the button's "Close hints"; nobody says "Close X".
-const CloseMark = (): React.ReactNode => (
-  <svg
-    aria-hidden="true"
-    className="shrink-0"
-    fill="none"
-    height="16"
-    stroke="currentColor"
-    strokeLinecap="round"
-    strokeWidth="1.75"
-    viewBox="0 0 16 16"
-    width="16"
-  >
-    <path d="m4 4 8 8M12 4l-8 8" />
-  </svg>
-)
 
 // THE SIGN CONTROL IS TWO BOXES: a 44px TARGET a thumb can find (WCAG 2.5.5), and a 32px PILL inside
 // it that is all a player sees. One 44px pill filled the 46px sign row hairline to hairline, and the
@@ -697,9 +680,16 @@ export const HintBar = ({
     if (isOpen) closeRef.current?.focus()
   }, [isOpen])
 
+  // ESCAPE IS MARKED SPENT, because the bench under this sheet has an Escape of its own. goFigure
+  // listens on `window` and closes its Backtrack trail on Escape, and it cannot ask "was the sheet
+  // open?" by reading the DOM: React flushes `close` in a microtask, a real browser runs microtasks
+  // between listeners, so by the time the key reaches `window` the sheet already reads shut and one
+  // press would close both. `defaultPrevented` survives the trip; the sheet's state does not.
+  // jsdom runs no microtask between listeners, so only this flag is testable -- and it is tested.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if (!isOpen) return
     if (event.key === 'Escape') {
+      event.preventDefault()
       close()
       return
     }

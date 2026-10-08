@@ -368,6 +368,87 @@ export const valueAt = (state: BoardState, index: number, bank: number[]): strin
   return tile === null ? null : String(bank[tile])
 }
 
+// What a digit press means, which is "put d in this square" and never "spend this exact tile". The
+// board picks the tile, and the choice is a value rather than a write so the caller can say what
+// happened before it commits -- a refusal, a plain spend, or a move that empties another square.
+export type TileChoice =
+  | { kind: 'already' }
+  | { kind: 'spend'; tile: number }
+  | { kind: 'move'; tile: number; from: number }
+  | { kind: 'none' }
+
+// The rules run in order, and the order is the design.
+//
+// A square already showing d is answered before anything else, because every later rule would do
+// something visible to a press that should change nothing: spend a twin, or move a tile out of
+// another square to land on a digit that is already there.
+//
+// A TAPPED free tile is spent as tapped, never swapped for a lower-index twin. That is the
+// tile-identity fix index.tsx records: the Used mark has to land on the tile under the finger.
+// Only after that does the lowest-index free tile of d stand in, which is what a keystroke gets.
+//
+// When every d is already on the board, the one placed LONGEST AGO moves. `placedOrder` is component
+// state and does not survive a reload, so tiles it does not list are restored ones and count as
+// older than any it does, leftmost square first -- which on a fresh mount is the whole rule. It is
+// filtered to tiles a square holds now rather than trusted: a hint, the answer reveal or a trail solve
+// writes the board without passing through the component's bookkeeping, and an entry left behind by
+// one of those must not outrank a tile that is really there.
+//
+// The caret's own square is never a candidate. If it shows d, the first rule already answered; if it
+// shows anything else, its tile is not a d tile. So no candidates at all means the bank has no d.
+export const chooseTile = (
+  state: BoardState,
+  bank: number[],
+  cursor: number,
+  digit: number,
+  tapped: number | null,
+  placedOrder: number[],
+): TileChoice => {
+  if (valueAt(state, cursor, bank) === String(digit)) return { kind: 'already' }
+
+  const held = new Set(state.digits.filter((tile): tile is number => tile !== null))
+  if (tapped !== null && bank[tapped] === digit && !held.has(tapped)) return { kind: 'spend', tile: tapped }
+
+  const free = bank.findIndex((value, tile) => value === digit && !held.has(tile))
+  if (free >= 0) return { kind: 'spend', tile: free }
+
+  // Built by walking the squares left to right, so the unlisted tiles come out already in the order
+  // the fallback wants. The `at * 2 !== cursor` arm is a guard and not a rule: the reasoning above
+  // already keeps the caret's square out, and the arm is what keeps it out if that reasoning moves.
+  //
+  // Filtering `placedOrder` down to the candidates IS the stale-entry rule -- an entry for a tile no
+  // square holds, or for a tile of another digit, simply is not a candidate. It assumes no duplicate
+  // entries, which the board guarantees by removing a tile's old entry before appending it.
+  const candidates = state.digits.filter(
+    (tile, at): tile is number => tile !== null && at * 2 !== cursor && bank[tile] === digit,
+  )
+  const listed = placedOrder.filter((tile) => candidates.includes(tile))
+  const unlisted = candidates.filter((tile) => !listed.includes(tile))
+  const [oldest] = [...unlisted, ...listed]
+  return oldest === undefined
+    ? { kind: 'none' }
+    : { kind: 'move', from: state.digits.indexOf(oldest) * 2, tile: oldest }
+}
+
+const isSquare = (index: number): boolean =>
+  Number.isInteger(index) && index >= 0 && index < CELL_COUNT && isDigitCell(index)
+
+// One returned state, never a clear followed by a write. Two commits would leave a frame -- and a
+// progress write -- in which the tile is held nowhere, and one Undo would then restore only half the
+// move. Whatever `to` held is displaced and goes back to the bank, exactly as an overwrite does.
+//
+// No lock check, because digit cells are never locked. A move onto its own square is refused rather
+// than performed: write-then-clear would empty the square the player was aiming at.
+export const moveTile = (state: BoardState, from: number, to: number): BoardState => {
+  if (!isSquare(from) || !isSquare(to) || from === to) return state
+  const tile = state.digits[from / 2]
+  if (tile === null) return state
+  return {
+    ...state,
+    digits: state.digits.map((held, at) => (at === to / 2 ? tile : at === from / 2 ? null : held)),
+  }
+}
+
 // Where the caret goes after a write: the next cell that is empty AND unlocked, wrapping past the
 // end. Locked cells are skipped forever, which is what makes a hint feel like it took the decision
 // away rather than like it left one more thing to tap past. null means the board is full and there

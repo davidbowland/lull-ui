@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import {
   applyHint,
   BoardState,
   CELL_COUNT,
+  chooseTile,
   clearAll,
   clearCell,
   decode,
@@ -14,6 +15,7 @@ import {
   isDigitCell,
   isLocked,
   matchingSolution,
+  moveTile,
   nextCursor,
   runningTotal,
   slotOf,
@@ -21,6 +23,18 @@ import {
   write,
 } from './board'
 import { evaluateLeftToRight } from './evaluate'
+import { forwardExpression, stepOf, TrailStep } from './trail'
+// The sign glyphs and the marker chip are drawn by the board AND by the trail's panel, and they
+// live in the panel's module because the import can only run one way: the board mounts the panel.
+import {
+  MARKER,
+  MARKER_RESULT,
+  OPERATOR_SYMBOLS,
+  shownNumber,
+  spokenNumber,
+  stepSentence,
+  TrailPanel,
+} from './trail-panel'
 import { Button } from '@components/button'
 import { Plate, Shell } from '@components/enclosure'
 import { FloorBar } from '@components/floor-bar'
@@ -34,15 +48,6 @@ const OPERATOR_NAMES: Record<Operator, string> = {
   '+': 'Add',
   '-': 'Subtract',
   '/': 'Divide',
-}
-
-// What the eye sees. The tokens themselves always carry the pack's own characters, so
-// the string compared against acceptedSolutions is the string the backend wrote.
-const OPERATOR_SYMBOLS: Record<Operator, string> = {
-  '*': '×',
-  '+': '+',
-  '-': '−',
-  '/': '÷',
 }
 
 // The graft, and the whole reason the tile bench spends the 46px it saves by drawing no
@@ -121,6 +126,41 @@ const ALREADY_EMPTY = 'That square is already empty.'
 // ever reached from a hardware keyboard -- whose player is told to do exactly what the button says.
 const CLOSE_TO_TYPE = 'Close the hints to type.'
 
+// BACKTRACK'S SENTENCES, named once for the reason the board's are: each is reachable from a tap and
+// from a keystroke.
+//
+// The squares-wait line answers an arrow key pressed while the trail is up -- a tapped square no
+// longer needs it, because the tap itself goes back to the board (`leaveTrailFor`). It names both
+// ways back, since "wait" alone would leave the player looking for the exit the sentence is about.
+const SQUARES_WAIT = 'Your squares wait while you backtrack. Pick a square or press Done to go back to them.'
+// On a solved board the squares are locked after Done as well, so the way back would be a promise
+// the board cannot keep.
+const SQUARES_WAIT_SOLVED = 'Your squares wait while you backtrack.'
+const SIGN_FIRST = 'Pick a sign first.'
+const ALL_IN_TRAIL = 'Every tile is used.'
+
+// What a picked sign asks for, finished by the value it acts on: "Now pick a tile to take from 22."
+// Each reads as the step the player is about to take, which is why Subtract is "take from" and not
+// "subtract from" -- the tile is the thing taken.
+const SIGN_ASKS: Record<Operator, (value: string) => string> = {
+  '*': (value) => `to multiply ${value} by`,
+  '+': (value) => `to add to ${value}`,
+  '-': (value) => `to take from ${value}`,
+  '/': (value) => `to divide ${value} by`,
+}
+
+// The trail as the board holds it: in memory only, never in progress (ADR-1), so a reload or Play
+// again starts it over and nothing about it reaches the shell. `note` is the uneven step's refusal,
+// kept on screen under the list because the ribbon's copy of it is gone at the next press.
+interface Trail {
+  note: string
+  open: boolean
+  pending: Operator | null
+  steps: TrailStep[]
+}
+
+const NO_TRAIL: Trail = { note: '', open: false, pending: null, steps: [] }
+
 // The tile's ink is --lull-floor-ink, which measures 13.0:1 on the light floor and 15.4:1 on the
 // dark one, and its edge is drawn with --lull-floor-rule, the floor's load-bearing 3:1 boundary.
 // --lull-hair could not draw this edge at any contrast: hair is decoration, and this edge
@@ -179,21 +219,6 @@ const TILE_OPERATOR = 'h-[46px] basis-[60px] bg-[var(--lull-floor-ink)]/5 text-2
 const TILE_SPENT = 'border-dashed'
 
 const USED = 'lull-work text-[9.5px] leading-none tracking-[0.08em] text-[var(--lull-floor-muted)] uppercase'
-
-// A filled chip rather than an outlined one, because the marker's job is to hold the eye at the
-// left edge of a three-line list -- and the last one, the `=`, is the answer the whole example is
-// aimed at, so it takes the accent.
-//
-// --lull-muted for the rest, NOT --lull-rule, and the difference is 4.5:1. The chip carries type,
-// so the fill and the ink on it are a TEXT pair however decorative the glyph is, and rule against
-// on-accent measures 4.199 in light and 3.922 in dark -- both under the floor. muted against
-// on-accent is the same pair contrast.test.ts already holds as `muted on raised` (7.143 light,
-// 6.872 dark), because --lull-on-accent and --lull-raised are one value.
-const MARKER =
-  'flex h-[18px] w-5 shrink-0 items-center justify-center rounded-[3px] ' +
-  'bg-[var(--lull-muted)] text-[9.5px] font-bold tracking-[0.08em] text-[var(--lull-on-accent)]'
-
-const MARKER_RESULT = 'bg-[var(--lull-accent)]'
 
 const CAPTION = 'text-[11px] font-semibold tracking-[0.14em] text-[var(--lull-muted)] uppercase'
 
@@ -333,6 +358,23 @@ const isPlaceable = (hint: unknown, operators: Operator[]): boolean => {
   )
 }
 
+// One player move, as Undo needs it back. See `history` in the component for why `also` and `order`
+// exist.
+interface HistoryEntry {
+  also?: { cell: number; previous: number | null }
+  cell: number
+  order: number[]
+  previous: number | Operator | null
+}
+
+// A tile's bookkeeping after a press: drop any entry for the tiles that moved or left a square, then
+// append the one that just landed (if any). Removing first is what keeps the list free of duplicates,
+// which `chooseTile` relies on.
+const reorder = (order: number[], released: (number | Operator | null)[], landed?: number): number[] => {
+  const kept = order.filter((tile) => tile !== landed && !released.includes(tile))
+  return landed === undefined ? kept : [...kept, landed]
+}
+
 export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: PuzzleComponentProps<GoFigureData>) => {
   const { acceptedSolutions, bank, goal, operators } = puzzle.data
 
@@ -357,7 +399,32 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // stores indices at all: a bank of 6,9,7,7 has two tiles that write "7", so restoring from the
   // character would have to guess which tile to give back -- and guessing is the bug that dimmed
   // tile 3 when tile 4 was tapped.
-  const [history, setHistory] = useState<{ cell: number; previous: number | Operator | null }[]>([])
+  //
+  // `also` is the SECOND square a move touches, and it is why one entry can hold two cells. A move
+  // fills the caret's square and empties the square the tile came from, and it is one press -- so
+  // it is one Undo, and Undo puts both back in one commit. Two entries would need two presses and
+  // would leave a frame where the tile sits in both squares or in neither.
+  //
+  // `order` is `placedOrder` as it stood BEFORE the press. Undo restores it, because the next press
+  // of the same digit decides which tile moves by that order. An Undo that left the order alone
+  // would put the board back but leave the next move picking a different tile than it would have
+  // picked before the press that was taken back.
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+
+  // Which tiles the player placed, oldest first, by bank index. It answers one question: when every
+  // tile of a digit is already on the board, which of them does a press of that digit move? The one
+  // placed longest ago -- see `chooseTile`, which owns the rule and reads this list.
+  //
+  // In memory only, like `history`, and for the same reason: the progress grammar does not change
+  // for it. A restored board starts with an empty list, and `chooseTile` treats the tiles the list
+  // does not name as older than any it does, leftmost square first.
+  //
+  // A tile is appended when it is spent or moved, after any earlier entry for it is removed, and it
+  // is removed when a square lets it go -- an overwrite, a move into a filled square, or Backspace.
+  // Writes that bypass the player's presses (a rung, the answer reveal) can leave an entry for a
+  // tile no square holds; `chooseTile` filters those out rather than trusting the list, so the list
+  // only has to be right about the tiles it names.
+  const [placedOrder, setPlacedOrder] = useState<number[]>([])
 
   // What the board itself has to say, as against what the expression makes. The two are separate
   // because they answer different questions -- "that square is not yours to change" is about the
@@ -380,6 +447,18 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // the bar's own reset effect; the argument for a signal rather than a changed `key` -- and for
   // needing one at all -- is on `playAgain` below, where it is raised.
   const [resetNonce, setResetNonce] = useState(0)
+
+  // BACKTRACK: the player walks the goal down to 0 with their own tiles, one sign and one tile a
+  // step. Its own ledger, separate from the board's -- a tile in the trail is not a tile in a square,
+  // and the trail never writes a square except on the one press §3.3 of the spec allows, a trail
+  // that reaches 0 with an answer the pack lists.
+  const [trail, setTrail] = useState<Trail>(NO_TRAIL)
+
+  // The panel's id, for the Backtrack button's `aria-controls`. useId is unique per instance and the
+  // shell mounts one board, so the IDREF cannot collide. Both ends are asserted in the suite.
+  const trailId = useId()
+  const backtrackRef = useRef<HTMLButtonElement | null>(null)
+  const trailTargetRef = useRef<HTMLLIElement | null>(null)
 
   const cellRefs = useRef<(HTMLButtonElement | null)[]>([])
 
@@ -412,6 +491,47 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     if (!hasMoved.current || skip) return
     cellRefs.current[cursor]?.focus()
   }, [cursor])
+
+  // FOCUS FOLLOWS THE TRAIL OPENING AND CLOSING, and only on a change: the first run sees it shut
+  // and was never open, so a mount takes no focus, for the deep-link reason `hasMoved` gives.
+  //
+  // Open sends focus to the panel, which is named by its heading, so arriving there is what tells a
+  // screen-reader player where they are. Shut sends it back to the Backtrack button, ON PURPOSE and
+  // not as a rescue. Done does not unmount: it and Clear share a slot in the control row and are
+  // the same component type, so React reuses the node and focus would stay put -- on a button now
+  // named "Clear every square", one press from emptying the board the player just came back to.
+  // A trail solve leaves the tile that was pressed aria-disabled. Neither is where a player who
+  // closed the trail should land, and the button that opened it is.
+  //
+  // Read off the DOM by id rather than through a ref, because the panel's props are data and
+  // callbacks and a ref into it would be a third kind of thing. The id is the one the button's
+  // `aria-controls` already names, so this is the same IDREF the button asserts.
+  //
+  // ONE EXCEPTION: a trail shut by tapping a square. That press named where the player is going, so
+  // focus goes to the square they tapped -- `closeToSquare` carries its index from `leaveTrailFor`
+  // to here, and is spent on the way. This effect runs after the caret's, so it has the last word.
+  const trailWasOpen = useRef(false)
+  const closeToSquare = useRef<number | null>(null)
+  useEffect(() => {
+    const square = closeToSquare.current
+    closeToSquare.current = null
+    if (trail.open) document.getElementById(trailId)?.focus()
+    else if (trailWasOpen.current) (square === null ? backtrackRef.current : cellRefs.current[square])?.focus()
+    trailWasOpen.current = trail.open
+  }, [trail.open, trailId])
+
+  // THE LIVE ROW IS KEPT IN VIEW, never the top of the trail. The bench is the scroller and the
+  // floor is pinned over its bottom edge, so a trail that grew below the fold would put the row the
+  // player is filling under the tray they are filling it from. `nearest` moves nothing when the row
+  // is already on screen; the row's scroll margin keeps it clear of the floor. See SCROLL_TARGET in
+  // the panel.
+  //
+  // The METHOD is called plainly and the ref optionally, after phrazle. The ref is null only on a
+  // trail with no live row and no steps, which a bank of at least one tile cannot draw; a `?.()` on
+  // the method would make a real browser losing it silent.
+  useEffect(() => {
+    if (trail.open) trailTargetRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [trail.open, trail.steps.length, trail.pending])
 
   // A set lookup, and nothing else. The component never evaluates arithmetic to decide
   // whether an answer is right: the backend enumerated every accepted expression and
@@ -502,6 +622,13 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   const canTapDigit = !isSolved && !cursorLocked && isDigitCell(cursor)
   const canTapOperator = !isSolved && !cursorLocked && !isDigitCell(cursor)
 
+  // The trail's own ledger, by bank index, and separate from `consumed` on purpose: a tile can be in
+  // a square and in the trail at once, because the trail is arithmetic about the tiles and not a
+  // second place to put them.
+  const trailSpent = bank.map((_unused, index) => trail.steps.some((step) => step.tile === index))
+  const allInTrail = trailSpent.every(Boolean)
+  const trailValue = trail.steps.length === 0 ? goal : trail.steps[trail.steps.length - 1].to
+
   // Every write to the ribbon goes through here, so no caller has to remember that saying the same
   // thing twice is a different job from saying it once. The counter is what the DOM sees change.
   const say = (text: string): void => setNotice((held) => ({ nonce: held.nonce + 1, refusal: false, text }))
@@ -567,20 +694,41 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   //
   // BUT ONLY WHEN THE NUMBER MOVED -- see `totalMoved` above, which is what stops the clause from
   // reading the same figure back on the presses that cannot have changed it.
-  const wrote = (next: BoardState, index: number, landed: number | null): string => {
-    const shown = valueAt(next, index, bank)
-    // Spoken, never symbolic, exactly as the square's own name does it: a screen reader reads "×" as
-    // "times" at best and as nothing at all at worst.
-    const said = shown === null ? 'empty' : isDigitCell(index) ? shown : OPERATOR_NAMES[shown as Operator]
+  //
+  // `squares` is a list because a move and its Undo each change two squares at once, and both have
+  // to be named: the square that took the tile and the square it left. Every square named comes
+  // first, then the total, then the caret, so the clamp still drops the caret half before anything
+  // else.
+  const report = (next: BoardState, squares: number[], landed: number | null): string => {
+    const named = squares.map((index) => {
+      const shown = valueAt(next, index, bank)
+      // Spoken, never symbolic, exactly as the square's own name does it: a screen reader reads "×"
+      // as "times" at best and as nothing at all at worst.
+      const said = shown === null ? 'empty' : isDigitCell(index) ? shown : OPERATOR_NAMES[shown as Operator]
+      return `Square ${index + 1} is ${said}.`
+    })
     const kind = landed !== null && isDigitCell(landed) ? 'a number' : 'a sign'
     return [
-      `Square ${index + 1} is ${said}.`,
+      ...named,
       totalMoved(next) ? asSentence(runningTotal(next, bank)) : '',
       landed === null ? '' : `Now on square ${landed + 1}, ${kind}.`,
     ]
       .filter((part) => part !== '')
       .join(' ')
   }
+
+  const wrote = (next: BoardState, index: number, landed: number | null): string => report(next, [index], landed)
+
+  // THE MOVE'S SENTENCE: "Square 5 is 7. Square 1 is empty." The second half is the one the player
+  // did not ask for, which is why it must be said. They pressed a 7 with the caret on square 5; the
+  // board chose to take the 7 from square 1, and nothing else on screen announces that square 1 is
+  // now empty. A sighted player sees the square go dashed. A screen-reader player would otherwise
+  // find out only when they next walk the row.
+  //
+  // A move never fills the board -- it keeps the count of filled squares or lowers it by one -- so
+  // unlike a write it never has to stay quiet for the solved banner or the wrong-answer line.
+  const moved = (next: BoardState, to: number, from: number, landed: number | null): string =>
+    report(next, [to, from], landed)
 
   // `target` is optional and `null` is not the same as absent: null means board.ts found nowhere
   // for the caret to go, and the caret then stays where it is rather than falling to square 1.
@@ -621,6 +769,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // caret lands on announces itself the moment it takes focus; naming it in the ribbon as well says
   // the same fact twice, which is the exact split cryptogram's `press(key, false)` settled on for
   // the same reason.
+  //
+  // A DIGIT never arrives here straight from a press any more. It comes through `placeDigit`, which
+  // has already picked the tile, and this function writes the tile it was handed. A sign comes here
+  // directly, because signs are reusable and there is nothing to choose.
   const place = (value: number | Operator, keepFocus = true): void => {
     hasMoved.current = true
     skipFocus.current = keepFocus
@@ -628,12 +780,64 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // what Undo needs back is the bank index a digit square held and not the character it drew.
     const previous = isDigitCell(cursor) ? state.digits[cursor / 2] : state.operators[slotOf(cursor)]
     const next = write(state, cursor, value)
-    setHistory([...history, { cell: cursor, previous }])
+    setHistory([...history, { cell: cursor, order: placedOrder, previous }])
+    // A sign touches no tile, so the order stands. A digit lands, and whatever tile the square held
+    // before goes back to the bank and leaves the list.
+    if (typeof value === 'number') setPlacedOrder(reorder(placedOrder, [previous], value))
     const landed = nextCursor(next, cursor)
     // Silent on the write that FILLS the board, because `message` reads the notice first and this
     // sentence would mask the two lines that matter most -- the solved banner and the wrong-answer
     // arithmetic. On the last square the outcome is the news, not the placement.
     commit(next, landed, isComplete(next) ? '' : wrote(next, cursor, keepFocus ? landed : null))
+  }
+
+  // A DIGIT PRESS MEANS "PUT d HERE", from a tap and from a keystroke alike. It does not mean "spend
+  // this exact tile". `chooseTile` picks the tile, and this function does what the choice says.
+  //
+  // It used to be two paths. A tap spent the tile under the finger, and a used tile refused the tap,
+  // so a player who had put a 7 in the wrong square could not move it: they had to Undo back through
+  // moves that were right, or Clear and rebuild. Now a used tile is pressable, and pressing it with
+  // the caret on another square moves a 7 there. The board picks WHICH 7, by the rule in board.ts,
+  // and the tile under the finger is only a preference: it is spent if it is free, and otherwise any
+  // tile of that digit will do, because the player asked for a digit and not for a tile.
+  //
+  // `tapped` is the tile index for a tray press and null for a keystroke. It matters in exactly one
+  // case: a tapped FREE tile is spent as tapped, never swapped for a twin, which keeps the
+  // tile-identity fix -- the Used mark lands on the tile the finger touched.
+  //
+  // The two refusals name the digit, never a tile. `none` is reachable only from the keyboard: a tile
+  // always has its own digit in the bank, so a tap can never find none.
+  const placeDigit = (digit: number, tapped: number | null, keepFocus: boolean): void => {
+    const choice = chooseTile(state, bank, cursor, digit, tapped, placedOrder)
+    if (choice.kind === 'already') {
+      refuse(`Square ${cursor + 1} is already ${digit}.`)
+      return
+    }
+    if (choice.kind === 'none') {
+      refuse(`No ${digit} in your tiles.`)
+      return
+    }
+    if (choice.kind === 'spend') {
+      place(choice.tile, keepFocus)
+      return
+    }
+
+    // THE MOVE. One state from `moveTile` and one commit, never a clear followed by a write: two
+    // commits would send a progress string in which the tile is in neither square, and Undo would
+    // then need two presses to take one move back.
+    hasMoved.current = true
+    skipFocus.current = keepFocus
+    const previous = state.digits[cursor / 2]
+    const next = moveTile(state, choice.from, cursor)
+    setHistory([
+      ...history,
+      { also: { cell: choice.from, previous: choice.tile }, cell: cursor, order: placedOrder, previous },
+    ])
+    // The moved tile goes to the END of the order: it was just placed, so it is now the newest. The
+    // tile the caret's square held, if any, goes back to the bank and leaves the list.
+    setPlacedOrder(reorder(placedOrder, [previous], choice.tile))
+    const landed = nextCursor(next, cursor)
+    commit(next, landed, moved(next, cursor, choice.from, keepFocus ? landed : null))
   }
 
   // It SAYS there is nothing to take back rather than going quiet, and that is why neither this
@@ -674,18 +878,33 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // and off the control they were about to press again. Same ref, same reason, as a tray write.
     skipFocus.current = true
     setHistory(live.slice(0, -1))
+    setPlacedOrder(last.order)
     // PUT BACK what the square held, and only clear it when it held nothing. A write over a filled
     // square is an ordinary move on this board, so an Undo that always cleared would answer it by
     // emptying a square the player had never seen empty -- and would hand the bank back a tile the
     // move had not actually freed.
-    const next = last.previous === null ? clearCell(state, last.cell) : write(state, last.cell, last.previous)
+    const restore = (from: BoardState, cell: number, previous: number | Operator | null): BoardState =>
+      previous === null ? clearCell(from, cell) : write(from, cell, previous)
+    // A move's source square goes back FIRST, then the caret's square, into one state and one
+    // commit. The order of the two writes does not matter to the result -- `write` does not check
+    // whether a tile is held elsewhere -- but one commit does: two would send a progress string with
+    // the tile in both squares, which `decode` rejects whole.
+    const next = restore(
+      last.also === undefined ? state : restore(state, last.also.cell, last.also.previous),
+      last.cell,
+      last.previous,
+    )
     // IT SAYS WHAT IT DID, where it used to announce only its refusals. Every argument the write
     // sentence rests on applies here unchanged and one applies harder: the square's value is in an
     // aria-hidden span, its meaning is an attribute, `skipFocus` keeps focus on Undo so the square
     // never speaks, and undoing the first tile REMOVES the running total rather than changing it --
     // and a removal is not announced by anything. The press was completely silent, which a player
     // cannot tell apart from a control that does not work.
-    commit(next, last.cell, wrote(next, last.cell, last.cell))
+    //
+    // An undone move names BOTH squares, the one the tile went back to first, and the caret returns
+    // to the square the move filled -- the square the player was standing on when they pressed.
+    const squares = last.also === undefined ? [last.cell] : [last.also.cell, last.cell]
+    commit(next, last.cell, report(next, squares, last.cell))
   }
 
   // CLEAR, AND NOT PLAY AGAIN. The squares go and the locks go; `opened` stays, so the rungs the
@@ -708,8 +927,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       return
     }
     // The moves the history refers to are gone with the board, so the history goes with them --
-    // otherwise one press of Undo would re-empty a square the player had already refilled.
+    // otherwise one press of Undo would re-empty a square the player had already refilled. The
+    // placement order goes too: no square holds a tile, so there is nothing left for it to rank.
     setHistory([])
+    setPlacedOrder([])
     skipFocus.current = true
     // AND IT SAYS THE HINTS SURVIVED, which is the one thing about this press a player has no other
     // way to learn. Clear takes the locks and keeps the rungs, and the press looks irreversible.
@@ -750,6 +971,11 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   const playAgain = (): void => {
     skipFocus.current = true
     setHistory([])
+    setPlacedOrder([])
+    // The trail goes too, shut and empty. Play again cannot be pressed with the trail open -- Undo
+    // holds the first slot in that mode -- so this is about the next opening: a fresh board starts
+    // its trail at the goal like any other, not at the last puzzle's halfway point.
+    setTrail(NO_TRAIL)
     setResetNonce((nonce) => nonce + 1)
     // "LOCKED AGAIN", NOT "SHUT". The old sentence said "the hints are shut", which was wrong twice:
     // the sheet was still open at that moment, and shutting is not what happens to the ladder in any
@@ -760,6 +986,170 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // draws no hint control for the sentence to be about.
     const kept = hasLadder && state.opened > 0 ? ' Your hints are locked again.' : ''
     commit(EMPTY_BOARD, 0, `Every square is empty.${kept} Now on square 1, a number.`)
+  }
+
+  // OPENING SAYS NOTHING, and clears whatever the ribbon held, so the resting line can name the
+  // mode. Focus lands on the panel, whose name is "Backtracking from 154", and that is the
+  // announcement; a ribbon sentence saying the same would be a second telling.
+  const openTrail = (): void => {
+    setTrail({ ...trail, open: true })
+    say('')
+  }
+
+  // DONE, ESCAPE AND THE BACKTRACK BUTTON all land here. The steps stay, so reopening shows the
+  // trail the player left; the half-made step and the uneven note go, because both describe a press
+  // the player has walked away from.
+  //
+  // SILENT ON A SOLVED BOARD. The sentence would stand in the ribbon ahead of the solved banner, and
+  // a solved board has no control left that clears a notice -- the squares, the tiles and the keys
+  // are all refused -- so the banner would not come back until Play again. And when a rung solved
+  // the board while the trail was open, "Nothing on it changed" would not even be true.
+  //
+  // SILENT ON A FULL BOARD TOO, for the same standing-ahead reason. The wrong-answer line is held
+  // back while the trail is open (see `message`) and is meant to come back on Done; a sentence here
+  // would sit in front of it, and the line saying the sum misses is the more useful of the two. A
+  // solved board is a full one, so `filled` is the whole test for both.
+  const closeTrail = (): void => {
+    setTrail({ ...trail, note: '', open: false, pending: null })
+    say(filled ? '' : 'Back to your board. Nothing on it changed.')
+  }
+
+  // A SQUARE TAPPED WITH THE TRAIL OPEN shuts the trail and goes to that square, because a player
+  // who reaches for the board is done backtracking for now -- refusing the tap made the squares look
+  // like part of the popup's furniture. The caret lands there through `moveCursor`, which says
+  // nothing or explains a lock, and that is the right sentence: the square taking focus already
+  // names where the player is. A solved board has no caret to move, so the trail just shuts and
+  // focus still goes to the square that was tapped.
+  const leaveTrailFor = (index: number): void => {
+    closeToSquare.current = index
+    setTrail({ ...trail, note: '', open: false, pending: null })
+    if (isSolved) say('')
+    else moveCursor(index)
+  }
+
+  const trailSign = (op: Operator): void => {
+    if (allInTrail) {
+      refuse(`${ALL_IN_TRAIL} Undo a step to try another.`)
+      return
+    }
+    setTrail({ ...trail, note: '', pending: op })
+    say(`${OPERATOR_NAMES[op]}. Now pick a tile ${SIGN_ASKS[op](spokenNumber(trailValue))}.`)
+  }
+
+  // A TILE MAKES A STEP, and the arithmetic is `stepOf`'s. The board composes sentences from what it
+  // returned and decides nothing about any number itself.
+  const trailTile = (tile: number): void => {
+    if (trail.pending === null) {
+      refuse(SIGN_FIRST)
+      return
+    }
+    const op = trail.pending
+    const from = trailValue
+    const result = stepOf(from, op, bank[tile])
+    if (result.kind === 'zero') {
+      refuse("You can't divide by zero.")
+      return
+    }
+    if (result.kind === 'big') {
+      refuse('That number is too big to backtrack from.')
+      return
+    }
+    // UNEVEN KEEPS THE SIGN, so trying the next tile is one tap. The refusal is said in the ribbon
+    // and written under the list, because the ribbon's copy is gone at the next press and the
+    // quotient is the thing a player working backward wants to read again.
+    if (result.kind === 'uneven') {
+      setTrail({
+        ...trail,
+        note: `${shownNumber(from)} ÷ ${bank[tile]} is ${shownNumber(result.quotient)} remainder ${shownNumber(result.remainder)}. Not a whole number.`,
+      })
+      refuse(
+        `${spokenNumber(from)} divided by ${bank[tile]} is ${spokenNumber(result.quotient)}, remainder ${spokenNumber(result.remainder)}. Each step needs a whole number.`,
+      )
+      return
+    }
+
+    const made: TrailStep = { from, op, tile, to: result.value }
+    const steps = [...trail.steps, made]
+    const spentAll = bank.every((_unused, index) => steps.some((step) => step.tile === index))
+    // ONE SENTENCE PER STEP. Whatever reaching 0 has to add is appended here rather than said after,
+    // so a step changes the ribbon exactly once and a screen reader hears one announcement.
+    const sentence = `${stepSentence(made, bank)}${spentAll ? ` ${ALL_IN_TRAIL}` : ''}`
+
+    // Only an END state is judged: a trail that passes through 0 and goes on is allowed. A board
+    // that is already solved has nothing left to solve, so there the step is only announced.
+    if (result.value !== 0 || isSolved) {
+      setTrail({ ...trail, note: '', pending: null, steps })
+      say(sentence)
+      return
+    }
+    // The step's own sentence runs on into the reason rather than stopping first: "1 minus 1 is 0,
+    // but tiles are left." `spentAll` is false here, so `sentence` is the step sentence alone.
+    if (!spentAll) {
+      setTrail({ ...trail, note: '', pending: null, steps })
+      say(`${sentence.slice(0, -1)}, but tiles are left. Use every tile.`)
+      return
+    }
+
+    // THE DECISION IS A SET LOOKUP, NEVER ARITHMETIC. `forwardExpression` only spells the string the
+    // trail describes, and `accepted` is the backend's own list -- the same lookup `commit` makes on
+    // every other path. A trail that reached 0 by a route the pack does not list (or that cannot be
+    // spelled forward at all, like one ending "0 × 7") is told so and stays open, so Undo works.
+    //
+    // `decode` is asked too, and its answer can only be "no" on a malformed pack: one that lists a sum
+    // its own signs cannot draw, so the board could never hold it. Filling from that would save an
+    // empty board over the player's squares in silence, so it is treated as no sum at all.
+    const expression = forwardExpression(steps, bank)
+    const answerBoard = expression === null ? null : decode(expression, puzzle.data)
+    if (expression === null || answerBoard === null || !accepted.has(expression) || !isComplete(answerBoard)) {
+      setTrail({ ...trail, note: '', pending: null, steps })
+      // One clause about the tiles and one about the sum, in place of the resting "Every tile is in
+      // the trail." that `sentence` carries -- said once, not twice.
+      say(`${stepSentence(made, bank)} Every tile is used, but this isn't one of the sums for this puzzle.`)
+      return
+    }
+
+    // THE SOLVE. The board is filled from the expression the way the answer reveal fills it -- a bare
+    // string through `decode`'s legacy path, which binds digits to the first unspent tile. That is the
+    // right binding here for the reveal's reason: the string carries digits and not tiles.
+    //
+    // `opened` is carried over, and so is every lock the answer AGREES with. A pack can accept
+    // several operator tuples, and a lock this answer contradicts would make `decode` reject the
+    // stored string on the next load; a lock it agrees with is a sign the player paid for and keeps.
+    const locked = state.locked.filter((slot) => answerBoard.operators[slot] === state.operators[slot])
+    // Shut and EMPTY, not merely shut: reopening on the solved board starts again at the goal rather
+    // than at a finished trail. History and order go because the board they described is gone.
+    setTrail(NO_TRAIL)
+    setHistory([])
+    setPlacedOrder([])
+    // SILENT, like every write that wins: the solved banner is the news, and a sentence here would
+    // stand ahead of it. `commit` reaches `onSolved` through the same `accepted.has(...)` as ever.
+    commit({ ...answerBoard, locked, opened: state.opened }, null)
+  }
+
+  // Undo takes back the half-made step first, then the last whole one. It never touches a square.
+  const trailUndo = (): void => {
+    if (trail.pending !== null) {
+      setTrail({ ...trail, note: '', pending: null })
+      say(`Sign taken back. You're at ${spokenNumber(trailValue)}.`)
+      return
+    }
+    if (trail.steps.length === 0) {
+      refuse('Nothing to undo.')
+      return
+    }
+    const steps = trail.steps.slice(0, -1)
+    const back = steps.length === 0 ? goal : steps[steps.length - 1].to
+    setTrail({ ...trail, note: '', steps })
+    say(`Step ${trail.steps.length} taken back. You're at ${spokenNumber(back)}.`)
+  }
+
+  const startOver = (): void => {
+    if (trail.steps.length === 0 && trail.pending === null) {
+      refuse('There are no steps to clear.')
+      return
+    }
+    setTrail({ ...trail, note: '', pending: null, steps: [] })
+    say(`Steps cleared. You're back at ${spokenNumber(goal)}.`)
   }
 
   // INDEXED BY RUNG, NEVER BY SLOT, and the difference is invisible on a left-to-right ladder.
@@ -836,6 +1226,11 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       // the bar has no answer to offer and this press cannot happen -- so the fallback is the old
       // behavior rather than a second story about what a reveal is.
       const filled = expression === null ? null : decode(expression, puzzle.data)
+      // The reveal binds its own tiles, by first unspent match, so the order the player placed tiles
+      // in no longer describes the board. Emptied rather than left to go stale. `chooseTile` would
+      // filter a stale entry out anyway, but a list that is right is cheaper than one that has to be
+      // filtered.
+      setPlacedOrder([])
       // SILENT, like the placement that fills the last square, and for the reason stated there: the
       // notice is read ahead of the ribbon's standing line, so a sentence here would mask the solved
       // banner. On the write that finishes the board the outcome is the news, not the write.
@@ -857,10 +1252,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // now adds up to; and the resting line is deliberately laid over the ribbon's live region rather
     // than inside it, so it is read in place and never announced. Meanwhile a rung that completes an
     // unbroken prefix genuinely moves the figure -- a board reading 6 _ 9 stands at 6, and a rung
-    // filling slot 0 takes it to 15 -- and every other path that moves it (`place`, `undo`,
-    // `backspace`) says so. So this was the one way the number a screen-reader player is here to
-    // watch could change in silence, which is a second telling of nothing rather than a third
-    // telling of something.
+    // filling slot 0 takes it to 15 -- and every other path that moves it (`place`, `placeDigit`,
+    // `undo`, `backspace`) says so. So this was the one way the number a screen-reader player is
+    // here to watch could change in silence, which is a second telling of nothing rather than a
+    // third telling of something.
     // THE CARET STAYS PUT UNLESS THE RUNG TOOK THE SQUARE IT WAS STANDING ON, and that exception is
     // the whole of this line. `nextCursor` answers "where does the caret go after a write" -- a write
     // AT the caret -- but a rung writes at its own slot, which is almost never where the player is
@@ -880,7 +1275,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     const displaced = isLocked(next, cursor)
     const landed = displaced ? nextCursor(next, cursor) : undefined
     const kind = landed !== null && landed !== undefined && isDigitCell(landed) ? 'a number' : 'a sign'
-    const moved = totalMoved(next) ? asSentence(runningTotal(next, bank)) : ''
+    const totalLine = totalMoved(next) ? asSentence(runningTotal(next, bank)) : ''
     const caret = landed === null || landed === undefined ? '' : `Now on square ${landed + 1}, ${kind}.`
 
     // SILENT ON THE PRESS THAT WINS, the same yielding `place` does on the last square, and for the
@@ -891,7 +1286,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // player never saw "Solved" at all -- not late, never. A rung CAN finish a board: rungs 1 and 2
     // may land on operators already there, and the third writes the one that reaches the goal.
     const wins = isComplete(next) && accepted.has(expressionOf(next, bank))
-    commit(next, landed, wins ? '' : [moved, caret].filter((part) => part !== '').join(' '))
+    commit(next, landed, wins ? '' : [totalLine, caret].filter((part) => part !== '').join(' '))
   }
 
   // The text-field convention, and the one edit only the keyboard can make. It enters the undo
@@ -904,10 +1299,11 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // moving is also why this owes a sentence: nothing takes focus, so no square announces itself.
   const backspace = (): void => {
     // STRUCTURAL, not incidental. Every other edit on this bench states what it wants of the focus
-    // flag -- `place` arms it or not from `keepFocus`, `undo`, `clear`, `openHint` and `playAgain`
-    // arm it, `moveCursor` clears it -- and this one said nothing, which happened to be safe for a
-    // reason no line here records: Backspace always commits an UNCHANGED cursor, so the effect that
-    // spends the flag never runs and a flag left standing from a previous press is never read.
+    // flag -- `place` and `placeDigit` arm it or not from `keepFocus`, `undo`, `clear`, `openHint`
+    // and `playAgain` arm it, `moveCursor` clears it -- and this one said nothing, which happened to
+    // be safe for a reason no line here records: Backspace always commits an UNCHANGED cursor, so
+    // the effect that spends the flag never runs and a flag left standing from a previous press is
+    // never read.
     //
     // That is an argument about the effect's dependency array, sitting two hundred lines away, and
     // it is not the kind of thing the next change to this file should have to rediscover. Clearing
@@ -927,7 +1323,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       return
     }
     const previous = isDigitCell(cursor) ? state.digits[cursor / 2] : state.operators[slotOf(cursor)]
-    setHistory([...history, { cell: cursor, previous }])
+    setHistory([...history, { cell: cursor, order: placedOrder, previous }])
+    // The freed tile leaves the order. On a sign square `previous` is an operator, which no entry
+    // equals, so the list stands.
+    setPlacedOrder(reorder(placedOrder, [previous]))
     commit(next, cursor, wrote(next, cursor, null))
   }
 
@@ -982,6 +1381,81 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     return sheet !== null && !sheet.hasAttribute('hidden')
   }
 
+  // The trail's half of the key handler. It handles digits, the four signs plus `x`, Backspace, the
+  // two arrows and Escape, and nothing else: any other key is left alone, default and all.
+  const trailKey = (event: KeyboardEvent, target: HTMLElement | null): void => {
+    // ESCAPE IS READ OFF THE EVENT, NEVER OFF THE SHEET. HintBar marks the Escape it spends with
+    // `preventDefault`, and that flag is the only thing that survives the trip here: React flushes
+    // the sheet's close in a microtask, a real browser runs microtasks between listeners, and by the
+    // time this runs the sheet already reads shut -- so asking `sheetIsOpen()` would close the sheet
+    // and the trail on one press. One Escape, one thing closed.
+    //
+    // THE SHEET IS STILL ASKED AFTER THE FLAG, for the other case. HintBar handles Escape only when
+    // focus is inside its own root, so with the sheet up and focus elsewhere -- on a trail row, say
+    // -- the press arrives unmarked and the sheet still reads open. Closing the trail then would shut
+    // it under the scrim, where the player cannot see it go. Declined, like every other key the
+    // sheet is over.
+    if (event.key === 'Escape') {
+      if (event.defaultPrevented) return
+      if (sheetIsOpen()) return
+      event.preventDefault()
+      closeTrail()
+      return
+    }
+
+    const sheetOpen = sheetIsOpen()
+
+    // The arrows are scoped exactly as the board scopes them, and handed to the sheet silently when
+    // it is up. On the bench they have no square to move to, so they say why.
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      if (sheetOpen) return
+      const onBench =
+        boardRef.current?.contains(target) === true ||
+        instrumentRef.current?.contains(target) === true ||
+        target === document.body
+      if (!onBench) return
+      event.preventDefault()
+      refuse(isSolved ? SQUARES_WAIT_SOLVED : SQUARES_WAIT)
+      return
+    }
+
+    const isSign = event.key === '+' || event.key === '-' || event.key === '*' || event.key === '/' || event.key === 'x'
+    if (!isDigit(event.key) && !isSign && event.key !== 'Backspace') return
+
+    // A WRITING KEY, so the sheet's refusal comes first, for the board's reason: it is why the press
+    // was declined, and naming anything else would send the player to fix the wrong thing.
+    event.preventDefault()
+    if (sheetOpen) {
+      refuse(CLOSE_TO_TYPE)
+      return
+    }
+    if (event.key === 'Backspace') {
+      trailUndo()
+      return
+    }
+    if (isSign) {
+      // `x` is the letter people type for times. The pack's character is `*`, and the pack check
+      // below is the one a tray tap is held to: the tray draws `operators`, so the keyboard may not
+      // reach a sign the tray does not offer.
+      const op = (event.key === 'x' ? '*' : event.key) as Operator
+      if (operators.includes(op)) trailSign(op)
+      else refuse(`This puzzle has no ${OPERATOR_NAMES[op]} sign.`)
+      return
+    }
+    // A digit is a tile with no finger on it. The no-sign check comes first, as it does for a tap,
+    // and then the lowest-index tile of that digit the trail has not spent -- which index does not
+    // matter to the arithmetic, and lowest-first is the same rule a typed digit follows on the board.
+    if (trail.pending === null) {
+      refuse(SIGN_FIRST)
+      return
+    }
+    const digit = Number(event.key)
+    const tile = bank.findIndex((value, index) => value === digit && !trailSpent[index])
+    if (tile >= 0) trailTile(tile)
+    else if (bank.includes(digit)) refuse(`Every ${digit} is used.`)
+    else refuse(`No ${digit} in your tiles.`)
+  }
+
   const onKeyDown = (event: KeyboardEvent): void => {
     // A modified keypress belongs to the browser, not to the board. Without this, Cmd-R, Ctrl-A and
     // every other shortcut is both swallowed by the preventDefault below and read as a move -- the
@@ -993,6 +1467,15 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // bench today, so this guards a future one rather than a present bug -- but the listener is on
     // the WINDOW, and a listener with that reach has to say what it declines to touch.
     if (target !== null && (target.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName))) return
+
+    // BACKTRACK OWNS THE KEYBOARD WHILE IT IS OPEN, and it returns on every key, handled or not. A
+    // key that fell through to the branches below would write a square the squares-wait sentence
+    // says is waiting. It sits ahead of the solved check because the trail works on a solved board.
+    if (trail.open) {
+      trailKey(event, target)
+      return
+    }
+
     // A solved board is finished, and every square already carries `aria-disabled` to say so. The
     // keyboard refuses exactly what the pointer refuses, or one of the two controls is lying.
     if (isSolved) return
@@ -1025,8 +1508,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       event.preventDefault()
       const landed = step(cursor, event.key === 'ArrowRight' ? 1 : -1)
       // THROUGH `moveCursor`, NEVER THROUGH `setCursor`, and this is the line the whole focus model
-      // rests on. `skipFocus` is armed by `place`, `undo`, `clear` and `openHint` and cleared by
-      // exactly one function -- this one. A write whose caret advance lands nowhere, which is the
+      // rests on. `skipFocus` is armed by `place`, `placeDigit`, `undo`, `clear` and `openHint` and
+      // cleared by exactly one function -- this one. A write whose caret advance lands nowhere, which is the
       // write that fills the last square, leaves the flag standing with no effect run to spend it.
       // The next arrow is then the first press that would move the caret, so an arrow that set the
       // cursor directly would find the stale flag, move the caret, and leave focus behind on the tile
@@ -1053,20 +1536,19 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
         refuse(NEEDS_A_SIGN)
         return
       }
-      // The TILE, not the digit, exactly as the tray press finds it: a bank of 6,9,7,7 has two tiles
-      // that write "7", so typing 7 twice has to spend both rather than refusing the second. First
-      // unspent match is the correct assignment here for the reason it is wrong on a tap -- there is
-      // no tile under a finger for the choice to contradict.
-      const tile = bank.findIndex((digit, index) => !consumed[index] && String(digit) === event.key)
-      // One sentence for "this pack has no 8" and for "both 7s are already down", because from the
-      // player's side they are the same fact: there is no tile they can spend to put that digit here.
-      if (tile < 0) refuse(`No ${event.key} in your tiles.`)
-      else place(tile, false)
+      // THE SAME RULE AS A TAP, with no tile under a finger. `placeDigit` asks `chooseTile`, which
+      // spends the lowest-index free tile of the digit, and moves the oldest-placed one when every
+      // tile of it is already down. So typing 7 twice on a bank of 6,9,7,7 spends both 7s, and a
+      // third 7 moves one rather than being refused. "No 7 in your tiles." is now said only when the
+      // pack has no 7 at all.
+      placeDigit(Number(event.key), null, false)
       return
     }
 
-    if (event.key === '+' || event.key === '-' || event.key === '*' || event.key === '/') {
+    if (event.key === '+' || event.key === '-' || event.key === '*' || event.key === '/' || event.key === 'x') {
       event.preventDefault()
+      // `x` is the letter people type for times, as it is in Backtrack. The pack's character is `*`.
+      const op = (event.key === 'x' ? '*' : event.key) as Operator
       if (sheetOpen) {
         refuse(CLOSE_TO_TYPE)
         return
@@ -1083,8 +1565,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       // sign it does not draw would let the keyboard reach a board no sequence of taps could -- and
       // `decode` rejects such a string whole on the next load, costing the player every square and
       // every rung they had paid for.
-      if (operators.includes(event.key)) place(event.key, false)
-      else refuse(`This puzzle has no ${OPERATOR_NAMES[event.key]} sign.`)
+      if (operators.includes(op)) place(op, false)
+      else refuse(`This puzzle has no ${OPERATOR_NAMES[op]} sign.`)
       return
     }
 
@@ -1103,8 +1585,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // the plainer case a board-scoped listener never could, which is arriving on a laptop and typing
   // with focus wherever the page left it.
   //
-  // No dependency array, on purpose. The handler closes over `state`, `cursor`, `history` and
-  // `consumed`, all of which change on nearly every press, so any array short of "everything" leaves
+  // No dependency array, on purpose. The handler closes over `state`, `cursor`, `history`,
+  // `placedOrder` and `trail`, all of which change on nearly every press, so any array short of "everything" leaves
   // a stale closure typing into a board that has moved on. One removeEventListener and one
   // addEventListener per render is not a cost worth a correctness risk.
   useEffect(() => {
@@ -1140,12 +1622,21 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     // count of presses kept here: it is true exactly when nothing is written AND no rung is owed,
     // which is the state the instruction is aimed at. A board carrying a lock is not untouched --
     // the player has spent something on it -- so a refusal there stands alone, as it did before.
+    //
+    // NEVER WHILE THE TRAIL IS OPEN. The instruction teaches the squares, and in Backtrack mode the
+    // squares are the one thing on the bench the player cannot use -- "Pick a sign first. Pick a
+    // square, then a tile." would be two instructions that contradict each other.
     const untouched = encode(state) === ''
-    const taught = notice.refusal && untouched ? ` ${INSTRUCTION}` : ''
+    const taught = notice.refusal && untouched && !trail.open ? ` ${INSTRUCTION}` : ''
     if (notice.text !== '') return `${notice.text}${taught}${REPEAT_MARK.repeat(notice.nonce % 2)}`
     if (isSolved) return `Solved. ${forReading(tokens)} = ${goal}`
     // Nothing to say while squares are still empty: an unfinished expression is not a wrong one.
-    if (!filled) return ''
+    //
+    // Nor while the trail is open. The wrong-answer line ends "Undo the last tile", and in Backtrack
+    // mode Undo takes back a STEP -- the advice would send the player to the wrong control. It comes
+    // back with the board, on Done. The solved banner above stays, because a rung can solve the board
+    // with the trail open and that is news in either mode.
+    if (!filled || trail.open) return ''
 
     const value = evaluateLeftToRight(
       tokens.filter(isDigit).map(Number),
@@ -1195,7 +1686,9 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
               to be "Make 154" as one phrase, and a name assembled from two inline spans
               depends on how the engine spaces them. */}
           <Shell className="shrink-0">
-            <Plate className="flex flex-col items-center gap-[var(--lull-s1)] px-[var(--lull-s4)] py-[var(--lull-s2)]">
+            {/* `relative` is added HERE and not in Plate, which is deliberately unpositioned: the
+                Backtrack button is the only thing anywhere that hangs off a plate's edge. */}
+            <Plate className="relative flex flex-col items-center gap-[var(--lull-s1)] px-[var(--lull-s4)] py-[var(--lull-s2)]">
               <h2 aria-label={`Make ${goal}`} className="flex flex-col items-center gap-[var(--lull-s1)]">
                 <span className={CAPTION}>Make</span>
                 {/* The sign cut, at the largest size anywhere in Lull -- but sized off the
@@ -1207,6 +1700,41 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                   {goal}
                 </span>
               </h2>
+              {/* BACKTRACK, on the goal it starts from. It lives in the plate's spare width rather
+                  than in the tray's control row, which is measured to fit at 320 with ~10px to spare
+                  and has no room for a fourth control.
+
+                  Hung off the right edge for a goal of three digits or fewer: at 320 that leaves
+                  ~105px beside the number and the button is ~94. A four-digit goal would collide,
+                  so it drops into flow under the number instead, centered by the plate's own
+                  column, with a step of top margin because the plate's gap alone left it ~5px
+                  under the digits. Decided by the goal's LENGTH because that is the thing that collides --
+                  a width measured at runtime would be a layout read jsdom cannot make.
+
+                  `aria-controls` names the trail panel's useId() id. The panel is ALWAYS MOUNTED
+                  and toggled with `hidden` on a box around it, so the IDREF resolves whether the
+                  trail is open or shut; the suite resolves both ends. It is also why
+                  `sheetIsOpen` cannot mistake this button for the hint control: that query looks
+                  only inside the tray, and this button lives in the board band.
+
+                  Primary while open and default while shut -- the existing variants, so the
+                  mode is said by form (the fill) as well as by `aria-expanded`. */}
+              <Button
+                aria-controls={trailId}
+                aria-expanded={trail.open}
+                aria-label={`Backtrack from ${goal}`}
+                className={
+                  String(goal).length <= 3
+                    ? 'absolute top-1/2 right-[var(--lull-s2)] -translate-y-1/2'
+                    : 'mt-[var(--lull-s2)]'
+                }
+                onClick={trail.open ? closeTrail : openTrail}
+                ref={backtrackRef}
+                size="sm"
+                variant={trail.open ? 'primary' : 'default'}
+              >
+                Backtrack
+              </Button>
             </Plate>
           </Shell>
 
@@ -1239,6 +1767,11 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                 const value = valueAt(state, index, bank)
                 const locked = isLocked(state, index)
                 const onCursor = cursor === index
+                // THE CARET LEAVES THE SQUARES WHILE THE TRAIL IS OPEN, ring and aria-current
+                // both: the trail's live row has it, and a ring here would say the next tile lands
+                // in a square that is waiting. The tab stop stays, so the row is still one Tab away
+                // and a press on it says why it is waiting.
+                const showsCaret = onCursor && !trail.open
                 // Spoken, never symbolic. A screen reader reads "×" as "times" at best and as
                 // nothing at all at worst, so the operator goes through OPERATOR_NAMES here and
                 // OPERATOR_SYMBOLS below -- the pack's own ASCII is never read aloud as itself.
@@ -1248,14 +1781,16 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                     // Absent on every square but one, never "false": aria-current has no
                     // there-is-no-caret-here state to say, and saying it on six squares would put
                     // the word in a screen reader's mouth six times for the square it is not about.
-                    aria-current={onCursor ? 'true' : undefined}
+                    aria-current={showsCaret ? 'true' : undefined}
                     // A LOCKED square is not disabled -- tapping it moves the caret there and the
                     // floor says why nothing can be written, which is more use than a square that
                     // swallows the tap. A SOLVED board is, because then there is genuinely nothing
                     // any square can do. aria-disabled and never disabled, for the tiles' own
                     // reason: a browser blurs an element that becomes disabled while focused, and
-                    // the whole row goes unavailable on the tap that wins the puzzle.
-                    aria-disabled={isSolved}
+                    // the whole row goes unavailable on the tap that wins the puzzle. With the TRAIL
+                    // OPEN every square is available, solved or not: a tap shuts the trail and goes
+                    // there. See `leaveTrailFor`.
+                    aria-disabled={isSolved && !trail.open}
                     aria-label={`Square ${index + 1}, ${digitCell ? 'number' : 'sign'}, ${spoken}${locked ? ', from a hint' : ''}`}
                     // ONE skin, chosen once. Locked outranks filled because a locked square is
                     // always filled and the lock is the fact worth drawing; empty and filled are
@@ -1267,10 +1802,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                       CELL,
                       digitCell ? CELL_DIGIT : CELL_OPERATOR,
                       locked ? CELL_LOCKED : value === null ? CELL_EMPTY : CELL_FILLED,
-                      onCursor ? CELL_CURSOR : '',
+                      showsCaret ? CELL_CURSOR : '',
                     ].join(' ')}
                     key={index}
-                    onClick={() => !isSolved && moveCursor(index)}
+                    onClick={() => (trail.open ? leaveTrailFor(index) : !isSolved && moveCursor(index))}
                     ref={(node) => void (cellRefs.current[index] = node)}
                     // A ROVING tabIndex. Without it the board band gains seven tab stops between
                     // the goal and the tray, so reaching the instrument by keyboard costs seven
@@ -1303,30 +1838,53 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
               IT USED TO SCROLL IN A BOX OF ITS OWN, and it no longer does. While the board was a
               bounded band that did not scroll, this box was the one thing that could shrink, down to
               a sliver showing the rule. The board now grows with its content and the BENCH scrolls,
-              so the box is as tall as the example and its `min-h-0 flex-1 overflow-y-auto` never
-              bind; on a short window the example is reached by scrolling the bench, below the goal
-              and the squares rather than instead of them.
+              so the box is as tall as whichever of the example and the trail is showing, and its
+              `min-h-0 flex-1 overflow-y-auto` never bind; on a short window either is reached by
+              scrolling the bench, below the goal and the squares rather than instead of them.
 
               An ordered list, because the steps only mean anything in order. The markers are
               drawn as tokens and hidden from assistive tech -- the list already numbers itself,
               and "=" is a piece of punctuation standing in for a step rather than a step. */}
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className={WORKED}>
-              <h3 className="text-sm leading-[1.4] font-semibold text-[var(--lull-ink)]">
-                Signs apply left to right, not by PEMDAS.
-              </h3>
-              <ol className="flex list-none flex-col gap-[var(--lull-s2)]">
-                {WORKED_EXAMPLE.map(({ marker, note, sum }) => (
-                  <li className="flex items-baseline gap-[var(--lull-s2)] text-[13.5px]" key={marker}>
-                    <span aria-hidden="true" className={marker === '=' ? `${MARKER} ${MARKER_RESULT}` : MARKER}>
-                      {marker}
-                    </span>
-                    <span className="text-[var(--lull-ink)]">
-                      {sum} <span className="text-[12.5px] text-[var(--lull-muted)]">{note}</span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
+            {/* The worked example and the trail take turns in this one slot, each `hidden` while
+                the other shows. Plain boxes carry the attribute, so no display utility on the
+                skins inside can compete with it. */}
+            <div hidden={trail.open}>
+              <div className={WORKED}>
+                <h3 className="text-sm leading-[1.4] font-semibold text-[var(--lull-ink)]">
+                  Signs apply left to right, not by PEMDAS.
+                </h3>
+                <ol className="flex list-none flex-col gap-[var(--lull-s2)]">
+                  {WORKED_EXAMPLE.map(({ marker, note, sum }) => (
+                    <li className="flex items-baseline gap-[var(--lull-s2)] text-[13.5px]" key={marker}>
+                      <span aria-hidden="true" className={marker === '=' ? `${MARKER} ${MARKER_RESULT}` : MARKER}>
+                        {marker}
+                      </span>
+                      <span className="text-[var(--lull-ink)]">
+                        {sum} <span className="text-[12.5px] text-[var(--lull-muted)]">{note}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+            {/* ALWAYS MOUNTED, so the Backtrack button's `aria-controls` resolves while the trail
+                is shut as well as open. In place of the worked example rather than beside it: the
+                example teaches the board's one rule, and while the trail is up the player is not
+                building on the board. */}
+            <div hidden={!trail.open}>
+              <TrailPanel
+                allSpent={allInTrail}
+                bank={bank}
+                goal={goal}
+                id={trailId}
+                note={trail.note}
+                onClose={closeTrail}
+                onStartOver={startOver}
+                pending={trail.pending}
+                scrollTargetRef={trailTargetRef}
+                steps={trail.steps}
+              />
             </div>
           </div>
         </div>
@@ -1351,42 +1909,80 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
             player needs to be told that only one square is listening; after it, the player has
             demonstrated they know how to write and the number is the more useful thing to have
             standing there. The switch is on the TOTAL being empty rather than on a counter of taps,
-            so a board restored mid-solve comes back with its total rather than with a lesson. */}
-        <FloorBar message={message()} resting={total === '' ? INSTRUCTION : total}>
+            so a board restored mid-solve comes back with its total rather than with a lesson.
+
+            Backtrack takes the slot over while it is open, because then neither line is about what
+            the tray does: the instruction names squares that are waiting, and the total is the
+            board's number rather than the trail's. */}
+        <FloorBar
+          message={message()}
+          resting={
+            trail.open ? `Backtracking from ${goal}. Pick a sign, then a tile.` : total === '' ? INSTRUCTION : total
+          }
+        >
           <div className="flex flex-col gap-[var(--lull-s2)] pt-[10px] pr-[var(--lull-gutter-right)] pb-[9px] pl-[var(--lull-gutter-left)]">
             {/* aria-disabled, NOT disabled, on every tile. A browser blurs an element that
-                becomes disabled while focused, and every tap disables the tile just
-                activated -- so `disabled` drops focus to <body> and the next Tab restarts at
-                the top of the document. Playing one puzzle by keyboard meant fourteen
-                traversals from the page top, and at the final tile every tile disables at
-                once, so focus vanished exactly when the wrong-answer message appeared.
+                becomes disabled while focused, and a tile can become unavailable under the very
+                press that focused it: a write that walks the caret onto a sign square takes every
+                number tile with it, and the press that solves the board takes the whole tray. So
+                `disabled` would drop focus to <body> and the next Tab would restart at the top of
+                the document -- once fourteen traversals from the page top to play one puzzle, and
+                on the winning tile, focus gone exactly when the solved banner appeared.
                 aria-disabled keeps the tile focusable and announced; the guard in the click
-                handler is what actually refuses the tap. */}
-            <div aria-label="Numbers" className={ROW} role="group">
+                handler is what actually refuses the tap.
+
+                The group's name says which ledger the row is showing. In Backtrack mode the same
+                tiles are spent into the trail instead of the squares, and "Numbers for Backtrack"
+                is what tells a screen-reader player that the marks below have changed meaning. */}
+            <div aria-label={trail.open ? 'Numbers for Backtrack' : 'Numbers'} className={ROW} role="group">
               {bank.map((digit, index) => {
-                // Spent and unavailable are two different facts and the board now says so.
-                // A tile the bank has already paid out is marked Used for good; a tile that
-                // simply cannot be tapped this turn -- every digit, while an operator is
-                // owed -- is announced unavailable and marked nothing, because calling it
-                // used would be a lie the player can disprove one tap later.
-                const isUsed = consumed[index]
-                const isUnavailable = isUsed || !canTapDigit
+                // Spent and unavailable are two different facts and the board says each one
+                // separately. A tile the bank has paid out is marked Used, in its name and on
+                // its face. A tile that cannot be pressed this turn -- every digit, while the
+                // caret is on a sign square -- is announced unavailable and marked nothing,
+                // because calling it used would be a lie the player can disprove one tap later.
+                //
+                // A USED TILE IS PRESSABLE. It used to refuse every tap, which left a player who
+                // put a 7 in the wrong square no way to move it but Undo or Clear. Pressing it
+                // now means "put a 7 here", and `placeDigit` decides whether that spends a free
+                // twin or moves a placed 7. So availability is the caret's question alone.
+                //
+                // IN BACKTRACK MODE THE TILE ANSWERS TO THE TRAIL'S LEDGER, not the board's: spent
+                // means "in the trail", and available means "not in the trail, and a sign is
+                // waiting for a tile". A spent tile is a silent no-op, because its name already
+                // says why; a tile pressed before a sign is unavailable too, but its name does
+                // not say why, so the press says "Pick a sign first."
+                const isUsed = trail.open ? trailSpent[index] : consumed[index]
+                const position = `tile ${index + 1} of ${bank.length}`
+                // THE SAME MARK IN BOTH MODES: the dashed edge and "Used". "In trail" wrapped onto
+                // two lines and ran past the tile's bottom edge at 320 and 390, and one short word
+                // fits every bank. The NAME is what says which ledger spent the tile -- "7, in the
+                // trail, tile 3 of 4" -- and the group's own name says the same.
                 return (
                   <button
-                    aria-disabled={isUnavailable}
+                    aria-disabled={trail.open ? isUsed || trail.pending === null : !canTapDigit}
                     // Position included because a duplicated bank gives two tiles the same
                     // name: "Use 7" twice tells a screen-reader user nothing about which one
-                    // they just spent.
-                    aria-label={`Use ${digit}, tile ${index + 1} of ${bank.length}`}
+                    // they just spent. ", used" says what the dashed edge and the Used mark
+                    // show, now that `aria-disabled` no longer does.
+                    aria-label={
+                      trail.open
+                        ? isUsed
+                          ? `${digit}, used in Backtrack, ${position}`
+                          : `Use ${digit} in Backtrack, ${position}`
+                        : `Use ${digit}, ${position}${isUsed ? ', used' : ''}`
+                    }
                     className={isUsed ? `${TILE} ${TILE_DIGIT} ${TILE_SPENT}` : `${TILE} ${TILE_DIGIT}`}
                     key={`${digit}-${index}`}
-                    // The tile's INDEX, not its digit. A bank of 9,3,9,9 has three tiles that all
-                    // write "9", so the character alone cannot say which one was spent.
-                    onClick={() => !isUnavailable && place(index)}
+                    // The tile's INDEX as well as its digit. A bank of 9,3,9,9 has three tiles
+                    // that all write "9", and a tapped free tile is spent as tapped.
+                    onClick={() =>
+                      trail.open ? !isUsed && trailTile(index) : canTapDigit && placeDigit(digit, index, true)
+                    }
                     type="button"
                   >
                     {/* Hidden, both of them: the button's own name already says "Use 7, tile
-                        3 of 4", and letting these through would read the tile twice. */}
+                        3 of 4, used", and letting these through would read the tile twice. */}
                     <span aria-hidden="true">{digit}</span>
                     {isUsed && (
                       <span aria-hidden="true" className={USED}>
@@ -1398,15 +1994,17 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
               })}
             </div>
 
-            {/* The signs are reusable, so no sign is ever spent and none is ever marked Used. */}
-            <div aria-label="Signs" className={ROW} role="group">
+            {/* The signs are reusable, so no sign is ever spent and none is ever marked Used. In
+                Backtrack mode a sign is available while any tile is left to take a step with, and
+                pressed with none left it says so -- that is the press that needs a way forward. */}
+            <div aria-label={trail.open ? 'Signs for Backtrack' : 'Signs'} className={ROW} role="group">
               {operators.map((operator) => (
                 <button
-                  aria-disabled={!canTapOperator}
+                  aria-disabled={trail.open ? allInTrail : !canTapOperator}
                   aria-label={OPERATOR_NAMES[operator]}
                   className={`${TILE} ${TILE_OPERATOR}`}
                   key={operator}
-                  onClick={() => canTapOperator && place(operator)}
+                  onClick={() => (trail.open ? trailSign(operator) : canTapOperator && place(operator))}
                   type="button"
                 >
                   <span aria-hidden="true">{OPERATOR_SYMBOLS[operator]}</span>
@@ -1460,9 +2058,20 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                 offer: jsdom lays nothing out and this project forbids style assertions, so no test
                 in the repo can catch the row wrapping. The widest visible state is the one measured
                 above -- "2 hints" and "Hide hints" are both shorter -- but if any of these three
-                labels ever grows, nothing will fail. Measure it in the app. */}
+                labels ever grows, nothing will fail. Measure it in the app.
+
+                BACKTRACK SWAPS THE FIRST TWO, and Clear gives way for once. While the trail is open
+                the row is Undo (a step, not a tile) and Done, at about Clear's width, so the
+                arithmetic above still holds. Undo holds the first slot even on a solved board, which
+                is what keeps Play again out of reach with the trail up; Done brings it back. Clear
+                is not needed in the mode -- nothing in it writes a square -- and Done is the exit
+                every Backtrack sentence points at. */}
             <div className={ROW}>
-              {isSolved ? (
+              {trail.open ? (
+                <Button aria-label="Undo the last step" onClick={trailUndo}>
+                  Undo
+                </Button>
+              ) : isSolved ? (
                 <Button onClick={playAgain} variant="floorPrimary">
                   Play again
                 </Button>
@@ -1471,9 +2080,15 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                   Undo
                 </Button>
               )}
-              <Button aria-label="Clear every square" onClick={clear}>
-                Clear
-              </Button>
+              {trail.open ? (
+                <Button aria-label="Done backtracking" onClick={closeTrail}>
+                  Done
+                </Button>
+              ) : (
+                <Button aria-label="Clear every square" onClick={clear}>
+                  Clear
+                </Button>
+              )}
               {/* `bare` because this row already owns its gutter, its ground and its 44px: the
                   only other variant, `sign`, is the shell's control laid over a sign row from the
                   hint dock, and this bench has neither.

@@ -915,6 +915,37 @@ describe('HintBar', () => {
       expect(screen.getByRole('button', { name: 'Show 1 hint' })).toHaveFocus()
     })
 
+    // A bench listening on `window` must be able to tell the sheet already spent this Escape. Reading
+    // the sheet's `hidden` attribute cannot do it in a real browser -- the close has flushed by the
+    // time the key reaches `window` -- so the flag on the event is the whole contract.
+    it('marks the Escape that closes it as handled', async () => {
+      const user = userEvent.setup({ delay: null })
+      const seen = jest.fn()
+      const listener = (event: KeyboardEvent): void => seen(event.defaultPrevented)
+      window.addEventListener('keydown', listener)
+      renderBar()
+      await press(user, 'Open hint 1 of 3')
+
+      await user.keyboard('{Escape}')
+      window.removeEventListener('keydown', listener)
+
+      expect(seen).toHaveBeenCalledWith(true)
+    })
+
+    it('leaves an Escape on a shut sheet unhandled', async () => {
+      const user = userEvent.setup({ delay: null })
+      const seen = jest.fn()
+      const listener = (event: KeyboardEvent): void => seen(event.defaultPrevented)
+      window.addEventListener('keydown', listener)
+      renderBar()
+      await user.tab()
+
+      await user.keyboard('{Escape}')
+      window.removeEventListener('keydown', listener)
+
+      expect(seen).toHaveBeenCalledWith(false)
+    })
+
     it('stays open under any other key', async () => {
       const user = userEvent.setup({ delay: null })
       renderBar()

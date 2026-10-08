@@ -165,9 +165,10 @@ expect(document.getElementById(id ?? '')).toBeInTheDocument()
 ```
 
 That is observable DOM, not a style assertion, and it is asserted today wherever one exists: Up
-Next's and the shelf's disclosures, and the hint sheet's — which `gofigure` and `phrazle` both
-follow to decide whether to freeze their keyboards, so it is asserted from their suites as well as
-from `hint-bar`'s.
+Next's and the shelf's disclosures, goFigure's Backtrack button (whose trail panel is always
+mounted, so the reference resolves shut as well as open), and the hint sheet's — which `gofigure`
+and `phrazle` both follow to decide whether to freeze their keyboards, so it is asserted from their
+suites as well as from `hint-bar`'s.
 
 **Duplicate `id`s** genuinely have no behavioral equivalent, but nothing here can produce one: the
 only id sources are `useId()`, which React makes unique per instance, and `answer-${puzzle.id}` in
