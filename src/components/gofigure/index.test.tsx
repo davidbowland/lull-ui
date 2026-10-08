@@ -38,8 +38,8 @@ describe('GoFigureBoard', () => {
     render(<GoFigureBoard onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />)
 
   // The bank is 6,9,7,7, so two tiles show 7. Their accessible names carry the tile
-  // position ("Use 7, tile 3 of 4"), so queries match by prefix. A spent tile says so in its
-  // name ("Use 7, tile 3 of 4, used") and stays pressable -- pressing it means "put a 7 here",
+  // position ("Use 7, number 3 of 4"), so queries match by prefix. A spent tile says so in its
+  // name ("Use 7, number 3 of 4, used") and stays pressable -- pressing it means "put a 7 here",
   // which may move a placed 7 -- so the helper skips used tiles by NAME rather than by
   // aria-disabled. That keeps its contract: tap the first tile with this digit that is not
   // spent, which is the press that always spends rather than moves.
@@ -69,7 +69,7 @@ describe('GoFigureBoard', () => {
   const said = (text: string): HTMLElement => screen.getByText(text, withoutMark)
 
   const SOLUTION = ['Use 6', 'Add', 'Use 9', 'Add', 'Use 7', 'Multiply', 'Use 7']
-  const UNDO = 'Undo the last tile'
+  const UNDO = 'Undo the last number'
   const CLEAR = 'Clear every square'
 
   // The standing line the floor shows while the board has nothing to report. It names the
@@ -80,7 +80,7 @@ describe('GoFigureBoard', () => {
   // keyboard -- the arrows move the caret, the digits and signs write -- and "Tap" named the one
   // modality a keyboard player cannot use, in the standing line that exists to teach the
   // interaction. "Pick" is mode-neutral, the same length, and the same shape.
-  const INSTRUCTION = 'Pick a square, then a tile.'
+  const INSTRUCTION = 'Pick a square, then a number.'
 
   // What the keyboard says when the sheet is over the board. Named here for the same reason the
   // component names it once: it is asserted from several tests and a sentence written twice drifts.
@@ -149,7 +149,7 @@ describe('GoFigureBoard', () => {
     it('puts the tiles in a band of their own', () => {
       renderBoard()
 
-      expect(screen.getByRole('region', { name: 'Tiles' })).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'Numbers and signs' })).toBeInTheDocument()
     })
   })
 
@@ -628,7 +628,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add'])
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4, used' })).toBeInTheDocument()
     })
 
     // Marked by form and not by color, and legible either way: the bank is what the
@@ -666,31 +666,31 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 7', 'Add'])
 
-      expect(screen.getAllByRole('button', { name: /^Use 7, tile \d of 4$/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^Use 7, number \d of 4$/ })).toHaveLength(1)
     })
 
     it('spends the tile that was tapped, not the first one showing that digit', async () => {
       const user = userEvent.setup({ delay: null })
       renderBoard(repeatedBank)
 
-      await user.click(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 9, number 4 of 4' }))
       await tap(user, 'Add')
 
-      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4, used' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, number 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, number 1 of 4' })).toBeInTheDocument()
     })
 
     it('returns the tile that was tapped when it is undone', async () => {
       const user = userEvent.setup({ delay: null })
       renderBoard(repeatedBank)
 
-      await user.click(screen.getByRole('button', { name: 'Use 9, tile 4 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 9, number 4 of 4' }))
       await tap(user, 'Add')
-      await user.click(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 9, number 1 of 4' }))
       await tap(user, UNDO)
 
-      expect(screen.getByRole('button', { name: 'Use 9, tile 1 of 4' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Use 9, tile 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, number 1 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, number 4 of 4, used' })).toBeInTheDocument()
     })
 
     it('returns the tile to the bank on Undo', async () => {
@@ -700,7 +700,7 @@ describe('GoFigureBoard', () => {
       await tap(user, 'Use 6')
       await tap(user, UNDO)
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
     })
 
     // Two digits in a row would read as one two-digit number, which no accepted solution
@@ -790,7 +790,7 @@ describe('GoFigureBoard', () => {
       await tapAll(user, ['Use 9', 'Add', 'Use 6', 'Add', 'Use 7', 'Multiply', 'Use 7'])
 
       expect(
-        screen.getByText("That isn't one of the sums for this puzzle. Undo the last tile and try again."),
+        screen.getByText("That isn't one of the sums for this puzzle. Undo the last number and try again."),
       ).toBeInTheDocument()
     })
   })
@@ -928,7 +928,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add', 'Use 9', 'Add', 'Use 7', 'Add', 'Use 7'])
 
-      expect(screen.getByText('That makes 29, not 154. Undo the last tile and try again.')).toBeInTheDocument()
+      expect(screen.getByText('That makes 29, not 154. Undo the last number and try again.')).toBeInTheDocument()
     })
 
     it('names what a subtraction made', async () => {
@@ -939,7 +939,7 @@ describe('GoFigureBoard', () => {
       // branch of evaluate.ts at all.
       await tapAll(user, ['Use 6', 'Subtract', 'Use 9', 'Add', 'Use 7', 'Multiply', 'Use 7'])
 
-      expect(screen.getByText('That makes 28, not 154. Undo the last tile and try again.')).toBeInTheDocument()
+      expect(screen.getByText('That makes 28, not 154. Undo the last number and try again.')).toBeInTheDocument()
     })
 
     // Division has to come out whole at every step, so there is no number to name.
@@ -949,7 +949,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Divide', 'Use 9', 'Add', 'Use 7', 'Add', 'Use 7'])
 
-      expect(screen.getByText("That doesn't divide evenly. Undo the last tile and try again.")).toBeInTheDocument()
+      expect(screen.getByText("That doesn't divide evenly. Undo the last number and try again.")).toBeInTheDocument()
     })
 
     it('says nothing while tiles are still in the bank', async () => {
@@ -1003,7 +1003,7 @@ describe('GoFigureBoard', () => {
     it('restores which tiles were already spent', () => {
       renderBoard(goFigurePuzzle, '6+9')
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4, used' })).toBeInTheDocument()
     })
 
     // A solved puzzle reopens showing its solution. Replay is emptying the board: solved
@@ -1165,8 +1165,8 @@ describe('GoFigureBoard', () => {
       await tap(user, 'Use 9')
       await user.click(screen.getByRole('button', { name: UNDO }))
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4, used' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Use 9, tile 2 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 9, number 2 of 4' })).toBeInTheDocument()
     })
 
     it('gives a square back the sign a write took over', async () => {
@@ -1187,13 +1187,13 @@ describe('GoFigureBoard', () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
-      await user.click(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 7, number 4 of 4' }))
       await user.click(screen.getByRole('button', { name: 'Square 1, number, 7' }))
       await tap(user, 'Use 6')
       await user.click(screen.getByRole('button', { name: UNDO }))
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, number 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, number 3 of 4' })).toBeInTheDocument()
     })
 
     it('returns the tile a write took over to the bank', async () => {
@@ -1207,8 +1207,8 @@ describe('GoFigureBoard', () => {
       // tappable at all -- and after a write it has moved on to a sign square.
       await user.click(screen.getByRole('button', { name: 'Square 3, number, empty' }))
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
-      expect(screen.getByRole('button', { name: 'Use 9, tile 2 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 9, number 2 of 4, used' })).toBeInTheDocument()
     })
 
     it('refuses the signs while the caret is on a number square', () => {
@@ -1223,7 +1223,7 @@ describe('GoFigureBoard', () => {
 
       await tap(user, 'Use 6')
 
-      expect(screen.getByRole('button', { name: 'Use 9, tile 2 of 4' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 9, number 2 of 4' })).toHaveAttribute('aria-disabled', 'true')
     })
 
     // A bank of 6,9,7,7 has two tiles that write "7", so the square has to remember the tile the
@@ -1234,11 +1234,11 @@ describe('GoFigureBoard', () => {
       const user = userEvent.setup({ delay: null })
       renderBoard()
 
-      await user.click(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 7, number 4 of 4' }))
       await tap(user, 'Add')
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, number 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, number 3 of 4' })).toBeInTheDocument()
     })
   })
 
@@ -1253,14 +1253,14 @@ describe('GoFigureBoard', () => {
     type Press = (user: ReturnType<typeof userEvent.setup>) => Promise<void>
 
     const SEVENS: [string, Press][] = [
-      ['tapping tile 3', (user) => user.click(screen.getByRole('button', { name: /^Use 7, tile 3 of 4/ }))],
-      ['tapping tile 4', (user) => user.click(screen.getByRole('button', { name: /^Use 7, tile 4 of 4/ }))],
+      ['tapping tile 3', (user) => user.click(screen.getByRole('button', { name: /^Use 7, number 3 of 4/ }))],
+      ['tapping tile 4', (user) => user.click(screen.getByRole('button', { name: /^Use 7, number 4 of 4/ }))],
       ['typing 7', (user) => user.keyboard('7')],
     ]
 
     // A spent 7, pressed on purpose. `tap` skips used tiles by contract, so a press that is meant to
     // move a tile names the used one outright.
-    const USED_SEVEN = 'Use 7, tile 3 of 4, used'
+    const USED_SEVEN = 'Use 7, number 3 of 4, used'
 
     const square = async (user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> => {
       await user.click(screen.getByRole('button', { name }))
@@ -1269,9 +1269,9 @@ describe('GoFigureBoard', () => {
     // Both 7s placed THIS SESSION, square 1 first and square 3 second, so `placedOrder` knows which
     // is older. Then the caret goes to square 5.
     const placeBothSevens = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
-      await user.click(screen.getByRole('button', { name: 'Use 7, tile 3 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 7, number 3 of 4' }))
       await square(user, 'Square 3, number, empty')
-      await user.click(screen.getByRole('button', { name: 'Use 7, tile 4 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 7, number 4 of 4' }))
       await square(user, 'Square 5, number, empty')
     }
 
@@ -1349,7 +1349,7 @@ describe('GoFigureBoard', () => {
     it('names a used tile as used and leaves it pressable', () => {
       renderBoard(goFigurePuzzle, '3______|0|')
 
-      const tile = screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })
+      const tile = screen.getByRole('button', { name: 'Use 7, number 4 of 4, used' })
       expect(tile).toHaveAttribute('aria-disabled', 'false')
       expect(within(tile).getByText('Used')).toBeInTheDocument()
     })
@@ -1371,7 +1371,7 @@ describe('GoFigureBoard', () => {
       renderBoard(goFigurePuzzle, '0+2+3__|0|')
 
       await square(user, 'Square 7, number, empty')
-      await user.click(screen.getByRole('button', { name: 'Use 7, tile 3 of 4, used' }))
+      await user.click(screen.getByRole('button', { name: 'Use 7, number 3 of 4, used' }))
 
       expect(said('Square 7 is 7. Square 3 is empty. Running total: 6. Now on square 3, a number.')).toBeInTheDocument()
     })
@@ -1414,7 +1414,7 @@ describe('GoFigureBoard', () => {
       await square(user, 'Square 1, number, 6')
       await tap(user, 'Use 9')
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4' })).toBeInTheDocument()
       expect(screen.getAllByText('Used')).toHaveLength(1)
     })
 
@@ -1428,7 +1428,7 @@ describe('GoFigureBoard', () => {
       await user.keyboard('7')
 
       expect(onProgress).toHaveBeenLastCalledWith('__3_2__|0|')
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4' })).toBeInTheDocument()
       expect(screen.getAllByText('Used')).toHaveLength(2)
     })
 
@@ -1440,7 +1440,10 @@ describe('GoFigureBoard', () => {
 
       await user.keyboard('7')
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4, used' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 7, number 3 of 4, used' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
       expect(screen.getByRole('button', { name: 'Square 5, number, 7' })).toBeInTheDocument()
       expect(onProgress).not.toHaveBeenCalled()
     })
@@ -1503,7 +1506,7 @@ describe('GoFigureBoard', () => {
 
       await user.click(screen.getByRole('button', { name: 'Square 1, number, empty' }))
       await user.click(screen.getByRole('button', { name: 'Open hint 1 of 3' }))
-      await user.click(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' }))
+      await user.click(screen.getByRole('button', { name: 'Use 6, number 1 of 4' }))
 
       expect(screen.getByRole('button', { name: 'Square 1, number, 6' })).toBeInTheDocument()
     })
@@ -2196,7 +2199,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add', 'Use 9', 'Add', 'Use 7', 'Add', 'Use 7'])
 
-      expect(screen.getByText('That makes 29, not 154. Undo the last tile and try again.')).toBeInTheDocument()
+      expect(screen.getByText('That makes 29, not 154. Undo the last number and try again.')).toBeInTheDocument()
     })
 
     // THE REPEAT. A ribbon handed the same sentence twice running renders an identical text node,
@@ -2274,7 +2277,7 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Square 4, sign, Add, from a hint' }))
 
       expect(screen.getByRole('button', { name: 'Subtract' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4' })).toHaveAttribute('aria-disabled', 'true')
     })
 
     it('is skipped when the caret moves on', async () => {
@@ -2464,8 +2467,8 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Square 1, number, empty' }))
       await user.keyboard('7+7')
 
-      expect(screen.getByRole('button', { name: 'Use 7, tile 3 of 4, used' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Use 7, tile 4 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, number 3 of 4, used' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Use 7, number 4 of 4, used' })).toBeInTheDocument()
     })
 
     it('refuses a digit the bank does not hold', async () => {
@@ -2476,10 +2479,10 @@ describe('GoFigureBoard', () => {
       await user.keyboard('8')
 
       expect(screen.getByRole('button', { name: 'Square 1, number, empty' })).toBeInTheDocument()
-      expect(said(`No 8 in your tiles. ${INSTRUCTION}`)).toBeInTheDocument()
+      expect(said(`No 8 in your numbers. ${INSTRUCTION}`)).toBeInTheDocument()
     })
 
-    // It used to be refused with "No 6 in your tiles." -- the same sentence as a digit the pack never
+    // It used to be refused with "No 6 in your numbers." -- the same sentence as a digit the pack never
     // drew, which was the bug: the player has a 6, it is just in the wrong square. Typing follows
     // the tap's rule now, so the 6 moves.
     it('moves a digit whose every tile is already placed', async () => {
@@ -2579,7 +2582,7 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Square 1, number, 6' }))
       await user.keyboard('{Backspace}')
 
-      expect(screen.getByRole('button', { name: 'Use 6, tile 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
+      expect(screen.getByRole('button', { name: 'Use 6, number 1 of 4' })).toHaveAttribute('aria-disabled', 'false')
     })
 
     // Backspace is a player move like any other, so Undo has to be able to take it back -- otherwise
@@ -2777,9 +2780,10 @@ describe('GoFigureBoard', () => {
     })
   })
 
-  // BACKTRACK: the player walks the goal down to 0 with their own tiles, one sign and one tile a
-  // step, on a trail of its own. The fixture's bank is 6,9,7,7 and its goal 154, and the trail
-  // ÷ 7, − 9, − 7, − 6 spells 6 + 7 + 9 × 7 forward -- one of the six sums the pack accepts.
+  // BACKTRACK: the player steps back from the goal with their own tiles, one sign and one tile a
+  // step, then writes the front of the sum forward. The fixture's bank is 6,9,7,7 and its goal 154:
+  // ÷ 7 and − 9 step back to 13, and the finish 6 + 7 spells 6 + 7 + 9 × 7 -- one of the six sums
+  // the pack accepts.
   describe('Backtrack', () => {
     const BACKTRACK = 'Backtrack from 154'
     const PANEL = 'Backtracking from 154'
@@ -2794,24 +2798,40 @@ describe('GoFigureBoard', () => {
       await user.click(screen.getByRole('button', { name: `Backtrack from ${goal}` }))
     }
 
-    // A sign, then the first tile of that digit the trail has not spent -- the tap a player makes.
-    const trailStep = async (user: ReturnType<typeof userEvent.setup>, sign: string, digit: number): Promise<void> => {
-      await user.click(screen.getByRole('button', { name: sign }))
+    // The first tile of that digit the trail has not spent -- the tap a player makes.
+    const pressNumber = async (user: ReturnType<typeof userEvent.setup>, digit: number): Promise<void> => {
       await user.click(screen.getAllByRole('button', { name: new RegExp(`^Use ${digit} in Backtrack`) })[0])
     }
 
-    // The fixture's winning trail: 154 ÷ 7 = 22, 22 − 9 = 13, 13 − 7 = 6, 6 − 6 = 0.
-    const WINNING: [string, number][] = [
-      ['Divide', 7],
-      ['Subtract', 9],
-      ['Subtract', 7],
-      ['Subtract', 6],
-    ]
+    // A sign, then a number: one step back.
+    const trailStep = async (user: ReturnType<typeof userEvent.setup>, sign: string, digit: number): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: sign }))
+      await pressNumber(user, digit)
+    }
 
     const walk = async (user: ReturnType<typeof userEvent.setup>, steps: [string, number][]): Promise<void> => {
       for (const [sign, digit] of steps) {
         await trailStep(user, sign, digit)
       }
+    }
+
+    // Numbers and signs pressed in order, as a finish is written: [6, 'Add', 7].
+    const write = async (user: ReturnType<typeof userEvent.setup>, presses: (number | string)[]): Promise<void> => {
+      for (const press of presses) {
+        await (typeof press === 'number'
+          ? pressNumber(user, press)
+          : user.click(screen.getByRole('button', { name: press })))
+      }
+    }
+
+    // The fixture's winning trail: 154 ÷ 7 = 22, 22 − 9 = 13, and 13 = 6 + 7.
+    const WINNING_STEPS: [string, number][] = [
+      ['Divide', 7],
+      ['Subtract', 9],
+    ]
+    const win = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+      await walk(user, WINNING_STEPS)
+      await write(user, [6, 'Add', 7])
     }
 
     // By prefix, because two tests here run on the quick puzzle, whose goal is 10.
@@ -2898,7 +2918,7 @@ describe('GoFigureBoard', () => {
 
         await openTrail(user)
 
-        expect(screen.getByText('Backtracking from 154. Pick a sign, then a tile.')).toBeInTheDocument()
+        expect(screen.getByText('Backtracking from 154. Pick a sign or a number.')).toBeInTheDocument()
       })
 
       it('brings the live row into view', async () => {
@@ -2930,12 +2950,12 @@ describe('GoFigureBoard', () => {
 
         await openTrail(user)
 
-        expect(screen.getByRole('button', { name: 'Use 7 in Backtrack, tile 3 of 4' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Use 7 in Backtrack, number 3 of 4' })).toHaveAttribute(
           'aria-disabled',
           'true',
         )
         await user.click(screen.getByRole('button', { name: 'Divide' }))
-        expect(screen.getByRole('button', { name: 'Use 7 in Backtrack, tile 3 of 4' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Use 7 in Backtrack, number 3 of 4' })).toHaveAttribute(
           'aria-disabled',
           'false',
         )
@@ -2950,7 +2970,7 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await trailStep(user, 'Divide', 7)
 
-        const tile = screen.getByRole('button', { name: '7, used in Backtrack, tile 3 of 4' })
+        const tile = screen.getByRole('button', { name: '7, used in Backtrack, number 3 of 4' })
         expect(tile).toHaveAttribute('aria-disabled', 'true')
         expect(within(tile).getByText('Used')).toBeInTheDocument()
         expect(screen.getAllByText('Used')).toHaveLength(1)
@@ -2964,7 +2984,7 @@ describe('GoFigureBoard', () => {
         await tap(user, 'Use 6')
         await openTrail(user)
 
-        expect(screen.getByRole('button', { name: 'Use 6 in Backtrack, tile 1 of 4' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Use 6 in Backtrack, number 1 of 4' })).toBeInTheDocument()
         expect(screen.queryByText('Used')).not.toBeInTheDocument()
       })
 
@@ -3015,20 +3035,19 @@ describe('GoFigureBoard', () => {
       // by a second `say`, which a screen reader hears as the second one only. Read RAW, because
       // `ribbon()` strips the very mark under test.
       //
-      // The second case is the one with the most to say -- the step, every tile spent, and a 0 the
-      // pack does not list -- and so the one most likely to say it in two notices.
+      // The second case is the one with the most to say -- the last number, every number spent, and
+      // a sum the pack does not list -- and so the one most likely to say it in two notices.
       it.each([
-        ['an ordinary step', goFigurePuzzle, [] as [string, number][], ['Divide', 7] as [string, number]],
-        ['a last step the pack does not list', oneRouteOnly, WINNING.slice(0, 3), WINNING[3]],
-      ])('changes the ribbon exactly once for %s', async (_kind, puzzle, before, step) => {
+        ['an ordinary step', goFigurePuzzle, ['Divide'], 7],
+        ['a finish the pack does not list', oneRouteOnly, ['Divide', 7, 'Subtract', 9, 6, 'Add'], 7],
+      ])('changes the ribbon exactly once for %s', async (_kind, puzzle, before, last) => {
         const user = userEvent.setup({ delay: null })
         renderBoard(puzzle)
 
         await openTrail(user)
-        await walk(user, before)
-        await user.click(screen.getByRole('button', { name: step[0] }))
+        await write(user, before)
         const marked = regions()[0].includes('​')
-        await user.click(screen.getAllByRole('button', { name: new RegExp(`^Use ${step[1]} in Backtrack`) })[0])
+        await pressNumber(user, last)
 
         expect(regions()[0].includes('​')).toBe(!marked)
       })
@@ -3040,14 +3059,14 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await user.click(screen.getByRole('button', { name: 'Divide' }))
 
-        expect(ribbon()).toBe('Divide. Now pick a tile to divide 154 by.')
-        expect(within(panel()).getByText('Step 1: 154 divided by. Pick a tile.')).toBeInTheDocument()
+        expect(ribbon()).toBe('Divide. Now pick a number to divide 154 by.')
+        expect(within(panel()).getByText('Step 1: 154 divided by. Pick a number.')).toBeInTheDocument()
       })
 
       it.each([
-        ['Add', 'Add. Now pick a tile to add to 154.'],
-        ['Subtract', 'Subtract. Now pick a tile to take from 154.'],
-        ['Multiply', 'Multiply. Now pick a tile to multiply 154 by.'],
+        ['Add', 'Add. Now pick a number to add to 154.'],
+        ['Subtract', 'Subtract. Now pick a number to take from 154.'],
+        ['Multiply', 'Multiply. Now pick a number to multiply 154 by.'],
       ])('says what %s asks for', async (sign: string, sentence: string) => {
         const user = userEvent.setup({ delay: null })
         renderBoard()
@@ -3067,20 +3086,21 @@ describe('GoFigureBoard', () => {
         await walk(user, [
           ['Divide', 7],
           ['Subtract', 7],
-          ['Subtract', 9],
+          ['Add', 9],
         ])
 
         expect(within(panel()).getByText('22 − 7 = 15')).toBeInTheDocument()
-        expect(within(panel()).getByText('15 − 9 = 6')).toBeInTheDocument()
-        expect(within(panel()).getByText('Step 4: 6. Pick a sign.')).toBeInTheDocument()
+        expect(within(panel()).getByText('15 + 9 = 24')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 4: 24. Pick a number to make 24.')).toBeInTheDocument()
       })
 
-      it('refuses a tile before a sign', async () => {
+      // Before the first step a finish would be the whole board written a second time.
+      it('refuses a number before the first step', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard()
 
         await openTrail(user)
-        await user.click(screen.getByRole('button', { name: 'Use 6 in Backtrack, tile 1 of 4' }))
+        await user.click(screen.getByRole('button', { name: 'Use 6 in Backtrack, number 1 of 4' }))
 
         expect(ribbon()).toBe('Pick a sign first.')
       })
@@ -3095,7 +3115,7 @@ describe('GoFigureBoard', () => {
 
         expect(ribbon()).toBe('154 divided by 9 is 17, remainder 1. Each step needs a whole number.')
         expect(within(panel()).getByText('154 ÷ 9 is 17 remainder 1. Not a whole number.')).toBeInTheDocument()
-        expect(within(panel()).getByText('Step 1: 154 divided by. Pick a tile.')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 1: 154 divided by. Pick a number.')).toBeInTheDocument()
         expect(within(panel()).getAllByRole('listitem')).toHaveLength(1)
       })
 
@@ -3168,9 +3188,9 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await trailStep(user, 'Divide', 7)
         await user.click(screen.getByRole('button', { name: 'Subtract' }))
-        await user.click(screen.getByRole('button', { name: '7, used in Backtrack, tile 3 of 4' }))
+        await user.click(screen.getByRole('button', { name: '7, used in Backtrack, number 3 of 4' }))
 
-        expect(ribbon()).toBe('Subtract. Now pick a tile to take from 22.')
+        expect(ribbon()).toBe('Subtract. Now pick a number to take from 22.')
         expect(within(panel()).getAllByRole('listitem')).toHaveLength(2)
       })
     })
@@ -3213,14 +3233,87 @@ describe('GoFigureBoard', () => {
       })
     })
 
-    // S-17, S-18: reaching 0.
-    describe('reaching 0', () => {
-      it('solves the puzzle when the trail spells an accepted sum', async () => {
+    // The finish: after a step, a number first writes the front of the sum forward, and a full
+    // finish is judged by the pack's accepted sums.
+    describe('finishing', () => {
+      it('offers both moves once a step is taken', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard()
 
         await openTrail(user)
-        await walk(user, WINNING)
+        await trailStep(user, 'Divide', 7)
+
+        expect(within(panel()).getByText('Step 2: 22. Pick a sign or a number.')).toBeInTheDocument()
+        expect(
+          within(panel()).getByText('Start with a sign to keep backtracking, or with a number to finish.'),
+        ).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Use 6 in Backtrack, number 1 of 4' })).toHaveAttribute(
+          'aria-disabled',
+          'false',
+        )
+        expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-disabled', 'false')
+      })
+
+      it('starts the finish with a number, and says so', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await pressNumber(user, 6)
+
+        expect(ribbon()).toBe('Finishing 22 with 6. Pick a sign next.')
+        expect(within(panel()).getByText('Step 2: 22 equals 6. Pick a sign.')).toBeInTheDocument()
+        expect(within(panel()).getByText("Use every number that's left to make 22.")).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: '6, used in Backtrack, number 1 of 4' })).toBeInTheDocument()
+      })
+
+      it('takes a sign and then a number', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await write(user, [6, 'Add'])
+
+        expect(ribbon()).toBe('Add. Now pick a number.')
+        expect(within(panel()).getByText('Step 2: 22 equals 6 plus. Pick a number.')).toBeInTheDocument()
+        await pressNumber(user, 7)
+        expect(ribbon()).toBe('6 plus 7. Pick a sign next.')
+      })
+
+      it('lets a second sign replace the first', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await write(user, [6, 'Add', 'Multiply'])
+
+        expect(within(panel()).getByText('Step 2: 22 equals 6 times. Pick a number.')).toBeInTheDocument()
+      })
+
+      it('refuses a number where the finish needs a sign', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await write(user, [6, 9])
+
+        expect(ribbon()).toBe('Pick a sign first.')
+        expect(screen.getByRole('button', { name: 'Use 9 in Backtrack, number 2 of 4' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        )
+      })
+
+      it('solves the puzzle when the finish spells an accepted sum', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await win(user)
 
         expect(squareNames()).toEqual([
           'Square 1, number, 6',
@@ -3236,78 +3329,86 @@ describe('GoFigureBoard', () => {
         expect(ribbon()).toBe('Solved. 6 + 7 + 9 × 7 = 154')
       })
 
-      it('closes and empties the trail and hands focus back to the button', async () => {
+      // 22 = 6 + 7 + 9: as many numbers as the player can see as one sum, not just the last two.
+      it('finishes with three numbers', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard()
 
         await openTrail(user)
-        await walk(user, WINNING)
+        await trailStep(user, 'Divide', 7)
+        await write(user, [6, 'Add', 7, 'Add', 9])
 
-        const button = screen.getByRole('button', { name: BACKTRACK })
-        expect(button).toHaveAttribute('aria-expanded', 'false')
-        expect(button).toHaveFocus()
-        await openTrail(user)
-        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
-      })
-
-      // A lock the answer agrees with is a sign the player paid for, and it stays.
-      it('keeps a hint lock the answer agrees with', async () => {
-        const user = userEvent.setup({ delay: null })
-        renderBoard(goFigurePuzzle, HINTED)
-
-        await openTrail(user)
-        await walk(user, WINNING)
-
-        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|1|1')
-        expect(screen.getByRole('button', { name: 'Square 4, sign, Add, from a hint' })).toBeInTheDocument()
-      })
-
-      // A pack can accept more than one operator tuple. A lock the trail's answer contradicts would
-      // make decode reject the stored board, so it goes.
-      it('drops a hint lock the answer contradicts', async () => {
-        const user = userEvent.setup({ delay: null })
-        const timesLadder = [
-          { metadata: { kind: 'gofigure-operator', operator: '*', slot: 1 }, text: 'The 2nd operator is "×".' },
-          ...goFigurePuzzle.data.hints.slice(1),
-        ] as GoFigureHintLadder
-        renderBoard({ ...goFigurePuzzle, data: { ...goFigurePuzzle.data, hints: timesLadder } }, '___*___|1|1')
-
-        await openTrail(user)
-        await walk(user, WINNING)
-
-        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|1|')
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|0|')
         expect(onSolved).toHaveBeenCalledTimes(1)
       })
 
-      it('says a trail at 0 with tiles left does not count', async () => {
+      // The order the finish is written in is the order of the sum: 7 + 6 + 9 × 7 is its own entry.
+      it('spells the finish in the order it was written', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, WINNING_STEPS)
+        await write(user, [7, 'Add', 6])
+
+        expect(squareNames()[0]).toBe('Square 1, number, 7')
+        expect(onSolved).toHaveBeenCalledTimes(1)
+      })
+
+      // 154 ÷ 7 = 22, 22 + 6 = 28, 28 − 9 = 19, and the 7 left over is not 19.
+      it('offers only the finish when one number is left', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, [
+          ['Divide', 7],
+          ['Add', 6],
+          ['Subtract', 9],
+        ])
+
+        expect(within(panel()).getByText('Step 4: 19. Pick a number to make 19.')).toBeInTheDocument()
+        expect(within(panel()).getByText('One number is left. Pick it to make 19.')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-disabled', 'true')
+        await user.click(screen.getByRole('button', { name: 'Add' }))
+        expect(ribbon()).toBe('One number is left. Pick it to make 19.')
+        await pressNumber(user, 7)
+        expect(ribbon()).toBe('That makes 7, not 19. Undo the last number to try another.')
+      })
+
+      // 10 − 4 = 6, 6 − 3 = 3, 3 − 2 = 1, and the number left is 1: "1 = 1" is the only finish, so the
+      // step writes it, and 1 + 2 + 3 + 4 is the pack's sum.
+      it('finishes by itself when a step lands on the last number', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(quickPuzzle, null)
 
         await openTrail(user, 10)
         await walk(user, [
-          ['Divide', 2],
           ['Subtract', 4],
-          ['Subtract', 1],
+          ['Subtract', 3],
+          ['Subtract', 2],
         ])
 
-        expect(ribbon()).toBe('1 minus 1 is 0, but tiles are left. Use every tile.')
-        expect(onSolved).not.toHaveBeenCalled()
+        expect(onSolved).toHaveBeenCalledTimes(1)
+        expect(onProgress).toHaveBeenLastCalledWith('0+1+2+3|0|')
+        expect(ribbon()).toBe('Solved. 1 + 2 + 3 + 4 = 10')
       })
 
-      it("says a trail at 0 the pack does not list isn't a sum, and stays open", async () => {
+      // The step and the verdict share one notice, and the written finish stays for Undo.
+      it('says the step and the verdict when a finish it wrote is not a listed sum', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(oneRouteOnly)
 
         await openTrail(user)
-        await walk(user, WINNING)
+        await walk(user, [...WINNING_STEPS, ['Subtract', 7]])
 
-        expect(ribbon()).toBe("6 minus 6 is 0. Every tile is used, but this isn't one of the sums for this puzzle.")
-        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+        expect(ribbon()).toBe("13 minus 7 is 6. That makes 6, but this isn't one of the sums for this puzzle.")
+        expect(within(panel()).getByText('Step 4: 6 equals 6.')).toBeInTheDocument()
         expect(onSolved).not.toHaveBeenCalled()
-        expect(onProgress).not.toHaveBeenCalled()
       })
 
-      it('says a trail that cannot be read forward is not a sum', async () => {
+      // 0 is a number like any other now: passing through it ends nothing.
+      it('goes on past 0', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(quickPuzzle, null)
 
@@ -3316,11 +3417,52 @@ describe('GoFigureBoard', () => {
           ['Divide', 2],
           ['Subtract', 4],
           ['Subtract', 1],
-          ['Multiply', 3],
         ])
 
-        expect(ribbon()).toBe("0 times 3 is 0. Every tile is used, but this isn't one of the sums for this puzzle.")
+        expect(ribbon()).toBe('1 minus 1 is 0.')
+        expect(within(panel()).getByText('Step 4: 0. Pick a number to make 0.')).toBeInTheDocument()
         expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      it('says what a finish that misses makes, and stays open', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, WINNING_STEPS)
+        await write(user, [6, 'Multiply', 7])
+
+        expect(ribbon()).toBe('That makes 42, not 13. Undo the last number to try another.')
+        expect(
+          within(panel()).getByText('That makes 42, not 13. Undo the last number to try another.'),
+        ).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      it('says a finish that does not divide evenly', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, WINNING_STEPS)
+        await write(user, [7, 'Divide', 6])
+
+        expect(ribbon()).toBe("That doesn't divide evenly. Undo the last number to try another.")
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      it("says a finish the pack does not list isn't a sum, and stays open", async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await win(user)
+
+        expect(ribbon()).toBe("That makes 13, but this isn't one of the sums for this puzzle.")
+        expect(screen.getByRole('button', { name: BACKTRACK })).toHaveAttribute('aria-expanded', 'true')
+        expect(onSolved).not.toHaveBeenCalled()
+        expect(onProgress).not.toHaveBeenCalled()
       })
 
       // A malformed pack: it accepts a sum written with ×, but draws no × sign, so `decode` cannot put
@@ -3345,37 +3487,131 @@ describe('GoFigureBoard', () => {
           ['Divide', 2],
           ['Divide', 2],
           ['Divide', 2],
-          ['Subtract', 2],
         ])
 
-        expect(ribbon()).toBe("2 minus 2 is 0. Every tile is used, but this isn't one of the sums for this puzzle.")
+        expect(ribbon()).toBe("4 divided by 2 is 2. That makes 2, but this isn't one of the sums for this puzzle.")
         expect(onSolved).not.toHaveBeenCalled()
         expect(onProgress).not.toHaveBeenCalled()
       })
 
-      it('keeps the last step in view once every tile is in the trail', async () => {
+      it('closes and empties the trail and hands focus back to the button', async () => {
         const user = userEvent.setup({ delay: null })
-        renderBoard(oneRouteOnly)
+        renderBoard()
 
         await openTrail(user)
-        await walk(user, WINNING)
+        await win(user)
 
-        const rows = within(panel()).getAllByRole('listitem')
-        expect(rows).toHaveLength(4)
-        expect(scrollIntoView.mock.contexts.at(-1)).toBe(rows.at(-1))
-        expect(within(panel()).getByText('Every tile is used.')).toBeInTheDocument()
+        const button = screen.getByRole('button', { name: BACKTRACK })
+        expect(button).toHaveAttribute('aria-expanded', 'false')
+        expect(button).toHaveFocus()
+        await openTrail(user)
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
       })
 
-      it('refuses a sign once every tile is in the trail', async () => {
+      // A lock the answer agrees with is a sign the player paid for, and it stays.
+      it('keeps a hint lock the answer agrees with', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(goFigurePuzzle, HINTED)
+
+        await openTrail(user)
+        await win(user)
+
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|1|1')
+        expect(screen.getByRole('button', { name: 'Square 4, sign, Add, from a hint' })).toBeInTheDocument()
+      })
+
+      // A pack can accept more than one operator tuple. A lock the trail's answer contradicts would
+      // make decode reject the stored board, so it goes.
+      it('drops a hint lock the answer contradicts', async () => {
+        const user = userEvent.setup({ delay: null })
+        const timesLadder = [
+          { metadata: { kind: 'gofigure-operator', operator: '*', slot: 1 }, text: 'The 2nd operator is "×".' },
+          ...goFigurePuzzle.data.hints.slice(1),
+        ] as GoFigureHintLadder
+        renderBoard({ ...goFigurePuzzle, data: { ...goFigurePuzzle.data, hints: timesLadder } }, '___*___|1|1')
+
+        await openTrail(user)
+        await win(user)
+
+        expect(onProgress).toHaveBeenLastCalledWith('0+2+1*3|1|')
+        expect(onSolved).toHaveBeenCalledTimes(1)
+      })
+
+      it('keeps the finish in view', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(oneRouteOnly)
 
         await openTrail(user)
-        await walk(user, WINNING)
+        await win(user)
+
+        const rows = within(panel()).getAllByRole('listitem')
+        expect(rows).toHaveLength(3)
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(rows.at(-1))
+      })
+
+      it('refuses a sign once every number is used', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await win(user)
         await user.click(screen.getByRole('button', { name: 'Add' }))
 
-        expect(ribbon()).toBe('Every tile is used. Undo a step to try another.')
+        expect(ribbon()).toBe('Every number is used. Undo the last number to try another.')
         expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-disabled', 'true')
+      })
+
+      it('takes the finish back one press at a time', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await write(user, [6, 'Add'])
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+        expect(ribbon()).toBe('Sign taken back.')
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+
+        expect(ribbon()).toBe("6 taken back. You're at 22.")
+        expect(within(panel()).getByText('Step 2: 22. Pick a sign or a number.')).toBeInTheDocument()
+      })
+
+      it('clears the finish with the steps', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await pressNumber(user, 6)
+        await user.click(screen.getByRole('button', { name: CLEAR_TRAIL }))
+
+        expect(within(panel()).getByText('Step 1: 154. Pick a sign.')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Use 6 in Backtrack, number 1 of 4' })).toBeInTheDocument()
+      })
+
+      // A half-written finish is a press the player walked away from, like a picked sign.
+      it('drops the finish on Done and keeps the steps', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await trailStep(user, 'Divide', 7)
+        await write(user, [6, 'Add'])
+        await user.click(screen.getByRole('button', { name: DONE }))
+        await openTrail(user)
+
+        expect(within(panel()).getByText('Step 2: 22. Pick a sign or a number.')).toBeInTheDocument()
+      })
+
+      it('writes the finish from the keyboard', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await user.keyboard('/76+9+7')
+
+        expect(onProgress).toHaveBeenLastCalledWith('0+1+2*3|0|')
+        expect(onSolved).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -3558,7 +3794,7 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
 
         expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
-        expect(within(panel()).getByText('Step 2: 22. Pick a sign.')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 2: 22. Pick a sign or a number.')).toBeInTheDocument()
       })
 
       // The wrong-answer line is held back while the trail is open and comes back on Done. A "Back
@@ -3570,7 +3806,7 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await user.click(screen.getByRole('button', { name: DONE }))
 
-        expect(ribbon()).toBe('That makes 29, not 154. Undo the last tile and try again.')
+        expect(ribbon()).toBe('That makes 29, not 154. Undo the last number and try again.')
       })
     })
 
@@ -3599,14 +3835,14 @@ describe('GoFigureBoard', () => {
         expect(ribbon()).toBe('Solved. 6 + 9 + 7 × 7 = 154')
       })
 
-      it('steps without solving again when the trail reaches 0', async () => {
+      it('finishes without solving again', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(goFigurePuzzle, '6+9+7*7')
 
         await openTrail(user)
-        await walk(user, WINNING)
+        await win(user)
 
-        expect(ribbon()).toBe('6 minus 6 is 0. Every tile is used.')
+        expect(ribbon()).toBe('That makes 13.')
         expect(onSolved).not.toHaveBeenCalled()
       })
 
@@ -3662,7 +3898,7 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await user.keyboard('x')
 
-        expect(ribbon()).toBe('Multiply. Now pick a tile to multiply 154 by.')
+        expect(ribbon()).toBe('Multiply. Now pick a number to multiply 154 by.')
       })
 
       it('refuses a digit before a sign', async () => {
@@ -3682,7 +3918,7 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await user.keyboard('/5')
 
-        expect(ribbon()).toBe('No 5 in your tiles.')
+        expect(ribbon()).toBe('No 5 in your numbers.')
       })
 
       it('refuses a digit whose every tile is in the trail', async () => {
@@ -3773,7 +4009,7 @@ describe('GoFigureBoard', () => {
         await openTrail(user)
         await user.keyboard('/')
 
-        expect(ribbon()).toBe('Divide. Now pick a tile to divide 154 by.')
+        expect(ribbon()).toBe('Divide. Now pick a number to divide 154 by.')
       })
     })
 
@@ -3884,7 +4120,7 @@ describe('GoFigureBoard', () => {
 
       await user.keyboard('{Enter}')
 
-      expect(first).toHaveAccessibleName('Use 6, tile 1 of 4, used')
+      expect(first).toHaveAccessibleName('Use 6, number 1 of 4, used')
       expect(first).toHaveFocus()
     })
 
@@ -3964,7 +4200,7 @@ describe('GoFigureBoard', () => {
       // Anchored at the end, so a spent tile -- pressable now, and named ", used" -- is never the one
       // the search stops on. Pressing the spent 7 would still land a 7 (it spends the free twin),
       // but the walk is meant to be the plain one: each press spends a fresh tile.
-      const fresh = (digit: number): RegExp => new RegExp(`^Use ${digit}, tile \\d of 4$`)
+      const fresh = (digit: number): RegExp => new RegExp(`^Use ${digit}, number \\d of 4$`)
       for (const name of [fresh(6), 'Add', fresh(9), 'Add', fresh(7), 'Multiply', fresh(7)]) {
         await tabToAndPress(name)
       }
@@ -4003,7 +4239,7 @@ describe('GoFigureBoard', () => {
 
       await tapAll(user, ['Use 6', 'Add', 'Use 9', 'Add', 'Use 7', 'Add', 'Use 7'])
 
-      const tiles = screen.getAllByRole('button', { name: /^Use \d, tile \d of 4, used$/ })
+      const tiles = screen.getAllByRole('button', { name: /^Use \d, number \d of 4, used$/ })
       expect(tiles).toHaveLength(4)
       expect(tiles.filter((tile) => tile.getAttribute('aria-disabled') === 'false')).toHaveLength(4)
     })

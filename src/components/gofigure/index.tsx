@@ -23,10 +23,11 @@ import {
   write,
 } from './board'
 import { evaluateLeftToRight } from './evaluate'
-import { forwardExpression, stepOf, TrailStep } from './trail'
+import { forwardExpression, stepOf, TrailFinish, TrailStep } from './trail'
 // The sign glyphs and the marker chip are drawn by the board AND by the trail's panel, and they
 // live in the panel's module because the import can only run one way: the board mounts the panel.
 import {
+  finishSpoken,
   MARKER,
   MARKER_RESULT,
   OPERATOR_SYMBOLS,
@@ -101,7 +102,7 @@ const SLOT_COUNT = (CELL_COUNT - 1) / 2
 // clears -- so the one standing sentence whose entire job is to teach the interaction named the one
 // modality a keyboard player cannot use, and nothing else on screen tells them the arrows exist.
 // "Pick" is mode-neutral, the same five words, the same length, and reads no worse under a finger.
-const INSTRUCTION = 'Pick a square, then a tile.'
+const INSTRUCTION = 'Pick a square, then a number.'
 
 // The board's own refusals and confirmations, named once. Every one of them is reachable from two
 // inputs -- a tap and a keystroke -- and a sentence written twice is a sentence that can drift.
@@ -137,11 +138,12 @@ const SQUARES_WAIT = 'Your squares wait while you backtrack. Pick a square or pr
 // the board cannot keep.
 const SQUARES_WAIT_SOLVED = 'Your squares wait while you backtrack.'
 const SIGN_FIRST = 'Pick a sign first.'
-const ALL_IN_TRAIL = 'Every tile is used.'
+const ALL_IN_TRAIL = 'Every number is used.'
+const TRY_ANOTHER = 'Undo the last number to try another.'
 
-// What a picked sign asks for, finished by the value it acts on: "Now pick a tile to take from 22."
-// Each reads as the step the player is about to take, which is why Subtract is "take from" and not
-// "subtract from" -- the tile is the thing taken.
+// What a picked sign asks for, finished by the value it acts on: "Now pick a number to take from
+// 22." Each reads as the step the player is about to take, which is why Subtract is "take from" and
+// not "subtract from" -- the number is the thing taken.
 const SIGN_ASKS: Record<Operator, (value: string) => string> = {
   '*': (value) => `to multiply ${value} by`,
   '+': (value) => `to add to ${value}`,
@@ -150,16 +152,18 @@ const SIGN_ASKS: Record<Operator, (value: string) => string> = {
 }
 
 // The trail as the board holds it: in memory only, never in progress (ADR-1), so a reload or Play
-// again starts it over and nothing about it reaches the shell. `note` is the uneven step's refusal,
-// kept on screen under the list because the ribbon's copy of it is gone at the next press.
+// again starts it over and nothing about it reaches the shell. `note` is the uneven step's refusal
+// or a finished sum's verdict, kept on screen under the list because the ribbon's copy of it is gone
+// at the next press. `finish` is the front of the sum, written forward; see TrailFinish.
 interface Trail {
+  finish: TrailFinish | null
   note: string
   open: boolean
   pending: Operator | null
   steps: TrailStep[]
 }
 
-const NO_TRAIL: Trail = { note: '', open: false, pending: null, steps: [] }
+const NO_TRAIL: Trail = { finish: null, note: '', open: false, pending: null, steps: [] }
 
 // The tile's ink is --lull-floor-ink, which measures 13.0:1 on the light floor and 15.4:1 on the
 // dark one, and its edge is drawn with --lull-floor-rule, the floor's load-bearing 3:1 boundary.
@@ -448,10 +452,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // needing one at all -- is on `playAgain` below, where it is raised.
   const [resetNonce, setResetNonce] = useState(0)
 
-  // BACKTRACK: the player walks the goal down to 0 with their own tiles, one sign and one tile a
-  // step. Its own ledger, separate from the board's -- a tile in the trail is not a tile in a square,
-  // and the trail never writes a square except on the one press §3.3 of the spec allows, a trail
-  // that reaches 0 with an answer the pack lists.
+  // BACKTRACK: the player steps back from the goal with their own tiles, one sign and one tile a
+  // step, then writes the front of the sum forward. Its own ledger, separate from the board's -- a
+  // tile in the trail is not a tile in a square -- and the trail never writes a square except on the
+  // one press that finishes it with an answer the pack lists.
   const [trail, setTrail] = useState<Trail>(NO_TRAIL)
 
   // The panel's id, for the Backtrack button's `aria-controls`. useId is unique per instance and the
@@ -531,7 +535,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // the method would make a real browser losing it silent.
   useEffect(() => {
     if (trail.open) trailTargetRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [trail.open, trail.steps.length, trail.pending])
+  }, [trail.open, trail.steps.length, trail.pending, trail.finish])
 
   // A set lookup, and nothing else. The component never evaluates arithmetic to decide
   // whether an answer is right: the backend enumerated every accepted expression and
@@ -625,9 +629,34 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // The trail's own ledger, by bank index, and separate from `consumed` on purpose: a tile can be in
   // a square and in the trail at once, because the trail is arithmetic about the tiles and not a
   // second place to put them.
-  const trailSpent = bank.map((_unused, index) => trail.steps.some((step) => step.tile === index))
+  const trailSpent = bank.map(
+    (_unused, index) => trail.steps.some((step) => step.tile === index) || trail.finish?.tiles.includes(index) === true,
+  )
   const allInTrail = trailSpent.every(Boolean)
   const trailValue = trail.steps.length === 0 ? goal : trail.steps[trail.steps.length - 1].to
+  // How many tiles the STEPS have left -- the length the finish has to reach. A step may never take
+  // the last of them, because the finish is the only thing that ends a trail, and a finish needs at
+  // least one tile to write.
+  const trailLeft = bank.length - trail.steps.length
+  // What the finish waits for: a number after a sign (or to start), a sign after a number. Full is
+  // neither, and the trail then waits for Undo.
+  const finishWants: 'number' | 'sign' | null =
+    trail.finish === null
+      ? null
+      : trail.finish.tiles.length === trailLeft
+        ? null
+        : trail.finish.tiles.length === trail.finish.ops.length
+          ? 'number'
+          : 'sign'
+  // THE FIRST PRESS DECIDES. With nothing half-made, a sign starts a step back and a number starts
+  // the finish -- except before the first step, when the finish would be the whole board written a
+  // second time, and except with one tile left, when a step back could not end anything.
+  const canStepBack = trail.finish === null && trailLeft > 1
+  const canFinish = trail.finish === null && trail.pending === null && trail.steps.length > 0
+  // What the tray offers while the trail is open. A sign in the finish is offered while a number is
+  // waiting for one too, because a second sign replaces the first.
+  const trailTakesNumber = trail.pending !== null || canFinish || finishWants === 'number'
+  const trailTakesSign = trail.finish === null ? canStepBack : finishWants !== null
 
   // Every write to the ribbon goes through here, so no caller has to remember that saying the same
   // thing twice is a different job from saying it once. The counter is what the DOM sees change.
@@ -814,7 +843,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       return
     }
     if (choice.kind === 'none') {
-      refuse(`No ${digit} in your tiles.`)
+      refuse(`No ${digit} in your numbers.`)
       return
     }
     if (choice.kind === 'spend') {
@@ -997,8 +1026,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   }
 
   // DONE, ESCAPE AND THE BACKTRACK BUTTON all land here. The steps stay, so reopening shows the
-  // trail the player left; the half-made step and the uneven note go, because both describe a press
-  // the player has walked away from.
+  // trail the player left; the half-made step, the finish and the note go, because each describes a
+  // press the player has walked away from.
   //
   // SILENT ON A SOLVED BOARD. The sentence would stand in the ribbon ahead of the solved banner, and
   // a solved board has no control left that clears a notice -- the squares, the tiles and the keys
@@ -1010,7 +1039,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // would sit in front of it, and the line saying the sum misses is the more useful of the two. A
   // solved board is a full one, so `filled` is the whole test for both.
   const closeTrail = (): void => {
-    setTrail({ ...trail, note: '', open: false, pending: null })
+    setTrail({ ...trail, finish: null, note: '', open: false, pending: null })
     say(filled ? '' : 'Back to your board. Nothing on it changed.')
   }
 
@@ -1022,25 +1051,37 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // focus still goes to the square that was tapped.
   const leaveTrailFor = (index: number): void => {
     closeToSquare.current = index
-    setTrail({ ...trail, note: '', open: false, pending: null })
+    setTrail({ ...trail, finish: null, note: '', open: false, pending: null })
     if (isSolved) say('')
     else moveCursor(index)
   }
 
   const trailSign = (op: Operator): void => {
     if (allInTrail) {
-      refuse(`${ALL_IN_TRAIL} Undo a step to try another.`)
+      refuse(`${ALL_IN_TRAIL} ${TRY_ANOTHER}`)
+      return
+    }
+    // A sign in the finish goes after its number, and a second sign in a row replaces the first, the
+    // way a second sign replaces a picked one on a step.
+    if (trail.finish !== null) {
+      const ops = finishWants === 'sign' ? [...trail.finish.ops, op] : [...trail.finish.ops.slice(0, -1), op]
+      setTrail({ ...trail, finish: { ...trail.finish, ops }, note: '' })
+      say(`${OPERATOR_NAMES[op]}. Now pick a number.`)
+      return
+    }
+    if (!canStepBack) {
+      refuse(`One number is left. Pick it to make ${spokenNumber(trailValue)}.`)
       return
     }
     setTrail({ ...trail, note: '', pending: op })
-    say(`${OPERATOR_NAMES[op]}. Now pick a tile ${SIGN_ASKS[op](spokenNumber(trailValue))}.`)
+    say(`${OPERATOR_NAMES[op]}. Now pick a number ${SIGN_ASKS[op](spokenNumber(trailValue))}.`)
   }
 
-  // A TILE MAKES A STEP, and the arithmetic is `stepOf`'s. The board composes sentences from what it
-  // returned and decides nothing about any number itself.
+  // A TILE MAKES A STEP, OR WRITES THE FINISH. With a sign picked it completes a step back, and the
+  // arithmetic is `stepOf`'s; with none, it starts the finish or adds to it.
   const trailTile = (tile: number): void => {
     if (trail.pending === null) {
-      refuse(SIGN_FIRST)
+      finishWith(tile)
       return
     }
     const op = trail.pending
@@ -1067,44 +1108,84 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       )
       return
     }
-
+    // `canStepBack` kept the last tile for the finish, so a step itself never ends the trail. A trail
+    // that passes through 0 goes on like any other.
     const made: TrailStep = { from, op, tile, to: result.value }
     const steps = [...trail.steps, made]
-    const spentAll = bank.every((_unused, index) => steps.some((step) => step.tile === index))
-    // ONE SENTENCE PER STEP. Whatever reaching 0 has to add is appended here rather than said after,
-    // so a step changes the ribbon exactly once and a screen reader hears one announcement.
-    const sentence = `${stepSentence(made, bank)}${spentAll ? ` ${ALL_IN_TRAIL}` : ''}`
-
-    // Only an END state is judged: a trail that passes through 0 and goes on is allowed. A board
-    // that is already solved has nothing left to solve, so there the step is only announced.
-    if (result.value !== 0 || isSolved) {
-      setTrail({ ...trail, note: '', pending: null, steps })
-      say(sentence)
+    // ONE EXCEPTION: a step that lands on the very number left over. "1 = 1" is the only finish there
+    // is, so the trail writes it rather than ask for a press with nothing to decide. Comparing the two
+    // only chooses whether to write it; whether it SOLVES is still the set lookup in `judge`.
+    const last = bank.findIndex((_unused, index) => index !== tile && !trailSpent[index])
+    if (steps.length === bank.length - 1 && bank[last] === made.to) {
+      judge({ ...trail, pending: null, steps }, { ops: [], tiles: [last] }, `${stepSentence(made, bank)} `)
       return
     }
-    // The step's own sentence runs on into the reason rather than stopping first: "1 minus 1 is 0,
-    // but tiles are left." `spentAll` is false here, so `sentence` is the step sentence alone.
-    if (!spentAll) {
-      setTrail({ ...trail, note: '', pending: null, steps })
-      say(`${sentence.slice(0, -1)}, but tiles are left. Use every tile.`)
+    setTrail({ ...trail, note: '', pending: null, steps })
+    say(stepSentence(made, bank))
+  }
+
+  const finishWith = (tile: number): void => {
+    if (trail.finish === null ? !canFinish : finishWants !== 'number') {
+      refuse(SIGN_FIRST)
+      return
+    }
+    const finish: TrailFinish =
+      trail.finish === null ? { ops: [], tiles: [tile] } : { ...trail.finish, tiles: [...trail.finish.tiles, tile] }
+    if (finish.tiles.length < trailLeft) {
+      const written = finishSpoken(finish, bank)
+      setTrail({ ...trail, finish, note: '' })
+      // The first number names the switch, so a player who meant to step back hears what happened.
+      say(
+        trail.finish === null
+          ? `Finishing ${spokenNumber(trailValue)} with ${written}. Pick a sign next.`
+          : `${written}. Pick a sign next.`,
+      )
       return
     }
 
-    // THE DECISION IS A SET LOOKUP, NEVER ARITHMETIC. `forwardExpression` only spells the string the
-    // trail describes, and `accepted` is the backend's own list -- the same lookup `commit` makes on
-    // every other path. A trail that reached 0 by a route the pack does not list (or that cannot be
-    // spelled forward at all, like one ending "0 × 7") is told so and stays open, so Undo works.
-    //
-    // `decode` is asked too, and its answer can only be "no" on a malformed pack: one that lists a sum
-    // its own signs cannot draw, so the board could never hold it. Filling from that would save an
-    // empty board over the player's squares in silence, so it is treated as no sum at all.
-    const expression = forwardExpression(steps, bank)
+    judge(trail, finish, '')
+  }
+
+  // A FULL FINISH IS JUDGED HERE, from a press of its last number or from a step that wrote it. It
+  // takes the trail it judges rather than reading `trail`, because a step that wrote the finish has
+  // not been rendered yet. `lead` is that step's sentence: the ribbon says the step and the verdict in
+  // one notice, so a screen reader hears both.
+  //
+  // THE DECISION IS A SET LOOKUP, NEVER ARITHMETIC. `forwardExpression` only spells the string the
+  // trail describes, and `accepted` is the backend's own list -- the same lookup `commit` makes on
+  // every other path. A finish the pack does not list is told so and stays on the trail, so Undo
+  // works. The left-to-right value below only chooses the words for that refusal.
+  //
+  // `decode` is asked too, and its answer can only be "no" on a malformed pack: one that lists a sum
+  // its own signs cannot draw, so the board could never hold it. Filling from that would save an
+  // empty board over the player's squares in silence, so it is treated as no sum at all.
+  const judge = (judged: Trail, finish: TrailFinish, lead: string): void => {
+    const target = judged.steps.length === 0 ? goal : judged.steps[judged.steps.length - 1].to
+    const expression = forwardExpression(judged.steps, finish, bank)
     const answerBoard = expression === null ? null : decode(expression, puzzle.data)
-    if (expression === null || answerBoard === null || !accepted.has(expression) || !isComplete(answerBoard)) {
-      setTrail({ ...trail, note: '', pending: null, steps })
-      // One clause about the tiles and one about the sum, in place of the resting "Every tile is in
-      // the trail." that `sentence` carries -- said once, not twice.
-      say(`${stepSentence(made, bank)} Every tile is used, but this isn't one of the sums for this puzzle.`)
+    if (
+      isSolved ||
+      expression === null ||
+      answerBoard === null ||
+      !accepted.has(expression) ||
+      !isComplete(answerBoard)
+    ) {
+      const value = evaluateLeftToRight(
+        finish.tiles.map((index) => bank[index]),
+        finish.ops,
+      )
+      // The board's own wrong-answer words, "That makes 42, not 13", because the finish is the
+      // board's kind of sum, and the sum itself is on screen in the row above. Said with the spoken
+      // number and written with the shown one, so a total below zero is "minus 2" to the ear and
+      // "−2" under the list.
+      const verdict = (number: (value: number) => string): string =>
+        value === null
+          ? `That doesn't divide evenly. ${TRY_ANOTHER}`
+          : value === target
+            ? `That makes ${number(target)}${isSolved ? '.' : ", but this isn't one of the sums for this puzzle."}`
+            : `That makes ${number(value)}, not ${number(target)}. ${TRY_ANOTHER}`
+      setTrail({ ...judged, finish, note: verdict(shownNumber) })
+      say(`${lead}${verdict(spokenNumber)}`)
       return
     }
 
@@ -1126,8 +1207,25 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
     commit({ ...answerBoard, locked, opened: state.opened }, null)
   }
 
-  // Undo takes back the half-made step first, then the last whole one. It never touches a square.
+  // Undo takes back the newest press: a number or sign in the finish, then a half-made step, then
+  // the last whole one. It never touches a square.
   const trailUndo = (): void => {
+    if (trail.finish !== null) {
+      const { ops, tiles } = trail.finish
+      const finish =
+        ops.length === tiles.length
+          ? { ops: ops.slice(0, -1), tiles }
+          : tiles.length === 1
+            ? null
+            : { ops, tiles: tiles.slice(0, -1) }
+      setTrail({ ...trail, finish, note: '' })
+      say(
+        ops.length === tiles.length
+          ? 'Sign taken back.'
+          : `${bank[tiles[tiles.length - 1]]} taken back.${finish === null ? ` You're at ${spokenNumber(trailValue)}.` : ''}`,
+      )
+      return
+    }
     if (trail.pending !== null) {
       setTrail({ ...trail, note: '', pending: null })
       say(`Sign taken back. You're at ${spokenNumber(trailValue)}.`)
@@ -1144,11 +1242,11 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   }
 
   const startOver = (): void => {
-    if (trail.steps.length === 0 && trail.pending === null) {
+    if (trail.steps.length === 0 && trail.pending === null && trail.finish === null) {
       refuse('There are no steps to clear.')
       return
     }
-    setTrail({ ...trail, note: '', pending: null, steps: [] })
+    setTrail({ ...trail, finish: null, note: '', pending: null, steps: [] })
     say(`Steps cleared. You're back at ${spokenNumber(goal)}.`)
   }
 
@@ -1442,18 +1540,15 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       else refuse(`This puzzle has no ${OPERATOR_NAMES[op]} sign.`)
       return
     }
-    // A digit is a tile with no finger on it. The no-sign check comes first, as it does for a tap,
-    // and then the lowest-index tile of that digit the trail has not spent -- which index does not
-    // matter to the arithmetic, and lowest-first is the same rule a typed digit follows on the board.
-    if (trail.pending === null) {
-      refuse(SIGN_FIRST)
-      return
-    }
+    // A digit is a tile with no finger on it: the lowest-index tile of that digit the trail has not
+    // spent -- which index does not matter to the arithmetic, and lowest-first is the same rule a
+    // typed digit follows on the board. Whether a number may come next is `trailTile`'s question,
+    // asked the same way for a tap.
     const digit = Number(event.key)
     const tile = bank.findIndex((value, index) => value === digit && !trailSpent[index])
     if (tile >= 0) trailTile(tile)
     else if (bank.includes(digit)) refuse(`Every ${digit} is used.`)
-    else refuse(`No ${digit} in your tiles.`)
+    else refuse(`No ${digit} in your numbers.`)
   }
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -1643,12 +1738,12 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       tokens.filter((token) => !isDigit(token)) as Operator[],
     )
     // Division has to come out whole at every step, so there is no number to name.
-    if (value === null) return "That doesn't divide evenly. Undo the last tile and try again."
+    if (value === null) return "That doesn't divide evenly. Undo the last number and try again."
     // The backend enumerates every expression reaching the goal, so this is unreachable
     // from a real pack. It is here because the alternative -- "That makes 154, not 154"
     // -- is what the ordinary branch would print if it ever did happen.
-    if (value === goal) return "That isn't one of the sums for this puzzle. Undo the last tile and try again."
-    return `That makes ${value}, not ${goal}. Undo the last tile and try again.`
+    if (value === goal) return "That isn't one of the sums for this puzzle. Undo the last number and try again."
+    return `That makes ${value}, not ${goal}. Undo the last number and try again.`
   }
 
   return (
@@ -1874,8 +1969,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                 building on the board. */}
             <div hidden={!trail.open}>
               <TrailPanel
-                allSpent={allInTrail}
                 bank={bank}
+                finish={trail.finish}
                 goal={goal}
                 id={trailId}
                 note={trail.note}
@@ -1897,7 +1992,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
 
           The ribbon inside FloorBar is the always-mounted, initially-empty live region this
           board's wrong-answer and solved messages are announced through. */}
-      <section aria-label="Tiles" className="lull-instrument" ref={instrumentRef}>
+      <section aria-label="Numbers and signs" className="lull-instrument" ref={instrumentRef}>
         {/* `resting` is a STANDING LINE, laid over the ribbon's live region and outside it, so it
             costs no announcement -- which is exactly why the running total belongs there and exactly
             why FloorBar needs no change to take it. A message displaces it, and that is the right
@@ -1917,7 +2012,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
         <FloorBar
           message={message()}
           resting={
-            trail.open ? `Backtracking from ${goal}. Pick a sign, then a tile.` : total === '' ? INSTRUCTION : total
+            trail.open ? `Backtracking from ${goal}. Pick a sign or a number.` : total === '' ? INSTRUCTION : total
           }
         >
           <div className="flex flex-col gap-[var(--lull-s2)] pt-[10px] pr-[var(--lull-gutter-right)] pb-[9px] pl-[var(--lull-gutter-left)]">
@@ -1948,19 +2043,19 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                 // twin or moves a placed 7. So availability is the caret's question alone.
                 //
                 // IN BACKTRACK MODE THE TILE ANSWERS TO THE TRAIL'S LEDGER, not the board's: spent
-                // means "in the trail", and available means "not in the trail, and a sign is
-                // waiting for a tile". A spent tile is a silent no-op, because its name already
-                // says why; a tile pressed before a sign is unavailable too, but its name does
-                // not say why, so the press says "Pick a sign first."
+                // means "in the trail", and available means "not in the trail, and the trail takes
+                // a number now" -- after a sign, to start the finish, or between the finish's
+                // signs. A spent tile is a silent no-op, because its name already says why; an
+                // unavailable one's name does not say why, so the press says "Pick a sign first."
                 const isUsed = trail.open ? trailSpent[index] : consumed[index]
-                const position = `tile ${index + 1} of ${bank.length}`
+                const position = `number ${index + 1} of ${bank.length}`
                 // THE SAME MARK IN BOTH MODES: the dashed edge and "Used". "In trail" wrapped onto
                 // two lines and ran past the tile's bottom edge at 320 and 390, and one short word
                 // fits every bank. The NAME is what says which ledger spent the tile -- "7, in the
                 // trail, tile 3 of 4" -- and the group's own name says the same.
                 return (
                   <button
-                    aria-disabled={trail.open ? isUsed || trail.pending === null : !canTapDigit}
+                    aria-disabled={trail.open ? isUsed || !trailTakesNumber : !canTapDigit}
                     // Position included because a duplicated bank gives two tiles the same
                     // name: "Use 7" twice tells a screen-reader user nothing about which one
                     // they just spent. ", used" says what the dashed edge and the Used mark
@@ -1995,12 +2090,13 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
             </div>
 
             {/* The signs are reusable, so no sign is ever spent and none is ever marked Used. In
-                Backtrack mode a sign is available while any tile is left to take a step with, and
-                pressed with none left it says so -- that is the press that needs a way forward. */}
+                Backtrack mode a sign is available while it can start a step back or go into the
+                finish, and pressed when it cannot, it says why -- that is the press that needs a way
+                forward. */}
             <div aria-label={trail.open ? 'Signs for Backtrack' : 'Signs'} className={ROW} role="group">
               {operators.map((operator) => (
                 <button
-                  aria-disabled={trail.open ? allInTrail : !canTapOperator}
+                  aria-disabled={trail.open ? !trailTakesSign : !canTapOperator}
                   aria-label={OPERATOR_NAMES[operator]}
                   className={`${TILE} ${TILE_OPERATOR}`}
                   key={operator}
@@ -2076,7 +2172,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
                   Play again
                 </Button>
               ) : (
-                <Button aria-label="Undo the last tile" onClick={undo}>
+                <Button aria-label="Undo the last number" onClick={undo}>
                   Undo
                 </Button>
               )}

@@ -1,6 +1,6 @@
 import React, { useId } from 'react'
 
-import { TrailStep } from './trail'
+import { TrailFinish, TrailStep } from './trail'
 import { Button } from '@components/button'
 import { CloseMark } from '@components/button/close-mark'
 import { Operator } from '@types'
@@ -56,6 +56,16 @@ export const spokenNumber = (value: number): string => (value < 0 ? `minus ${-va
 export const stepSentence = (step: TrailStep, bank: number[]): string =>
   `${spokenNumber(step.from)} ${SPOKEN_SIGNS[step.op]} ${bank[step.tile]} is ${spokenNumber(step.to)}.`
 
+// The finish, as far as it is written, as a screen reader says it: "2 plus 2 plus 5", with a waiting
+// sign on the end -- "2 plus". One function for the board's ribbon and the panel's own row, for the
+// reason `stepSentence` is one.
+export const finishSpoken = (finish: TrailFinish, bank: number[]): string =>
+  finish.tiles
+    .flatMap((tile, at) =>
+      at < finish.ops.length ? [`${bank[tile]}`, SPOKEN_SIGNS[finish.ops[at]]] : [`${bank[tile]}`],
+    )
+    .join(' ')
+
 // The worked example's box, on the RAISED ground rather than the plate's, and that is the one
 // difference. Restated whole rather than layered over the worked example's string, for the reason
 // the squares' skins give in index.tsx: Tailwind picks between two competing `bg-` utilities by
@@ -106,18 +116,49 @@ const SCROLL_TARGET = 'scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bott
 const NOTE = 'pl-7 text-[12.5px] leading-[1.35] text-[var(--lull-muted)]'
 
 export interface TrailPanelProps {
-  allSpent: boolean
   bank: number[]
+  finish: TrailFinish | null
   goal: number
   id: string
   note: string
   onClose: () => void
   onStartOver: () => void
   pending: Operator | null
-  // Where the board's scroll effect points: the live row, or the last step once every tile is
-  // spent and there is no live row left. The panel owns WHICH element; the board owns WHEN.
+  // Where the board's scroll effect points: the live row. The panel owns WHICH element; the board
+  // owns WHEN.
   scrollTargetRef: React.RefObject<HTMLLIElement | null>
   steps: TrailStep[]
+}
+
+// One slot of the live row, in ONE skin chosen once, for the squares' emission-order reason. Never
+// read aloud: the row it sits in is hidden, and the row's own sentence says what the slots show.
+const Slot = ({ caret, kind, text }: { caret: boolean; kind: 'sign' | 'tile'; text: string }): React.ReactNode => (
+  <span
+    className={[
+      SLOT,
+      kind === 'sign' ? SLOT_SIGN : SLOT_TILE,
+      text === '' ? SLOT_EMPTY : SLOT_FILLED,
+      caret ? SLOT_CARET : '',
+    ].join(' ')}
+  >
+    {text}
+  </span>
+)
+
+// The finish's slots: one per tile the steps have left, a sign between each pair, filled as far as
+// the player has written and ringed where the next press lands. A full finish has no ring.
+const finishSlots = (finish: TrailFinish | null, bank: number[], left: number): React.ReactNode[] => {
+  const tiles = finish?.tiles ?? []
+  const ops = finish?.ops ?? []
+  const next = tiles.length + ops.length
+  return Array.from({ length: left * 2 - 1 }, (_unused, at) => {
+    const index = Math.floor(at / 2)
+    return at % 2 === 0 ? (
+      <Slot caret={at === next} key={at} kind="tile" text={index < tiles.length ? `${bank[tiles[index]]}` : ''} />
+    ) : (
+      <Slot caret={at === next} key={at} kind="sign" text={index < ops.length ? OPERATOR_SYMBOLS[ops[index]] : ''} />
+    )
+  })
 }
 
 // BACKTRACK'S PANEL. It takes data and callbacks and nothing else, the same line the six props draw
@@ -125,8 +166,8 @@ export interface TrailPanelProps {
 // trail is open -- the board toggles `hidden` on the box around it -- and it does not compute a
 // step; every number it prints arrived in `steps`, which only `stepOf` built.
 export const TrailPanel = ({
-  allSpent,
   bank,
+  finish,
   goal,
   id,
   note,
@@ -140,13 +181,35 @@ export const TrailPanel = ({
   const headingId = useId()
   const current = steps.length === 0 ? goal : steps[steps.length - 1].to
   const number = steps.length + 1
-  // A note set by an uneven step wins; otherwise the line says what the trail cannot show by itself
-  // -- that it is finished, or, on a trail with nothing on it yet, how it is read.
-  const resting = allSpent
-    ? 'Every tile is used.'
-    : steps.length === 0 && pending === null
+  const left = bank.length - steps.length
+  // THE LIVE ROW TAKES ONE OF THREE SHAPES. A step back ("9 [sign] [number]") while a sign is picked
+  // or before the first step; the finish ("9 = 2 + [ ] ...") once it is started or when one number
+  // is left; and BOTH, one under the other, while the next press could start either. Drawing both is
+  // what tells a player a number may come first -- a rule nobody would guess from a lone step row.
+  const showsStep = finish === null && left > 1
+  const showsFinish = finish !== null || (pending === null && steps.length > 0)
+  const finishFull = finish !== null && finish.tiles.length === left
+  const wants = finish !== null && finish.ops.length === finish.tiles.length ? ' Pick a number.' : ' Pick a sign.'
+  const spokenRow =
+    finish === null
+      ? pending === null
+        ? `${spokenNumber(current)}. ${showsStep ? (showsFinish ? 'Pick a sign or a number.' : 'Pick a sign.') : `Pick a number to make ${spokenNumber(current)}.`}`
+        : `${spokenNumber(current)} ${SPOKEN_SIGNS[pending]}. Pick a number.`
+      : `${spokenNumber(current)} equals ${finishSpoken(finish, bank)}.${finishFull ? '' : wants}`
+  // A note set by an uneven step or a finished sum wins; otherwise the line says what the row cannot
+  // show by itself -- which press does what, and that the finish has to use every number left.
+  const restingBeforeFinish =
+    steps.length === 0
       ? 'Each step starts where the last one ended.'
-      : ''
+      : left === 1
+        ? `One number is left. Pick it to make ${shownNumber(current)}.`
+        : 'Start with a sign to keep backtracking, or with a number to finish.'
+  const resting =
+    finish === null
+      ? pending === null
+        ? restingBeforeFinish
+        : ''
+      : `Use every number that's left to make ${shownNumber(current)}.`
   const line = note === '' ? resting : note
 
   return (
@@ -169,56 +232,46 @@ export const TrailPanel = ({
       {/* role="list" because Safari drops the list role from a `list-none` list, and the step count
           is what tells a VoiceOver player how far back they have come. */}
       <ol className="flex list-none flex-col gap-[var(--lull-s2)]" role="list">
-        {steps.map((step, index) => {
-          const last = index === steps.length - 1
-          return (
-            <li
-              className={allSpent && last ? `${ROW} ${SCROLL_TARGET}` : ROW}
-              // Index keys are right here: a step is only ever appended or taken off the end, so a
-              // position always names the same step.
-              key={index}
-              // Undefined on every other row, so the ref is not handed null by each spent row's
-              // cleanup and left holding whichever rendered last.
-              ref={allSpent && last ? scrollTargetRef : undefined}
-            >
-              <span aria-hidden="true" className={MARKER}>
-                {index + 1}
-              </span>
-              {/* The visible sum is symbols, which a screen reader reads as "times" at best and
+        {steps.map((step, index) => (
+          // Index keys are right here: a step is only ever appended or taken off the end, so a
+          // position always names the same step.
+          <li className={ROW} key={index}>
+            <span aria-hidden="true" className={MARKER}>
+              {index + 1}
+            </span>
+            {/* The visible sum is symbols, which a screen reader reads as "times" at best and
                   as nothing at worst, so it is hidden and the row speaks a sentence instead. */}
-              <span className="sr-only">{`Step ${index + 1}: ${stepSentence(step, bank)}`}</span>
-              <span aria-hidden="true" className={SUM}>
-                {`${shownNumber(step.from)} ${OPERATOR_SYMBOLS[step.op]} ${bank[step.tile]} = ${shownNumber(step.to)}`}
-              </span>
-            </li>
-          )
-        })}
-        {!allSpent && (
-          <li className={`${ROW} ${SCROLL_TARGET}`} ref={scrollTargetRef}>
-            <span aria-hidden="true" className={`${MARKER} ${MARKER_RESULT}`}>
-              {number}
-            </span>
-            <span className="sr-only">
-              {pending === null
-                ? `Step ${number}: ${spokenNumber(current)}. Pick a sign.`
-                : `Step ${number}: ${spokenNumber(current)} ${SPOKEN_SIGNS[pending]}. Pick a tile.`}
-            </span>
+            <span className="sr-only">{`Step ${index + 1}: ${stepSentence(step, bank)}`}</span>
             <span aria-hidden="true" className={SUM}>
-              {shownNumber(current)}
+              {`${shownNumber(step.from)} ${OPERATOR_SYMBOLS[step.op]} ${bank[step.tile]} = ${shownNumber(step.to)}`}
             </span>
-            {/* ONE skin per slot, chosen once, for the squares' emission-order reason. */}
-            <span
-              aria-hidden="true"
-              className={[SLOT, SLOT_SIGN, pending === null ? `${SLOT_EMPTY} ${SLOT_CARET}` : SLOT_FILLED].join(' ')}
-            >
-              {pending === null ? '' : OPERATOR_SYMBOLS[pending]}
-            </span>
-            <span
-              aria-hidden="true"
-              className={[SLOT, SLOT_TILE, SLOT_EMPTY, pending === null ? '' : SLOT_CARET].join(' ')}
-            />
           </li>
-        )}
+        ))}
+        <li className={`flex flex-col gap-[var(--lull-s2)] ${SCROLL_TARGET}`} ref={scrollTargetRef}>
+          <span className="sr-only">{`Step ${number}: ${spokenRow}`}</span>
+          {showsStep && (
+            <span aria-hidden="true" className={ROW}>
+              <span className={`${MARKER} ${MARKER_RESULT}`}>{number}</span>
+              <span className={SUM}>{shownNumber(current)}</span>
+              <Slot caret={pending === null} kind="sign" text={pending === null ? '' : OPERATOR_SYMBOLS[pending]} />
+              <Slot caret={pending !== null} kind="tile" text="" />
+            </span>
+          )}
+          {showsFinish && (
+            // The finish sits under the marker column like every row, with "or" in the marker's
+            // place while the step row above it is still on offer. Its slots sit 4px apart rather
+            // than the step row's 8: a four-digit number and five slots have to fit at 320px.
+            <span aria-hidden="true" className={ROW}>
+              {showsStep ? (
+                <span className="w-5 shrink-0 text-center text-[12.5px] text-[var(--lull-muted)]">or</span>
+              ) : (
+                <span className={`${MARKER} ${MARKER_RESULT}`}>{number}</span>
+              )}
+              <span className={SUM}>{`${shownNumber(current)} =`}</span>
+              <span className="flex min-w-0 items-center gap-1">{finishSlots(finish, bank, left)}</span>
+            </span>
+          )}
+        </li>
       </ol>
       {line !== '' && <p className={NOTE}>{line}</p>}
       {/* "CLEAR TRAIL", NOT "START OVER", and only while there is something to clear. Beside an
@@ -226,7 +279,7 @@ export const TrailPanel = ({
           touches; naming the trail says whose it is, and hiding it on an empty trail removes the
           press that could only be refused. At the foot of the panel rather than in the head: at
           320px the heading, this and Close did not fit on one line. */}
-      {(steps.length > 0 || pending !== null) && (
+      {(steps.length > 0 || pending !== null || finish !== null) && (
         <div className="flex justify-end">
           <Button onClick={onStartOver} size="sm" variant="quiet">
             Clear steps

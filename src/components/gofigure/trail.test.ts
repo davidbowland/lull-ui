@@ -1,15 +1,14 @@
 import { evaluateLeftToRight } from './evaluate'
-import { forwardExpression, stepOf, TrailStep } from './trail'
+import { forwardExpression, stepOf, TrailFinish, TrailStep } from './trail'
 import { goFigureData } from '@test/__mocks__'
 import { Operator } from '@types'
 
-// The bank is 6, 9, 7, 7 and the goal is 154. This is the spec's trail (S-17): / 7 with tile 3,
-// - 9, - 7 with tile 4, - 6. Indices here are zero-based, so "tile 3" is index 2.
+// The bank is 6, 9, 7, 7 and the goal is 154. / 7 with tile 3, - 9, - 7 with tile 4: three steps
+// back to 6. Indices here are zero-based, so "tile 3" is index 2.
 const TRAIL_154: TrailStep[] = [
   { from: 154, op: '/', tile: 2, to: 22 },
   { from: 22, op: '-', tile: 1, to: 13 },
   { from: 13, op: '-', tile: 3, to: 6 },
-  { from: 6, op: '-', tile: 0, to: 0 },
 ]
 
 // Splits a pack-character expression back into what evaluateLeftToRight takes. Every bank tile is a
@@ -71,100 +70,100 @@ describe('stepOf', () => {
 })
 
 describe('forwardExpression', () => {
-  test('spells the 154 trail as 6+7+9*7 (S-17)', () => {
-    expect(forwardExpression(TRAIL_154, goFigureData.bank)).toBe('6+7+9*7')
+  // / 7 and - 9 step back to 13, and 6 + 7 finishes it.
+  const STEPS_154 = TRAIL_154.slice(0, 2)
+  const FINISH_154: TrailFinish = { ops: ['+'], tiles: [0, 3] }
+
+  test('spells the 154 trail as 6+7+9*7', () => {
+    expect(forwardExpression(STEPS_154, FINISH_154, goFigureData.bank)).toBe('6+7+9*7')
   })
 
   test('spells an expression the fixture pack accepts', () => {
-    expect(goFigureData.acceptedSolutions).toContain(forwardExpression(TRAIL_154, goFigureData.bank))
+    expect(goFigureData.acceptedSolutions).toContain(forwardExpression(STEPS_154, FINISH_154, goFigureData.bank))
   })
 
   test('spells an expression that evaluates, left to right, to where the trail started', () => {
-    const expression = forwardExpression(TRAIL_154, goFigureData.bank) ?? ''
+    const expression = forwardExpression(STEPS_154, FINISH_154, goFigureData.bank) ?? ''
 
     expect(evaluateLeftToRight(operandsOf(expression), operatorsOf(expression))).toBe(TRAIL_154[0].from)
   })
 
+  // The finish is written in the order the player pressed it, so 7 + 6 is a different sum from 6 + 7.
+  test('keeps the order the finish was written in', () => {
+    expect(forwardExpression(STEPS_154, { ops: ['+'], tiles: [3, 0] }, goFigureData.bank)).toBe('7+6+9*7')
+  })
+
+  // 2 + 2 + 5 * 6: one step back, / 6, and a three-number finish.
+  test('takes a finish of three numbers', () => {
+    const steps: TrailStep[] = [{ from: 54, op: '/', tile: 3, to: 9 }]
+
+    expect(forwardExpression(steps, { ops: ['+', '+'], tiles: [0, 1, 2] }, [2, 2, 5, 6])).toBe('2+2+5*6')
+  })
+
+  // One number left: the finish is that number alone, and no sign leads it.
+  test('takes a finish of one number', () => {
+    expect(forwardExpression(TRAIL_154.slice(0, 3), { ops: [], tiles: [0] }, goFigureData.bank)).toBe('6+7+9*7')
+  })
+
+  test('takes a finish with no steps before it', () => {
+    expect(forwardExpression([], { ops: ['+', '+', '*'], tiles: [0, 2, 1, 3] }, goFigureData.bank)).toBe('6+7+9*7')
+  })
+
   test('turns a backward * into a forward / that divides evenly', () => {
-    // From 4: * 3 is 12, - 1 is 11, - 2 is 9, - 9 is 0. Forward, 9+2=11, +1=12, /3=4.
+    // From 4: * 3 is 12, - 1 is 11, then 9 + 2 finishes it. Forward, 9+2=11, +1=12, /3=4.
     const bank = [3, 2, 1, 9]
     const steps: TrailStep[] = [
       { from: 4, op: '*', tile: 0, to: 12 },
       { from: 12, op: '-', tile: 2, to: 11 },
-      { from: 11, op: '-', tile: 1, to: 9 },
-      { from: 9, op: '-', tile: 3, to: 0 },
     ]
-    const expression = forwardExpression(steps, bank) ?? ''
+    const expression = forwardExpression(steps, { ops: ['+'], tiles: [3, 1] }, bank) ?? ''
 
     expect(expression).toBe('9+2+1/3')
     expect(evaluateLeftToRight(operandsOf(expression), operatorsOf(expression))).toBe(4)
   })
 
   test('turns a backward + into a forward -', () => {
-    // From 2: + 9 is 11, - 3 is 8, - 1 is 7, - 7 is 0. Forward, 7+1=8, +3=11, -9=2.
+    // From 2: + 9 is 11, - 3 is 8, then 7 + 1 finishes it. Forward, 7+1=8, +3=11, -9=2.
     const steps: TrailStep[] = [
       { from: 2, op: '+', tile: 1, to: 11 },
       { from: 11, op: '-', tile: 0, to: 8 },
-      { from: 8, op: '-', tile: 2, to: 7 },
-      { from: 7, op: '-', tile: 3, to: 0 },
     ]
 
-    const expression = forwardExpression(steps, [3, 9, 1, 7]) ?? ''
+    const expression = forwardExpression(steps, { ops: ['+'], tiles: [3, 2] }, [3, 9, 1, 7]) ?? ''
 
     expect(expression).toBe('7+1+3-9')
     expect(evaluateLeftToRight(operandsOf(expression), operatorsOf(expression))).toBe(2)
   })
 
-  test('is null when the trail does not end at 0', () => {
-    const steps: TrailStep[] = [...TRAIL_154.slice(0, 3), { from: 6, op: '-', tile: 0, to: 1 }]
-
-    expect(forwardExpression(steps, goFigureData.bank)).toBeNull()
+  // Whether the finish makes 13 is not this function's question: the string spells what was written,
+  // and the accepted-set lookup is what turns it away.
+  test('spells a finish that misses, for the lookup to refuse', () => {
+    expect(forwardExpression(STEPS_154, { ops: ['*'], tiles: [0, 3] }, goFigureData.bank)).toBe('6*7+9*7')
   })
 
-  test('is null when the last step reaches 0 without subtracting', () => {
-    // The trail went negative and came back up: -5 + 5 reaches 0, but only a subtraction can be the
-    // forward expression's opening tile.
-    const steps: TrailStep[] = [
-      { from: 4, op: '-', tile: 1, to: -5 },
-      { from: -5, op: '-', tile: 2, to: -12 },
-      { from: -12, op: '+', tile: 3, to: -5 },
-      { from: -5, op: '+', tile: 0, to: 0 },
-    ]
-
-    expect(forwardExpression(steps, [5, 9, 7, 7])).toBeNull()
+  test('is null with no finish', () => {
+    expect(forwardExpression(TRAIL_154, null, goFigureData.bank)).toBeNull()
   })
 
-  test('is null when tiles remain', () => {
-    const steps: TrailStep[] = [
-      { from: 22, op: '-', tile: 1, to: 13 },
-      { from: 13, op: '-', tile: 3, to: 6 },
-      { from: 6, op: '-', tile: 0, to: 0 },
-    ]
+  test('is null while the finish ends on a sign', () => {
+    expect(forwardExpression(STEPS_154, { ops: ['+'], tiles: [0] }, goFigureData.bank)).toBeNull()
+  })
 
-    expect(forwardExpression(steps, goFigureData.bank)).toBeNull()
+  test('is null when numbers remain', () => {
+    expect(forwardExpression(STEPS_154, { ops: [], tiles: [0] }, goFigureData.bank)).toBeNull()
   })
 
   test('is null when a tile is spent twice', () => {
-    // Four steps against a bank of four, ending at 0 on a subtraction -- but tile 3 twice and tile 1
-    // never, so the count matches while the set does not.
-    const steps: TrailStep[] = [...TRAIL_154.slice(0, 3), { from: 6, op: '-', tile: 2, to: 0 }]
-
-    expect(forwardExpression(steps, goFigureData.bank)).toBeNull()
+    // Four tiles against a bank of four -- but tile 3 twice and tile 4 never, so the count matches
+    // while the set does not.
+    expect(forwardExpression(STEPS_154, { ops: ['+'], tiles: [0, 2] }, goFigureData.bank)).toBeNull()
   })
 
   test('is null when a tile index is outside the bank', () => {
-    const steps: TrailStep[] = [...TRAIL_154.slice(0, 3), { from: 6, op: '-', tile: 4, to: 0 }]
-
-    expect(forwardExpression(steps, goFigureData.bank)).toBeNull()
+    expect(forwardExpression(STEPS_154, { ops: ['+'], tiles: [0, 4] }, goFigureData.bank)).toBeNull()
   })
 
   test('is null when a tile index is not a whole number', () => {
-    const steps: TrailStep[] = [...TRAIL_154.slice(0, 3), { from: 6, op: '-', tile: 1.5, to: 0 }]
-
-    expect(forwardExpression(steps, goFigureData.bank)).toBeNull()
-  })
-
-  test('is null for an empty trail', () => {
-    expect(forwardExpression([], goFigureData.bank)).toBeNull()
+    expect(forwardExpression(STEPS_154, { ops: ['+'], tiles: [0, 1.5] }, goFigureData.bank)).toBeNull()
   })
 })

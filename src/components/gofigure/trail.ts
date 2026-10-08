@@ -1,9 +1,9 @@
 import { Operator } from '@types'
 
-// The arithmetic of Backtrack: the player starts at the goal and walks it down to 0 one tile at a
-// time. Pure over numbers -- no eval, no Function, no text field anywhere upstream of it. A step's
-// operands are a value the trail already holds, a pack operator, and a digit read off a bank index,
-// so there is no string here for anything to parse.
+// The arithmetic of Backtrack: the player starts at the goal and steps back one tile at a time, then
+// writes the front of the sum forward. Pure over numbers -- no eval, no Function, no text field
+// anywhere upstream of it. A step's operands are a value the trail already holds, a pack operator,
+// and a digit read off a bank index, so there is no string here for anything to parse.
 //
 // DISPLAY ONLY, the same line evaluate.ts draws. Nothing in this file decides whether a trail wins.
 // `forwardExpression` builds a string in the pack's own characters, and whether that string is an
@@ -68,39 +68,52 @@ export const stepOf = (from: number, op: Operator, by: number): StepResult => {
 // Each backward step undoes exactly one forward step, so its sign is the forward sign's inverse.
 const INVERSE: Record<Operator, Operator> = { '*': '/', '+': '-', '-': '+', '/': '*' }
 
+// THE FINISH: the front of the sum, written forward. The player steps back from the goal until the
+// numbers left are a sum they can see -- 9 with 2, 2 and 5 left is 2 + 2 + 5 -- and then writes that
+// sum left to right, as on the board. `tiles` and `ops` interleave tile, sign, tile: `tiles` is one
+// longer than `ops` once a sign is waiting for its number, and the same length while a number is
+// waiting for its sign.
+//
+// It replaced a finish line at 0, which nothing on screen ever named. The last step down to 0 had to
+// be a subtraction of the sum's opening number, so 6 with 2 and 4 left -- plainly 2 + 4 -- had to be
+// walked as 6 - 4 = 2, 2 - 2 = 0, and the order those two were taken in silently decided which sum
+// the trail spelled.
+export interface TrailFinish {
+  ops: Operator[]
+  tiles: number[]
+}
+
 // The forward expression a finished trail spells, in the pack's own characters ("6+7+9*7"), or null.
 //
-// Non-null only when the trail ends at 0, its last step subtracts, and it spends every bank index
-// exactly once. Reading the trail backward gives the forward expression: the last step's tile is
-// the value just before 0, so it leads, and every earlier step contributes its inverted sign and its
-// tile, latest first. The 154 trail -- / 7, - 9, - 7, - 6 -- spells 6+7+9*7, and 6+7=13, +9=22,
-// *7=154 left to right.
+// Non-null only when the finish is a whole sum -- it ends on a number -- and the steps and the finish
+// between them spend every bank index exactly once. The finish leads, as written, and every step
+// follows with its inverted sign and its tile, latest first. The 154 trail -- / 7, - 9, then the
+// finish 6 + 7 -- spells 6+7+9*7, and 6+7=13, +9=22, *7=154 left to right.
 //
 // The mapping is exact because left-to-right evaluation runs one operator at a time, and each
 // backward step inverts one forward step: a backward / was exact, so the forward * is too, and a
-// backward * becomes a forward / that divides evenly. That holds for tiles 1-9. A * 0 on a
-// hypothetical 0 tile would lose the value, and it is the accepted-set lookup, not anything here,
-// that keeps such a string from ever solving.
+// backward * becomes a forward / that divides evenly. That holds for tiles 1-9.
 //
-// It trusts the steps to CHAIN -- each `to` the next `from`, each `to` what `stepOf` gave -- and reads
-// only the last `to`. The board builds every step through `stepOf`, so they do; a hand-built trail
-// that did not would spell a string the accepted-set lookup then simply fails to find.
+// NOTHING HERE ASKS WHETHER THE FINISH MAKES THE NUMBER THE STEPS REACHED. A finish that does not
+// spells a string that evaluates to something other than the goal, and the accepted-set lookup simply
+// fails to find it. Likewise it trusts the steps to CHAIN, each `to` the next `from`; the board builds
+// every step through `stepOf`, so they do.
 //
 // It never throws: a malformed trail (an index out of range, a repeated index, a short trail) is
 // null, the same as a trail that simply has not finished.
-export const forwardExpression = (steps: TrailStep[], bank: number[]): string | null => {
-  const last = steps[steps.length - 1]
-  if (last === undefined || last.to !== 0 || last.op !== '-' || steps.length !== bank.length) {
+export const forwardExpression = (steps: TrailStep[], finish: TrailFinish | null, bank: number[]): string | null => {
+  if (finish === null || finish.tiles.length !== finish.ops.length + 1) {
     return null
   }
-  const tiles = steps.map((step) => step.tile)
+  const tiles = [...finish.tiles, ...steps.map((step) => step.tile)]
   const inRange = tiles.every((tile) => Number.isInteger(tile) && tile >= 0 && tile < bank.length)
-  if (!inRange || new Set(tiles).size !== bank.length) {
+  if (!inRange || tiles.length !== bank.length || new Set(tiles).size !== bank.length) {
     return null
   }
+  const front = finish.tiles.map((tile, index) => `${index === 0 ? '' : finish.ops[index - 1]}${bank[tile]}`)
   const rest = steps
-    .slice(0, -1)
+    .slice()
     .reverse()
     .map((step) => `${INVERSE[step.op]}${bank[step.tile]}`)
-  return `${bank[last.tile]}${rest.join('')}`
+  return `${front.join('')}${rest.join('')}`
 }
