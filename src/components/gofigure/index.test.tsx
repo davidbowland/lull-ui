@@ -3096,12 +3096,11 @@ describe('GoFigureBoard', () => {
         await walk(user, [
           ['Divide', 7],
           ['Subtract', 7],
-          ['Add', 9],
         ])
 
+        expect(within(panel()).getByText('154 ÷ 7 = 22')).toBeInTheDocument()
         expect(within(panel()).getByText('22 − 7 = 15')).toBeInTheDocument()
-        expect(within(panel()).getByText('15 + 9 = 24')).toBeInTheDocument()
-        expect(within(panel()).getByText('Step 4: 24. Pick a number to make 24.')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 3: 15. Pick a sign or a number.')).toBeInTheDocument()
       })
 
       // Before the first step a finish would be the whole board written a second time.
@@ -3153,6 +3152,8 @@ describe('GoFigureBoard', () => {
       })
 
       // A trail can go below zero, and it is shown with the sign tile's minus and spoken as a word.
+      // Ten cannot get there in two steps with 1 to 4, so this is the third, which leaves the 1 and
+      // is refused -- and the refusal names the value both ways.
       it('shows and says a value below zero', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(quickPuzzle, null)
@@ -3164,8 +3165,8 @@ describe('GoFigureBoard', () => {
           ['Subtract', 3],
         ])
 
-        expect(within(panel()).getByText('1 − 3 = −2')).toBeInTheDocument()
-        expect(ribbon()).toBe('1 minus 3 is minus 2.')
+        expect(within(panel()).getByText('1 − 3 is −2, but the last number left is 1.')).toBeInTheDocument()
+        expect(ribbon()).toBe('1 minus 3 is minus 2, but the last number left is 1. Try another number.')
       })
 
       // By COUNT, because the live row is one DOM node for the trail's whole life -- a step is
@@ -3365,8 +3366,10 @@ describe('GoFigureBoard', () => {
         expect(onSolved).toHaveBeenCalledTimes(1)
       })
 
-      // 154 ÷ 7 = 22, 22 + 6 = 28, 28 − 9 = 19, and the 7 left over is not 19.
-      it('offers only the finish when one number is left', async () => {
+      // 154 ÷ 7 = 22, 22 + 6 = 28, 28 − 9 = 19, and the 7 left over is not 19. The trail knows that
+      // the moment the step is made, so it refuses the step and keeps the sign, as an uneven division
+      // does -- there is no last number for the player to pick only to be told it misses.
+      it('refuses a step that leaves a last number that cannot make it', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard()
 
@@ -3377,13 +3380,31 @@ describe('GoFigureBoard', () => {
           ['Subtract', 9],
         ])
 
-        expect(within(panel()).getByText('Step 4: 19. Pick a number to make 19.')).toBeInTheDocument()
-        expect(within(panel()).getByText('One number is left. Pick it to make 19.')).toBeInTheDocument()
-        expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-disabled', 'true')
-        await user.click(screen.getByRole('button', { name: 'Add' }))
-        expect(ribbon()).toBe('One number is left. Pick it to make 19.')
+        expect(ribbon()).toBe('28 minus 9 is 19, but the last number left is 7. Try another number.')
+        expect(within(panel()).getByText('28 − 9 is 19, but the last number left is 7.')).toBeInTheDocument()
+        expect(within(panel()).getByText('Step 3: 28 minus. Pick a number.')).toBeInTheDocument()
+        expect(within(panel()).getAllByRole('listitem')).toHaveLength(3)
+        expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      // The refused step kept its sign, so the next number is one tap: 28 − 7 = 21, and the 9 left is
+      // not 21 either. Undo then takes back the sign, and the trail is live again at 28.
+      it('lets the player try the other number after a refused last step', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard()
+
+        await openTrail(user)
+        await walk(user, [
+          ['Divide', 7],
+          ['Add', 6],
+          ['Subtract', 9],
+        ])
         await pressNumber(user, 7)
-        expect(ribbon()).toBe('That makes 7, not 19. Undo the last number to try another.')
+
+        expect(ribbon()).toBe('28 minus 7 is 21, but the last number left is 9. Try another number.')
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+        expect(ribbon()).toBe("Sign taken back. You're at 28.")
+        expect(within(panel()).getByText('Step 3: 28. Pick a sign or a number.')).toBeInTheDocument()
       })
 
       // 10 − 4 = 6, 6 − 3 = 3, 3 − 2 = 1, and the number left is 1: "1 = 1" is the only finish, so the
@@ -3417,8 +3438,8 @@ describe('GoFigureBoard', () => {
         expect(onSolved).not.toHaveBeenCalled()
       })
 
-      // 0 is a number like any other now: passing through it ends nothing.
-      it('goes on past 0', async () => {
+      // 0 is a number like any other: reaching it ends nothing, and the 3 left over cannot make it.
+      it('treats 0 like any other number on a last step', async () => {
         const user = userEvent.setup({ delay: null })
         renderBoard(quickPuzzle, null)
 
@@ -3429,9 +3450,40 @@ describe('GoFigureBoard', () => {
           ['Subtract', 1],
         ])
 
-        expect(ribbon()).toBe('1 minus 1 is 0.')
-        expect(within(panel()).getByText('Step 4: 0. Pick a number to make 0.')).toBeInTheDocument()
+        expect(ribbon()).toBe('1 minus 1 is 0, but the last number left is 3. Try another number.')
+        expect(within(panel()).getByText('Step 3: 1 minus. Pick a number.')).toBeInTheDocument()
         expect(onSolved).not.toHaveBeenCalled()
+      })
+
+      // The finish the step wrote was never a press of its own, so Undo takes it back with the step
+      // that wrote it rather than leaving a last number to pick that can only make the same sum again.
+      it('takes back a finish the trail wrote together with its step', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await walk(user, [...WINNING_STEPS, ['Subtract', 7]])
+        await user.click(screen.getByRole('button', { name: UNDO_STEP }))
+
+        expect(ribbon()).toBe("Step 3 taken back. You're at 13.")
+        expect(within(panel()).getByText('Step 3: 13. Pick a sign or a number.')).toBeInTheDocument()
+      })
+
+      // Done keeps the steps, and with one number left the finish the trail wrote IS the steps'
+      // conclusion rather than a press the player walked away from, so it and its verdict stay.
+      it('keeps a finish the trail wrote across Done', async () => {
+        const user = userEvent.setup({ delay: null })
+        renderBoard(oneRouteOnly)
+
+        await openTrail(user)
+        await walk(user, [...WINNING_STEPS, ['Subtract', 7]])
+        await user.click(screen.getByRole('button', { name: DONE }))
+        await openTrail(user)
+
+        expect(within(panel()).getByText('Step 4: 6 equals 6.')).toBeInTheDocument()
+        expect(
+          within(panel()).getByText("That makes 6, but this isn't one of the sums for this puzzle."),
+        ).toBeInTheDocument()
       })
 
       it('says what a finish that misses makes, and stays open', async () => {

@@ -38,7 +38,7 @@ export const MARKER_RESULT = 'bg-[var(--lull-accent)]'
 
 // The sign as a screen reader should say it inside a sentence about arithmetic. Not OPERATOR_NAMES:
 // those name the TILE ("Divide"), and "154 Divide 7" is not how anyone reads a sum aloud.
-const SPOKEN_SIGNS: Record<Operator, string> = {
+export const SPOKEN_SIGNS: Record<Operator, string> = {
   '*': 'times',
   '+': 'plus',
   '-': 'minus',
@@ -183,27 +183,28 @@ export const TrailPanel = ({
   const number = steps.length + 1
   const left = bank.length - steps.length
   // THE LIVE ROW TAKES ONE OF THREE SHAPES. A step back ("9 [sign] [number]") while a sign is picked
-  // or before the first step; the finish ("9 = 2 + [ ] ...") once it is started or when one number
-  // is left; and BOTH, one under the other, while the next press could start either. Drawing both is
-  // what tells a player a number may come first -- a rule nobody would guess from a lone step row.
-  const showsStep = finish === null && left > 1
+  // or before the first step; the finish ("9 = 2 + [ ] ...") once it is started; and BOTH, one under
+  // the other, while the next press could start either. Drawing both is what tells a player a number
+  // may come first -- a rule nobody would guess from a lone step row.
+  //
+  // Never one number waiting alone: the board writes the finish over the last number itself, or
+  // refuses the step that would leave one that cannot make it, so with one left `finish` is set.
+  const showsStep = finish === null
   const showsFinish = finish !== null || (pending === null && steps.length > 0)
   const finishFull = finish !== null && finish.tiles.length === left
   const wants = finish !== null && finish.ops.length === finish.tiles.length ? ' Pick a number.' : ' Pick a sign.'
   const spokenRow =
     finish === null
       ? pending === null
-        ? `${spokenNumber(current)}. ${showsStep ? (showsFinish ? 'Pick a sign or a number.' : 'Pick a sign.') : `Pick a number to make ${spokenNumber(current)}.`}`
+        ? `${spokenNumber(current)}. ${showsFinish ? 'Pick a sign or a number.' : 'Pick a sign.'}`
         : `${spokenNumber(current)} ${SPOKEN_SIGNS[pending]}. Pick a number.`
       : `${spokenNumber(current)} equals ${finishSpoken(finish, bank)}.${finishFull ? '' : wants}`
-  // A note set by an uneven step or a finished sum wins; otherwise the line says what the row cannot
+  // A note set by a refused step or a finished sum wins; otherwise the line says what the row cannot
   // show by itself -- which press does what, and that the finish has to use every number left.
   const restingBeforeFinish =
     steps.length === 0
       ? 'Each step starts where the last one ended.'
-      : left === 1
-        ? `One number is left. Pick it to make ${shownNumber(current)}.`
-        : 'Start with a sign to keep backtracking, or with a number to finish.'
+      : 'Start with a sign to keep backtracking, or with a number to finish.'
   const resting =
     finish === null
       ? pending === null

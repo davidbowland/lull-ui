@@ -32,6 +32,7 @@ import {
   MARKER_RESULT,
   OPERATOR_SYMBOLS,
   shownNumber,
+  SPOKEN_SIGNS,
   spokenNumber,
   stepSentence,
   TrailPanel,
@@ -634,9 +635,10 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   )
   const allInTrail = trailSpent.every(Boolean)
   const trailValue = trail.steps.length === 0 ? goal : trail.steps[trail.steps.length - 1].to
-  // How many tiles the STEPS have left -- the length the finish has to reach. A step may never take
-  // the last of them, because the finish is the only thing that ends a trail, and a finish needs at
-  // least one tile to write.
+  // How many tiles the STEPS have left -- the length the finish has to reach. Never fewer than two
+  // with the finish unwritten: a step that leaves one writes "7 = 7" or is refused (see `trailTile`),
+  // Undo takes that finish back with its step, and walking away keeps it. So a trail never sits on
+  // one number waiting for a press that has nothing to decide.
   const trailLeft = bank.length - trail.steps.length
   // What the finish waits for: a number after a sign (or to start), a sign after a number. Full is
   // neither, and the trail then waits for Undo.
@@ -650,8 +652,8 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
           : 'sign'
   // THE FIRST PRESS DECIDES. With nothing half-made, a sign starts a step back and a number starts
   // the finish -- except before the first step, when the finish would be the whole board written a
-  // second time, and except with one tile left, when a step back could not end anything.
-  const canStepBack = trail.finish === null && trailLeft > 1
+  // second time.
+  const canStepBack = trail.finish === null
   const canFinish = trail.finish === null && trail.pending === null && trail.steps.length > 0
   // What the tray offers while the trail is open. A sign in the finish is offered while a number is
   // waiting for one too, because a second sign replaces the first.
@@ -1029,6 +1031,14 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // trail the player left; the half-made step, the finish and the note go, because each describes a
   // press the player has walked away from.
   //
+  // EXCEPT A FINISH OVER ONE NUMBER, which no press wrote: the last step wrote it, and it is that
+  // step's conclusion, so it stays with the steps, verdict and all. Dropping it would reopen on one
+  // number waiting to be picked, which could only say the same verdict again.
+  const walkAway = (from: Trail): Trail =>
+    from.finish !== null && from.steps.length === bank.length - 1
+      ? { ...from, open: false, pending: null }
+      : { ...from, finish: null, note: '', open: false, pending: null }
+
   // SILENT ON A SOLVED BOARD. The sentence would stand in the ribbon ahead of the solved banner, and
   // a solved board has no control left that clears a notice -- the squares, the tiles and the keys
   // are all refused -- so the banner would not come back until Play again. And when a rung solved
@@ -1039,7 +1049,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // would sit in front of it, and the line saying the sum misses is the more useful of the two. A
   // solved board is a full one, so `filled` is the whole test for both.
   const closeTrail = (): void => {
-    setTrail({ ...trail, finish: null, note: '', open: false, pending: null })
+    setTrail(walkAway(trail))
     say(filled ? '' : 'Back to your board. Nothing on it changed.')
   }
 
@@ -1051,7 +1061,7 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
   // focus still goes to the square that was tapped.
   const leaveTrailFor = (index: number): void => {
     closeToSquare.current = index
-    setTrail({ ...trail, finish: null, note: '', open: false, pending: null })
+    setTrail(walkAway(trail))
     if (isSolved) say('')
     else moveCursor(index)
   }
@@ -1067,10 +1077,6 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       const ops = finishWants === 'sign' ? [...trail.finish.ops, op] : [...trail.finish.ops.slice(0, -1), op]
       setTrail({ ...trail, finish: { ...trail.finish, ops }, note: '' })
       say(`${OPERATOR_NAMES[op]}. Now pick a number.`)
-      return
-    }
-    if (!canStepBack) {
-      refuse(`One number is left. Pick it to make ${spokenNumber(trailValue)}.`)
       return
     }
     setTrail({ ...trail, note: '', pending: op })
@@ -1108,16 +1114,28 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
       )
       return
     }
-    // `canStepBack` kept the last tile for the finish, so a step itself never ends the trail. A trail
-    // that passes through 0 goes on like any other.
+    // A trail that passes through 0 goes on like any other.
     const made: TrailStep = { from, op, tile, to: result.value }
     const steps = [...trail.steps, made]
-    // ONE EXCEPTION: a step that lands on the very number left over. "1 = 1" is the only finish there
-    // is, so the trail writes it rather than ask for a press with nothing to decide. Comparing the two
-    // only chooses whether to write it; whether it SOLVES is still the set lookup in `judge`.
-    const last = bank.findIndex((_unused, index) => index !== tile && !trailSpent[index])
-    if (steps.length === bank.length - 1 && bank[last] === made.to) {
-      judge({ ...trail, pending: null, steps }, { ops: [], tiles: [last] }, `${stepSentence(made, bank)} `)
+    // A STEP THAT LEAVES ONE NUMBER IS DECIDED ON THE SPOT. "7 = 7" is the only finish one number can
+    // write, so there is nothing left for the player to choose: a step landing on the number left
+    // over writes that finish itself, and a step landing anywhere else is a dead end the trail can
+    // already see. It used to be taken, and the player then had to press the last number only to hear
+    // "That makes 7, not 19." It is refused instead, keeping the sign the way an uneven division
+    // does, so trying the other number is one tap.
+    //
+    // Comparing the two numbers is not a rule: "7 is not 19" spells no sum, and a finish that would
+    // spell one still goes to the set lookup in `judge` to learn whether it SOLVES.
+    if (steps.length === bank.length - 1) {
+      const last = bank.findIndex((_unused, index) => index !== tile && !trailSpent[index])
+      if (bank[last] === made.to) {
+        judge({ ...trail, pending: null, steps }, { ops: [], tiles: [last] }, `${stepSentence(made, bank)} `)
+        return
+      }
+      const leaves = (number: (value: number) => string, sign: string): string =>
+        `${number(from)} ${sign} ${bank[tile]} is ${number(made.to)}, but the last number left is ${bank[last]}.`
+      setTrail({ ...trail, note: leaves(shownNumber, OPERATOR_SYMBOLS[op]) })
+      refuse(`${leaves(spokenNumber, SPOKEN_SIGNS[op])} Try another number.`)
       return
     }
     setTrail({ ...trail, note: '', pending: null, steps })
@@ -1209,7 +1227,18 @@ export const GoFigureBoard = ({ onProgress, onSolved, progress, puzzle }: Puzzle
 
   // Undo takes back the newest press: a number or sign in the finish, then a half-made step, then
   // the last whole one. It never touches a square.
+  //
+  // A finish over one number was written by the step before it, never pressed, so it goes back with
+  // that step. Taking back the finish alone would leave one number to pick, which could only write
+  // the same finish again.
   const trailUndo = (): void => {
+    if (trail.finish !== null && trail.steps.length === bank.length - 1) {
+      const steps = trail.steps.slice(0, -1)
+      const back = steps.length === 0 ? goal : steps[steps.length - 1].to
+      setTrail({ ...trail, finish: null, note: '', steps })
+      say(`Step ${trail.steps.length} taken back. You're at ${spokenNumber(back)}.`)
+      return
+    }
     if (trail.finish !== null) {
       const { ops, tiles } = trail.finish
       const finish =
