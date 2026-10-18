@@ -396,6 +396,16 @@ describe('CrypticClueBoard', () => {
       expect(screen.getByRole('status')).toHaveTextContent('Solved. The answer is TANGO.')
     })
 
+    // Four boards offer a "Look up" link once solved; this one does not, because its explanation
+    // already says what the answer means.
+    it('offers no lookup link once solved', async () => {
+      const { user } = setup()
+
+      await user.type(answerBox(), 'TANGO')
+
+      expect(screen.queryByRole('link', { name: /^Look up/ })).not.toBeInTheDocument()
+    })
+
     it('does not solve an empty box', () => {
       setup()
 

@@ -6,6 +6,7 @@ import { decode, decodeHints, encode, Guesses, MAX_GUESS } from './progress'
 import { pinnedIndices } from './rungs'
 import { Button } from '@components/button'
 import { FloorBar } from '@components/floor-bar'
+import { LookUp, SETTLE } from '@components/look-up'
 import { AnagramEntry, PuzzleComponentProps, ThemedAnagramsData } from '@types'
 
 // THE ARRANGEMENTS A ROW CAN BE DRAWN IN, in wire order, or none at all if this board cannot draw
@@ -219,24 +220,43 @@ const ROWS =
   'flex flex-1 flex-col gap-[var(--lull-s4)] bg-[var(--lull-plate)] py-[var(--lull-s4)] ' +
   'pr-[var(--lull-gutter-right)] pl-[var(--lull-gutter-left)]'
 
-// The scramble line and the box under it, 4px apart, as one row -- 92px where the line holds a
-// shuffle button (44 + 4 + 44), 74 where it holds letters alone. They are one object: the thing
+// The scramble line and the box under it, 4px apart, as one row -- 92px (44 + 4 + 44), because the
+// line is held at 44 on every row; see SCRAMBLE_LINE_HELD. They are one object: the thing
 // being worked on and the thing you work on it with, which is what lets the browser's own
 // reveal-on-focus bring both into view together when the keyboard is up.
 const ROW = 'flex flex-col gap-[4px]'
 
 // The scramble and its shuffle button on one line, the letters at the left and the button at the
-// right end, where it lines up with the box's right edge below. `min-w-0` on the letters (below)
-// is what lets a long run wrap rather than push the button off the row.
-const SCRAMBLE_LINE = 'flex items-center justify-between gap-[var(--lull-s2)]'
+// right end, where it lines up with the box's right edge below. On a right row the line holds the
+// word and its lookup link, the link set against the word (see `me-auto` below) so it reads as being
+// about that word. `min-w-0` on the letters (below) is what lets a long run wrap rather than push the
+// button off the row.
+//
+// `flex-wrap` is for the right row, where the word does not break: a settled word too long to share
+// one line with the link pushes the link onto a line of its own, at its start. MANDARINS beside the
+// link at 320px leaves 24px, so today's longest answer never wraps; the rule is for the next one.
+const SCRAMBLE_LINE = 'flex flex-wrap items-center justify-between gap-[var(--lull-s2)]'
 
-// HELD AT 44px ON A ROW THAT HAS A BUTTON TO SHOW, WHETHER OR NOT IT IS SHOWING IT. The button goes
-// the moment the row is right, and a line that shrank with it would drop every row below by 18px on
-// the keystroke that solved this one -- the board jumping under the player at the moment it should
-// sit still. Keyed on the PACK (more than one arrangement) rather than on whether the button is
-// drawn, so a row's height is fixed for the life of the board; a row that never had anywhere to go
-// costs no space for a button it was never going to show.
+// HELD AT 44px ON EVERY ROW, WHATEVER IT IS SHOWING. A right row puts the lookup link where the
+// shuffle stood, and that link is 44px tall, so every row has a 44px thing to show at some point in
+// its life -- a row whose pack shipped one arrangement included, since it can still go right. A line
+// that grew to fit the link would drop every row below by 18px on the keystroke that solved this one
+// -- the board jumping under the player at the moment it should sit still. So the height is fixed for
+// the life of the board, and the price is ~18px on a one-arrangement row before it is right.
 const SCRAMBLE_LINE_HELD = 'min-h-11'
+
+// THE SETTLE: a right row's word fades in over the scramble it replaces, on LookUp's shared SETTLE
+// transition (Button's own 380ms and --lull-float). `starting:` is Tailwind's @starting-style, which gives a
+// freshly mounted element its first style to transition FROM -- and the word IS a fresh element,
+// because the right branch below swaps the scramble's <p> for another one. So there is no timer and
+// no keyframes: mounting the word is the trigger.
+//
+// ONLY ON A ROW THAT WENT RIGHT IN THIS SESSION. @starting-style also applies on a page's first
+// render, so a restored solved board would fade all four words in on arrival, announcing a win the
+// player made yesterday; `rightAtMount` below is what holds this class off those rows.
+// motion-reduce: the word is simply there. jsdom lays nothing out and style assertions are banned,
+// so this is carried by the device check and by this comment.
+const SETTLE_IN = `${SETTLE} starting:opacity-0`
 
 // Sign cut and tracked, like the sibling bench's phrase, and smaller: nine letters is not a phrase
 // and this band has four rows to place rather than one. No pl-[0.32em] correction, because these
@@ -274,9 +294,8 @@ const PINNED = 'font-semibold underline decoration-2 underline-offset-4'
 //
 // scroll-mt-[102px] is the TOP: the sign row (46px, pinned once the crown has scrolled away) plus
 // this row's own scramble line, which has to stay readable above the box because those are the
-// letters the player is typing from. The line is 44px wherever it holds a shuffle button, 4 more is
-// the gap under it, and 8 is air: 46 + 44 + 4 + 8 = 102. On a row with no button the line is ~26px
-// and the margin is generous by 18, which costs nothing.
+// letters the player is typing from. The line is held at 44px on every row, 4 more is the gap under
+// it, and 8 is air: 46 + 44 + 4 + 8 = 102.
 //
 // The scroll-mb is the BOTTOM: the floor is a sticky band inside the same scroller, and an unsolved
 // board's floor is the ribbon (52px) and the safe strip (--lull-s2 plus the device's bottom inset).
@@ -534,6 +553,17 @@ export const ThemedAnagramsBoard = ({
     reported.current = solved
   }, [onSolved, solved])
 
+  // WHICH ROWS WERE RIGHT WHEN THE BOARD ARRIVED, so only a row the player made right here settles
+  // with a fade -- see SETTLE_IN. Seeded at mount for the same reason `reported` is, and it only ever
+  // forgets: a row that stops being right (Play again is the one way) drops its flag, so winning it
+  // again later in the same session fades in like any other in-session win. A reveal remounts the
+  // board and so re-seeds this ref, which means a row the reveal just made right appears without the
+  // fade. That is accepted.
+  const rightAtMount = useRef(rights)
+  useEffect(() => {
+    rightAtMount.current = rightAtMount.current.map((was, index) => was && rights[index])
+  })
+
   // WHAT A PURCHASE DID TO THE BOARD, so the one state change on this bench that used to happen in
   // silence stops doing so.
   //
@@ -769,7 +799,8 @@ export const ThemedAnagramsBoard = ({
             // never sorts, filters or reorders -- the one case where an index key is stable.
             <li className={ROW} key={index}>
               {/* ONE role="img" PER LETTER **ONLY WHERE A RUNG HAS PINNED SOMETHING**, and one image
-                  over the whole run everywhere else. A scramble is word-shaped noise with a second
+                  over the whole run everywhere else -- on a row that is not yet right. A right row
+                  draws no image at all; see its branch below. A scramble is word-shaped noise with a second
                   encoding to translate -- that is why the letters are images at all, here and not on
                   the cryptic bench one file over, whose clue is a grammatical sentence with a surface
                   reading that is the whole joke.
@@ -793,10 +824,32 @@ export const ThemedAnagramsBoard = ({
 
                   Keyed by position because these are letters at fixed indices of a run this board
                   never sorts or filters -- the same case the row keys above are. */}
-              <div
-                className={arrangements[index].length > 1 ? `${SCRAMBLE_LINE} ${SCRAMBLE_LINE_HELD}` : SCRAMBLE_LINE}
-              >
-                {pinnedIn(index).size === 0 ? (
+              <div className={`${SCRAMBLE_LINE} ${SCRAMBLE_LINE_HELD}`}>
+                {/* A RIGHT ROW IS THE WORD, and this branch is asked FIRST, before the pinned one: a
+                    row the ladder filled is right too (`rights` reads `shown`), its answer is in the
+                    box, and there is nothing left on the plate to be noise. Plain text, so a reader
+                    browsing the row hears the word rather than "The letters are...", and lowercase in
+                    the DOM with capitals drawn by CSS, so it is read as a word and not spelled out as
+                    an acronym. The link's name is built from the same lowercase string.
+
+                    The link stands where the shuffle stood -- a right row never draws the shuffle --
+                    so tab order on a right row is this link, then the row's box. The wrapper is
+                    layout only: `me-auto` takes the line's free space AFTER the link, so it sits
+                    against the word rather than at the right end, and starts any line it wraps to. */}
+                {rights[index] ? (
+                  <>
+                    <p
+                      className={
+                        rightAtMount.current[index] ? `${SCRAMBLE} uppercase` : `${SCRAMBLE} uppercase ${SETTLE_IN}`
+                      }
+                    >
+                      {rows[index].answer.toLowerCase()}
+                    </p>
+                    <span className="me-auto flex shrink-0">
+                      <LookUp answer={rows[index].answer.toLowerCase()} />
+                    </span>
+                  </>
+                ) : pinnedIn(index).size === 0 ? (
                   <p aria-label={spellOut(displayOf(index))} className={SCRAMBLE} role="img">
                     <span aria-hidden="true">{displayOf(index)}</span>
                   </p>
@@ -977,8 +1030,9 @@ export const ThemedAnagramsBoard = ({
               that shape was doing real work: React kept the node and focus stayed on the control
               the player had just pressed. The focused element at the moment of an in-session win is
               one of the four BOXES, which are not conditional and are not moved -- and when the
-              last row goes right its shuffle button goes with it, but `SCRAMBLE_LINE_HELD` keeps
-              the line its height, so the box under it does not move either.
+              last row goes right its shuffle button gives way to the lookup link, but
+              `SCRAMBLE_LINE_HELD` keeps the line its height, so the box under it does not move
+              either.
 
               Play again takes no keepsFocusOnPress. The composer contract exists to hold a software
               keyboard open over a field being typed in; a solved board's four boxes are readOnly

@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { Button } from '@components/button'
 import { Plate, Shell } from '@components/enclosure'
 import { FloorBar } from '@components/floor-bar'
+import { LookUp, SETTLE } from '@components/look-up'
 import { MissingVowelsData, PuzzleComponentProps } from '@types'
 
 // The one rule this component applies, and it is vendored rather than authored: the backend
@@ -42,6 +43,17 @@ const spellOut = (displayed: string): string =>
 const PHRASE =
   'lull-sign pl-[0.32em] text-center text-[clamp(1.75rem,9vw,2.75rem)] leading-[1.4] ' +
   'tracking-[0.32em] break-words text-[var(--lull-ink)]'
+
+// THE SETTLE. The consonants and the answer share one grid cell, so the cell is as tall as the
+// taller of the two. The answer is always the taller -- it is the consonants plus the vowels and
+// the real spaces, so it wraps sooner -- and the plate grows once, to the answer's height, while the
+// two lines cross-fade in place rather than swapping. Both lines sit in [grid-area:1/1]; the answer
+// comes second so it paints over the faded run.
+//
+// The transition is LookUp's shared SETTLE, so this board and Themed Anagrams settle alike.
+// `starting:` is @starting-style: the answer enters at opacity 0 and transitions up with no timer
+// and no keyframe. `motion-reduce:transition-none` makes both halves instant.
+const STACKED = '[grid-area:1/1]'
 
 // --lull-rule, never --lull-hair: this border is the whole of what tells a player where the box
 // they type into begins, and hair is decoration that must never identify a control. On the floor
@@ -99,6 +111,14 @@ export const MissingVowelsBoard = ({
 
   const solved = isCorrect(guess, answer)
 
+  // Whether the board OPENED solved -- a stored winning guess, or a reveal, which remounts the board
+  // solved. Such a plate renders settled: no consonants kept behind it, no fade, because a settle
+  // that replayed on every visit would be the board performing a win the player had days ago.
+  // State rather than a ref because Play again clears it, so a board opened solved and then
+  // replayed settles with motion the second time, like any other in-session win.
+  const [openedSolved, setOpenedSolved] = useState<boolean>(() => solved)
+  const settles = !openedSolved
+
   const change = (next: string): void => {
     setGuess(next)
     setChecked(false)
@@ -130,6 +150,7 @@ export const MissingVowelsBoard = ({
   // Optional-called: `onReset` is optional on the props, and a board that assumed the shell always
   // supplies it would crash on exactly the press this exists for.
   const playAgain = (): void => {
+    setOpenedSolved(false)
     change('')
     onReset?.()
   }
@@ -183,12 +204,35 @@ export const MissingVowelsBoard = ({
               a board of them reads as texture, which is the failure Enclosure warns about. The
               phrase IS the puzzle, so it is the thing that carries the weight. */}
           <Shell>
-            <Plate className="px-[var(--lull-s4)] py-[var(--lull-s5)]">
-              <p aria-label={spellOut(displayed)} className={PHRASE} role="img">
-                <span aria-hidden="true">{displayed}</span>
-              </p>
+            <Plate className="grid px-[var(--lull-s4)] py-[var(--lull-s5)]">
+              {/* The consonants are kept, faded and hidden from the accessibility tree, only while an
+                  in-session win fades across them. A plate that opened solved never draws them. */}
+              {(settles || !solved) && (
+                <p
+                  aria-hidden={solved || undefined}
+                  aria-label={spellOut(displayed)}
+                  className={`${PHRASE} ${STACKED} ${SETTLE}${solved ? ' opacity-0' : ''}`}
+                  role="img"
+                >
+                  <span aria-hidden="true">{displayed}</span>
+                </p>
+              )}
+              {/* Plain text in pack case, with the capitals drawn by `uppercase`: an all-caps string
+                  is one a screen reader may spell out letter by letter, and this is a phrase. */}
+              {solved && (
+                <p className={`${PHRASE} ${STACKED} uppercase${settles ? ` ${SETTLE} starting:opacity-0` : ''}`}>
+                  {answer}
+                </p>
+              )}
             </Plate>
           </Shell>
+          {/* Under the plate rather than on it: the plate is the puzzle, and the link is a way out
+              of the app. The wrapper is layout only; every style the link has is LookUp's. */}
+          {solved && (
+            <div className="flex justify-end">
+              <LookUp answer={answer} />
+            </div>
+          )}
         </div>
       </div>
 

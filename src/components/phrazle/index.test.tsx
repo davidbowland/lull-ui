@@ -1532,6 +1532,75 @@ describe('PhrazleBoard', () => {
     })
   })
 
+  // A SOLVED BOARD OFFERS ONE LINK, and only a solved board: the link searches for the answer, and
+  // an answer shown before the win is an answer given away. It searches for the PACK'S text rather
+  // than `phrase`, the uppercased copy the tiles are marked against, so the restored board below is
+  // handed an answer in mixed case to tell the two apart.
+  describe('the lookup link', () => {
+    const LINK_NAME = 'Look up TOE HOLD on DuckDuckGo'
+    const guesses = (): HTMLElement => screen.getByRole('group', { name: 'Guesses' })
+
+    // REDDENS ON: `<LookUp answer={phrase} />` (the name and the query come out uppercase); the
+    // link drawn inside the guesses group, where a screen reader hears it as part of the rows.
+    it('searches for the pack answer on a restored win, under the rows and outside them', () => {
+      renderBoard({ ...phrazlePuzzle, data: { ...phrazlePuzzle.data, answer: 'Toe hold' } }, WON_ON_SIX)
+
+      const link = screen.getByRole('link', { name: 'Look up Toe hold on DuckDuckGo' })
+
+      expect(link).toHaveAttribute('href', 'https://www.duckduckgo.com/?q=Toe%20hold')
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(guesses()).not.toContainElement(link)
+      expect(screen.getByRole('group', { name: 'Guess 6, TOE HOLD' }).compareDocumentPosition(link)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+    })
+
+    // REDDENS ON: the link drawn unconditionally.
+    it('offers no link on an empty board', () => {
+      renderBoard()
+
+      expect(screen.queryByRole('link')).toBeNull()
+    })
+
+    // REDDENS ON: the link keyed to `guesses.length > 0` rather than to the win.
+    it('offers no link on a board with guesses and no win', () => {
+      renderBoard(phrazlePuzzle, FIVE_SPENT)
+
+      expect(screen.getByRole('group', { name: 'Guess 5, HOT HOLE' })).toBeInTheDocument()
+      expect(screen.queryByRole('link')).toBeNull()
+    })
+
+    // THE LINK APPEARS AND TAKES NOTHING: the win leaves focus where the click on Guess put it, so
+    // the key that won is still the focused element and the link waits to be tabbed to.
+    //
+    // REDDENS ON: the link mounted only from restored progress; the link given autofocus.
+    it('appears when the winning guess is played and leaves focus on the pad', async () => {
+      const { user } = renderBoard()
+      await type(user, 'TOEHOLD')
+
+      expect(screen.queryByRole('link')).toBeNull()
+
+      await user.click(keyNamed(/^Guess$/))
+
+      expect(screen.getByRole('link', { name: LINK_NAME })).toHaveAttribute(
+        'href',
+        'https://www.duckduckgo.com/?q=TOE%20HOLD',
+      )
+      expect(screen.getByRole('button', { name: 'Play again' })).toHaveFocus()
+    })
+
+    // REDDENS ON: the link keyed to anything that survives Again, such as `onSolved` having fired.
+    it('goes away when Again is pressed', async () => {
+      const { user } = renderBoard(phrazlePuzzle, WON_ON_SIX)
+
+      expect(screen.getByRole('link', { name: LINK_NAME })).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(screen.queryByRole('link')).toBeNull()
+    })
+  })
+
   // WHICH ROW EACH SCROLL LANDS ON, never just how many there were. The old version of this block
   // counted calls, and a count cannot tell the old behavior from the new one: an accepted Guess
   // still scrolls exactly once, and the whole change is that it now scrolls the MARKED row instead
@@ -1551,6 +1620,9 @@ describe('PhrazleBoard', () => {
       return scrollIntoView.mock.contexts.slice(from)
     }
     const markedRow = (name: string): HTMLElement => screen.getByRole('group', { name })
+    // The layout wrapper around a solved board's LookUp link -- the element the win scrolls to.
+    const lookUpLine = (): HTMLElement | null =>
+      screen.getByRole('link', { name: 'Look up TOE HOLD on DuckDuckGo' }).parentElement
 
     // ONE SCROLL AT MOUNT, onto the row the player will type into -- and on a RESTORED board too,
     // where the guess count is already five. The count is "seen" at mount, so the effect that shows
@@ -1674,17 +1746,20 @@ describe('PhrazleBoard', () => {
       expect(onProgress).not.toHaveBeenCalled()
     })
 
-    // THE WINNING GUESS DRAWS NO COMPOSING ROW, so the marked row is the only thing there is to show
-    // -- and it is shown exactly as any other marked row is.
+    // THE WINNING GUESS DRAWS NO COMPOSING ROW, and it draws the LookUp link directly under the
+    // winning row instead. The one scroll lands on the link's line, because `nearest` on the row
+    // alone could leave the link under the floor, and showing the link shows the row above it.
     //
-    // REDDENS ON: the marked-row scroll skipped on a win; `ref={composingRef}` on the last row.
-    it('shows the winning row and nothing after it', async () => {
+    // REDDENS ON: the marked-row scroll skipped on a win; `ref={composingRef}` on the last row; the
+    // win scrolling the winning row rather than the link under it.
+    it('shows the lookup link under the winning row and nothing after it', async () => {
       const { user } = renderBoard()
       await type(user, 'TOEHOLD')
 
       const scrolled = await scrollsDuring(() => user.click(keyNamed(/^Guess$/)))
 
-      expect(scrolled).toEqual([markedRow('Guess 1, TOE HOLD')])
+      expect(scrolled).toEqual([lookUpLine()])
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
       expect(screen.queryByRole('group', { name: /^Your guess/ })).toBeNull()
     })
 
@@ -1705,19 +1780,26 @@ describe('PhrazleBoard', () => {
     })
 
     // A FINISHED BOARD MOUNTS ONTO ITS WINNING ROW. It draws no composing row, so the mount scroll
-    // falls back to the last marked row -- which is the row "Show answer" just filled in. The frame
-    // reveals by REBUILDING the board from the solved progress it wrote, so the revealed answer
-    // arrives as exactly this mount, appended under every guess the player made; with nothing to
-    // scroll to, it could sit under the pinned floor and the press would seem to do nothing.
+    // falls back to the LookUp link under the last marked row -- which is the row "Show answer" just
+    // filled in. The frame reveals by REBUILDING the board from the solved progress it wrote, so the
+    // revealed answer arrives as exactly this mount, appended under every guess the player made; with
+    // nothing to scroll to, it could sit under the pinned floor and the press would seem to do
+    // nothing.
+    //
+    // The scroll lands on the LookUp link's line under that row rather than on the row itself, for
+    // the reason the in-session win above gives.
     //
     // REDDENS ON: the mount scroll aiming only at the composing row (no call at all), and on
-    // `ref={composingRef}` on every row unconditionally (the call lands on a row named for typing).
-    it('scrolls the winning row into view when a finished board mounts', () => {
+    // `ref={composingRef}` on every row unconditionally (the call lands on a row named for typing),
+    // and on the fallback skipping the link (no call at all, since the mount effect has no
+    // winning-row arm).
+    it('scrolls the winning row and its link into view when a finished board mounts', () => {
       renderBoard(phrazlePuzzle, WON_ON_SIX)
 
       expect(screen.getByText(SOLVED)).toBeInTheDocument()
       expect(scrollIntoView.mock.contexts).toHaveLength(1)
-      expect(scrollIntoView.mock.contexts[0]).toBe(markedRow('Guess 6, TOE HOLD'))
+      expect(scrollIntoView.mock.contexts[0]).toBe(lookUpLine())
+      expect(scrollIntoView.mock.contexts[0]).not.toBe(markedRow('Guess 6, TOE HOLD'))
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
     })
   })
@@ -1816,10 +1898,16 @@ describe('PhrazleBoard', () => {
     //
     // REDDENS ON: dropping the `over` guard from `press`, which types a Q into a row that does not
     // exist -- the composing-row query stops being null and the ribbon says nothing at all.
-    // ONE TAB. The board band is not a tab stop -- it stopped being one when the bench took over
-    // the scrolling -- and nothing inside it is focusable, so the pad's first key is the first stop.
+    // TWO TABS. The board band is not a tab stop -- it stopped being one when the bench took over
+    // the scrolling -- and the one thing inside it that is focusable on a finished board is the
+    // LookUp link under the winning row, so the link is the first stop and the pad's first key the
+    // second. That order is the reading order: the link belongs to the rows above the floor.
     it('refuses a letter typed into it and says which key does something', async () => {
       const { user } = renderBoard(phrazlePuzzle, WON_ON_SIX)
+
+      await user.tab()
+
+      expect(screen.getByRole('link', { name: 'Look up TOE HOLD on DuckDuckGo' })).toHaveFocus()
 
       await user.tab()
 

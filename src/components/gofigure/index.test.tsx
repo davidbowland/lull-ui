@@ -770,6 +770,16 @@ describe('GoFigureBoard', () => {
       expect(onSolved).toHaveBeenCalledTimes(1)
     })
 
+    // Four boards offer a "Look up" link once solved; a sum has no word to look up.
+    it('offers no lookup link once solved', async () => {
+      const user = userEvent.setup({ delay: null })
+      renderBoard()
+
+      await tapAll(user, SOLUTION)
+
+      expect(screen.queryByRole('link', { name: /^Look up/ })).not.toBeInTheDocument()
+    })
+
     // THE LOAD-BEARING TEST. The component compares the joined string against
     // acceptedSolutions; it never evaluates arithmetic to decide correctness. 9+6+7*7
     // makes 154 by the same left-to-right rule, and this pack does not list it.

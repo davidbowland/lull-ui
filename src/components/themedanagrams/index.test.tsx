@@ -426,13 +426,18 @@ describe('ThemedAnagramsBoard', () => {
     // passes on exactly the markup it exists to refuse. Both mutations were measured against it and
     // both stayed green. Arriving at the won row is the only walk a row missing from the tab order
     // can fail, so the row that locks is row 2 and the walk starts above it.
-    it('keeps the won row in the tab order', async () => {
+    //
+    // THE LOOKUP LINK COMES FIRST. A right row puts the link where its shuffle stood, above the box,
+    // so DOM order -- the order a keyboard player meets them -- is the link, then the box.
+    it('keeps the won row in the tab order, after its lookup link', async () => {
       const { user } = setup()
       await user.type(boxNamed(2), 'SAUCEPAN')
       boxNamed(1).focus()
 
       await user.tab()
+      expect(screen.getByRole('link', { name: 'Look up saucepan on DuckDuckGo' })).toHaveFocus()
 
+      await user.tab()
       expect(boxNamed(2)).toHaveFocus()
     })
 
@@ -508,6 +513,100 @@ describe('ThemedAnagramsBoard', () => {
       setup()
 
       expect(ribbon()).toBeEmptyDOMElement()
+    })
+  })
+
+  describe('a right row settles into its word', () => {
+    // The four answers as the links name them: lowercase, so a reader hears a word and not an
+    // acronym, which is also the string the search is for.
+    const LINKS: [string, string][] = [
+      ['Look up kettle on DuckDuckGo', 'https://www.duckduckgo.com/?q=kettle'],
+      ['Look up saucepan on DuckDuckGo', 'https://www.duckduckgo.com/?q=saucepan'],
+      ['Look up skillet on DuckDuckGo', 'https://www.duckduckgo.com/?q=skillet'],
+      ['Look up spatula on DuckDuckGo', 'https://www.duckduckgo.com/?q=spatula'],
+    ]
+
+    // Read in row order, one link per row, so a link drawn in the wrong row's place reddens here.
+    it('gives a restored solved board one lookup link per row, in row order', () => {
+      setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      expect(screen.getAllByRole('listitem').map((row) => within(row).getByRole('link').getAttribute('href'))).toEqual(
+        LINKS.map(([, href]) => href),
+      )
+    })
+
+    it.each(LINKS)('names a restored solved row’s link “%s”', (name, href) => {
+      setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
+    })
+
+    // The scramble's role="img" existed because a scramble is word-shaped noise. A right row is the
+    // word, so the board draws no image at all once all four are right.
+    it('draws the word as plain text on a restored solved board', () => {
+      setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      expect(screen.queryAllByRole('img')).toHaveLength(0)
+      expect(within(screen.getAllByRole('listitem')[3]).getByText('spatula')).toBeInTheDocument()
+    })
+
+    // The verdict stays: the input row is untouched by the settle.
+    it('keeps the Right chip on every settled row', () => {
+      setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      expect(screen.getAllByRole('listitem').map((row) => within(row).getByText('Right').textContent)).toEqual([
+        'Right',
+        'Right',
+        'Right',
+        'Right',
+      ])
+    })
+
+    // ONE RIGHT ROW IS ONE LINK. The other three are still puzzles, so they keep their scramble image
+    // and their shuffle -- which is what tells this apart from a board that settled every row.
+    it('settles only the row that is right', () => {
+      setup(themedAnagramsPuzzle, 'KETTLE\n\n\n')
+      const [first, ...rest] = screen.getAllByRole('listitem')
+
+      expect(screen.getAllByRole('link', { name: /^Look up/ })).toHaveLength(1)
+      expect(within(first).getByText('kettle')).toBeInTheDocument()
+      expect(rest.map((row) => within(row).getByRole('img').getAttribute('aria-label'))).toEqual(
+        SPELLED.slice(1).map(([, spelled]) => spelled),
+      )
+      expect(rest.map((row) => within(row).getByRole('button').getAttribute('aria-label'))).toEqual([
+        'Shuffle row 2',
+        'Shuffle row 3',
+        'Shuffle row 4',
+      ])
+    })
+
+    // IN SESSION, ON THE LAST LETTER, AND FOCUS STAYS PUT. The link is new on the keystroke that made
+    // the row right, and a player still typing must not be pulled out of the box by it. The ribbon
+    // says what it always said.
+    it('shows the link on the keystroke that makes the row right and leaves focus in the box', async () => {
+      const { user } = setup()
+      await user.type(boxNamed(1), 'KETTL')
+      expect(screen.queryByRole('link', { name: /^Look up/ })).toBeNull()
+
+      await user.type(boxNamed(1), 'E')
+
+      expect(screen.getByRole('link', { name: 'Look up kettle on DuckDuckGo' })).toHaveAttribute(
+        'href',
+        'https://www.duckduckgo.com/?q=kettle',
+      )
+      expect(boxNamed(1)).toHaveFocus()
+      expect(ribbon()).toHaveTextContent('KETTLE is right — 3 to go.')
+    })
+
+    // Derived, like everything else here: four empty boxes leave no row right and so no link, and
+    // the four scrambles come back.
+    it('takes the links back when the player plays again', async () => {
+      const { user } = setup(themedAnagramsPuzzle, SOLVED_PROGRESS)
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(screen.queryAllByRole('link', { name: /^Look up/ })).toHaveLength(0)
+      expect(runs()).toEqual(PACK_RUNS)
     })
   })
 
@@ -943,7 +1042,11 @@ describe('ThemedAnagramsBoard', () => {
 
       expect(screen.queryByRole('button', { name: 'Shuffle row 1' })).toBeNull()
       expect(screen.getAllByRole('button', { name: /^Shuffle row / })).toHaveLength(3)
-      expect(runs()[0]).toBe('ELKTET')
+      // The scramble has settled into the word, and the lookup link stands where the shuffle did.
+      const row = screen.getAllByRole('listitem')[0]
+      expect(within(row).queryByRole('img')).toBeNull()
+      expect(within(row).getByText('kettle')).toBeInTheDocument()
+      expect(within(row).getByRole('link', { name: 'Look up kettle on DuckDuckGo' })).toBeInTheDocument()
     })
 
     // keepsFocusOnPress, and this is the assertion that defends it. This is the press most likely to
@@ -1781,6 +1884,18 @@ describe('ThemedAnagramsBoard', () => {
       setup(settledPuzzle, DOUBLED)
 
       expect(boxNamed(2)).toHaveValue('SEES')
+    })
+
+    // A row the ladder filled is right too, and its answer is on screen, so it settles with its link.
+    it('settles the row into its word with a lookup link', () => {
+      setup(settledPuzzle, ONE_GAP)
+      const row = screen.getAllByRole('listitem')[0]
+
+      expect(within(row).getByText('ladle')).toBeInTheDocument()
+      expect(within(row).getByRole('link', { name: 'Look up ladle on DuckDuckGo' })).toHaveAttribute(
+        'href',
+        'https://www.duckduckgo.com/?q=ladle',
+      )
     })
 
     // The chip is the WORD "Right", not the tick beside it -- the tick is aria-hidden decoration, so

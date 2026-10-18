@@ -444,6 +444,76 @@ describe('MissingVowelsBoard', () => {
     })
   })
 
+  // Once the phrase is on screen, the plate stops being a puzzle: it shows the answer as words, and a
+  // link under it lets the player read about what they just recovered. Before then there is no link,
+  // because a link naming the answer would give the puzzle away.
+  describe('the settled plate', () => {
+    const LOOKUP = 'Look up The Empire Strikes Back on DuckDuckGo'
+    const HREF = 'https://www.duckduckgo.com/?q=The%20Empire%20Strikes%20Back'
+
+    it('offers a lookup of the answer on a board that opens solved', () => {
+      setup(missingVowelsPuzzle, SOLVED)
+
+      expect(screen.getByRole('link', { name: LOOKUP })).toHaveAttribute('href', HREF)
+    })
+
+    // Pack case, not capitals: the capitals are drawn, so a screen reader reads a phrase rather than
+    // spelling a string of letters.
+    it('shows the answer in place of the consonants', () => {
+      const { container } = setup(missingVowelsPuzzle, SOLVED)
+
+      expect(container.querySelector('.lull-board')).toContainElement(screen.getByText(SOLVED))
+      expect(screen.queryByRole('img')).not.toBeInTheDocument()
+      expect(screen.queryByText('THMP RSTR KSBCK')).not.toBeInTheDocument()
+    })
+
+    it('puts the lookup in the board rather than the floor', () => {
+      const { container } = setup(missingVowelsPuzzle, SOLVED)
+
+      expect(container.querySelector('.lull-board')).toContainElement(screen.getByRole('link', { name: LOOKUP }))
+    })
+
+    it('leaves the floor as it was', () => {
+      setup(missingVowelsPuzzle, SOLVED)
+
+      expect(answerBox()).toHaveAttribute('readonly')
+      expect(answerBox()).toHaveValue(SOLVED)
+      expect(screen.getByRole('button', { name: 'Play again' })).toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('Solved. The answer is The Empire Strikes Back.')
+    })
+
+    it.each<[string, string | null]>([
+      ['an empty board', null],
+      ['a partly typed guess', 'The Empire'],
+    ])('offers no lookup on %s', (_description, progress) => {
+      setup(missingVowelsPuzzle, progress)
+
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+      expect(screen.getByRole('img')).toHaveAccessibleName('The letters are T H M P, then R S T R, then K S B C K')
+    })
+
+    // The board counts as solved on the keystroke that completes the phrase, so this types and never
+    // presses Check.
+    it('offers the lookup the moment the player types the answer', async () => {
+      const { container, user } = setup()
+
+      await user.type(answerBox(), SOLVED)
+
+      expect(screen.getByRole('link', { name: LOOKUP })).toHaveAttribute('href', HREF)
+      expect(container.querySelector('.lull-board')).toContainElement(screen.getByText(SOLVED))
+      expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    })
+
+    it('leaves focus in the answer box when the lookup appears', async () => {
+      const { user } = setup()
+
+      await user.type(answerBox(), SOLVED)
+
+      expect(screen.getByRole('link', { name: LOOKUP })).toBeInTheDocument()
+      expect(answerBox()).toHaveFocus()
+    })
+  })
+
   // A solved board is finished. The box that won it does not take another keystroke -- the way
   // back in is Play again, which empties it.
   describe('once solved', () => {
@@ -532,6 +602,28 @@ describe('MissingVowelsBoard', () => {
       await user.click(screen.getByRole('button', { name: 'Play again' }))
 
       expect(answerBox()).toHaveValue('')
+    })
+
+    it('takes back the settled answer and the lookup when the player plays again', async () => {
+      const { container, user } = setup(missingVowelsPuzzle, SOLVED)
+
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+      expect(container.querySelector('.lull-board')).not.toHaveTextContent(SOLVED)
+      expect(screen.getByRole('img')).toHaveAccessibleName('The letters are T H M P, then R S T R, then K S B C K')
+    })
+
+    // The board won in-session keeps its consonant run mounted, faded and aria-hidden, so the
+    // cross-fade has something to fade from. Play again has to hand that same element back to the
+    // accessibility tree, which a board that opened solved never exercises.
+    it('gives the consonants back to a screen reader after an in-session win and Play again', async () => {
+      const { user } = setup()
+
+      await user.type(answerBox(), SOLVED)
+      await user.click(screen.getByRole('button', { name: 'Play again' }))
+
+      expect(screen.getByRole('img')).toHaveAccessibleName('The letters are T H M P, then R S T R, then K S B C K')
     })
 
     it('takes a fresh guess once the player plays again', async () => {

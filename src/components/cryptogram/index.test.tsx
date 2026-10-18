@@ -1939,6 +1939,15 @@ describe('CryptogramBoard', () => {
       expect(onSolved).toHaveBeenCalledTimes(1)
     })
 
+    // Its sentences are made for the puzzle, not quoted from anywhere, so there is nothing to look up.
+    it('offers no lookup link once solved', async () => {
+      const user = setup()
+
+      await solve(user)
+
+      expect(screen.queryByRole('link', { name: /^Look up/ })).not.toBeInTheDocument()
+    })
+
     it('says the answer once it is solved', async () => {
       const user = setup()
 

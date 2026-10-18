@@ -37,11 +37,14 @@ const SEPARATOR = (
 // only navigation the product has, in an app whose manifest is display: standalone and therefore
 // has no browser back button to fall back on. min-h-11 plus the horizontal padding clears 44x44;
 // the border sits on an inner span so the underline still hugs the word rather than the box.
-const LINK =
+//
+// Both are exported because LookUp wears them too, so a tweak made here for the spine restyles
+// every board's lookup link as well. That is the point: there is one link look in the app.
+export const LINK =
   'flex min-h-11 shrink-0 items-center whitespace-nowrap px-[var(--lull-s1)] ' +
   'text-[var(--lull-muted)] hover:text-[var(--lull-ink)]'
 
-const LINK_TEXT = 'border-b border-[var(--lull-rule)]'
+export const LINK_TEXT = 'border-b border-[var(--lull-rule)]'
 
 /**
  * The breadcrumb every surface wears, in place of a Back button. A crumb with no `href`

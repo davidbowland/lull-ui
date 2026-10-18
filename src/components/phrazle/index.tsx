@@ -7,6 +7,7 @@ import { decode, encode } from './progress'
 import type { PhrazleSpentRung } from './rungs'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
+import { LookUp } from '@components/look-up'
 import { PhrazleData, PuzzleComponentProps } from '@types'
 
 // The floor a board handed no dictionary stands on. everyWordInDictionary is documented and TESTED
@@ -543,6 +544,9 @@ export const PhrazleBoard = ({
   // The last row spent, which is what an accepted Guess shows the player. See the scroll effects
   // below for when each of these two refs is the target.
   const lastMarkedRef = useRef<HTMLDivElement>(null)
+  // The wrapper around the solved board's LookUp link, which sits under the winning row. Only a
+  // solved board draws it, so it is null everywhere else.
+  const lookUpRef = useRef<HTMLDivElement>(null)
   // "A guess was just marked and the player has not started the next one." Set by an accepted,
   // unsolved commit; cleared by the first letter that lands in the new row, and by Again. A ref,
   // not state: nothing is drawn from it, and setting it must not cost a render.
@@ -646,9 +650,10 @@ export const PhrazleBoard = ({
   //
   // THE REFS ARE OPTIONAL AND THE METHOD IS NOT. `composingRef.current` is null on a finished board
   // and on an undrawable pack -- both draw no composing row. The finished board then scrolls its
-  // winning row (below); the undrawable pack draws no rows at all, so both refs are null and nothing
-  // scrolls. Both arms are exercised by the suite. The call itself is written plainly: a `?.()` there
-  // would make a real browser losing this method silent, and the honest failure is a loud one.
+  // lookup link (below); the undrawable pack draws no rows and no link, so every ref is null and
+  // nothing scrolls. Both arms are exercised by the suite. The call itself is written plainly: a
+  // `?.()` there would make a real browser losing this method silent, and the honest failure is a
+  // loud one.
   //
   // jsdom implements no scrolling at all, so `Element.prototype.scrollIntoView` does not exist and
   // this board's suite installs it in a beforeAll and removes it in an afterAll. It is the only
@@ -657,24 +662,31 @@ export const PhrazleBoard = ({
   // MOUNT IS THIS SAME EFFECT running with the nonce at 0, which is the one scroll a restored board
   // owes: the player arrives at the row they will type into.
   //
-  // A FINISHED BOARD HAS NO SUCH ROW, so its mount falls back to the last marked one -- the winning
+  // A FINISHED BOARD HAS NO SUCH ROW, so its mount falls back to the lookup link under the winning
   // row. That is the row "Show answer" fills in: the frame reveals by rebuilding this board from the
   // solved progress it wrote, so the answer arrives as a mount, appended under every guess, and
   // without this it could sit under the pinned floor with the press seeming to do nothing. Only the
   // mount can reach the fallback: every later bump of the nonce comes from a letter typed into a
   // composing row, which by then exists.
+  //
+  // THE FALLBACK IS THE LOOKUP LINK, NOT THE WINNING ROW. A solved board draws the link directly
+  // under the winning row, so showing the row alone could leave the link under the floor. `nearest`
+  // on the link moves the least distance that shows it, which on a downward scroll is the distance
+  // that also shows the row just above it. No third arm is needed: a drawable board has either a
+  // composing row or, solved, the link, and an undrawable one has neither and no marked row either.
   useEffect(() => {
-    ;(composingRef.current ?? lastMarkedRef.current)?.scrollIntoView({ block: 'nearest' })
+    ;(composingRef.current ?? lookUpRef.current)?.scrollIntoView({ block: 'nearest' })
   }, [scrollNonce])
 
   // ONLY WHEN THE COUNT GREW. The count also changes when Again empties the board, and it is "seen"
   // at mount -- neither is a guess the player needs shown, and a scroll on Again would point at a
   // row that no longer exists. The winning guess lands here too: a solved board draws no composing
-  // row, so the marked row is the only thing there is to show.
+  // row, so the marked row is the only thing there is to show -- and it shows it by way of the
+  // LookUp link drawn under it, for the reason the mount effect gives.
   useEffect(() => {
     const grew = guesses.length > seenGuesses.current
     seenGuesses.current = guesses.length
-    if (grew) lastMarkedRef.current?.scrollIntoView({ block: 'nearest' })
+    if (grew) (lookUpRef.current ?? lastMarkedRef.current)?.scrollIntoView({ block: 'nearest' })
   }, [guesses.length])
 
   // The detail DEFAULTS TO EMPTY rather than carrying, so a caller that says one plain sentence
@@ -1286,6 +1298,23 @@ export const PhrazleBoard = ({
               )
             })}
           </div>
+
+          {/* OUTSIDE THE GUESSES GROUP, because the link is not a guess: inside it, a screen reader
+              walking the group would hear a control between `Guess 6` and the end of the rows. The
+              wrapper is layout only -- it puts the link on its own right-aligned line -- and carries
+              the rows' bottom scroll margin, because it is now what the win scrolls to and the same
+              sticky floor overlays the bench's bottom edge. Keyed to `over` rather than `solved`, the
+              same fact guarded by `drawable`, so the link can never search for an answer the pack
+              did not ship as text. The pack's own text, never `phrase`: the search is for what the
+              pack said, and `phrase` is the uppercased copy the tiles are marked against. */}
+          {over && (
+            <div
+              className="mt-[var(--lull-s3)] flex scroll-mt-[52px] scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bottom))] justify-end"
+              ref={lookUpRef}
+            >
+              <LookUp answer={answer} />
+            </div>
+          )}
         </div>
       </section>
 
