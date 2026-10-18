@@ -556,12 +556,12 @@ describe('PhrazleBoard', () => {
       await type(user, 'TOEHELD')
       await user.click(keyNamed(/^Guess$/))
 
-      // MESSAGE ONE WAS THIS SAME SENTENCE, not `Every tile is full.`, and that is what changed
-      // here: the D both fills the row and completes HELD, so the row-full threshold says the
-      // refusal rather than the invitation. This press of Guess is therefore message two, its nonce
-      // is even, and its text stands alone -- which is also the assertion that the two consecutive
-      // identical sentences DIFFER by the repeat mark and the live region announces the second.
-      expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST)
+      // THREE MESSAGES, AND THE COUNT IS WORKED FROM THE KEYSTROKES. The E of HE is message one --
+      // no four-letter word in the list starts with HE -- and the D fills the row and says this same
+      // sentence as message two. This press of Guess is message three, its nonce is odd and it
+      // carries the mark -- which is also the assertion that the two consecutive identical sentences
+      // DIFFER by the repeat mark and the live region announces the second.
+      expect(ribbon()).toHaveProperty('textContent', `${NOT_IN_LIST}${REPEAT_MARK}`)
       expect(screen.getByText('Guess 1')).toBeInTheDocument()
       expect(onProgress).not.toHaveBeenCalled()
     })
@@ -575,22 +575,19 @@ describe('PhrazleBoard', () => {
     // BOTH WORDS OFFEND HERE and only the first is named, which is where `never all of them` is
     // pinned: TOE is said and HOLD is not.
     //
-    // THE REPEAT MARK IS DUE AND IT WAS NOT BEFORE, which is the one thing about this row that
-    // moved. The empty set rejects every word, so this board says the sentence three times: the E
-    // completes TOE against nothing and earns `TOE isn’t in the word list.`, the D fills the row and
-    // earns the full refusal, and this press of Guess earns it again. Three messages is an odd
-    // nonce, and the board appends the zero-width space on an odd nonce -- the parity arithmetic
-    // documented at the top of this file, asserted rather than worked around.
+    // FOUR MESSAGES AND NO REPEAT MARK. The empty set has no word for any prefix to start, so the
+    // FIRST letter of each word kills it: the T says `no 3-letter word starting with T`, the H says
+    // the same of H, the D fills the row and earns the full refusal, and this press of Guess earns
+    // it again. Four messages is an even nonce, and the board appends the zero-width space only on
+    // an odd one -- the parity arithmetic documented at the top of this file, asserted rather than
+    // worked around.
     it('refuses every guess when it was handed no dictionary', async () => {
       const { user } = renderBoard(phrazlePuzzle, null, null)
 
       await type(user, 'TOEHOLD')
       await user.click(keyNamed(/^Guess$/))
 
-      expect(ribbon()).toHaveProperty(
-        'textContent',
-        `TOE isn’t in the word list. Change it and press Guess.${REPEAT_MARK}`,
-      )
+      expect(ribbon()).toHaveProperty('textContent', 'TOE isn’t in the word list. Change it and press Guess.')
       expect(onProgress).not.toHaveBeenCalled()
     })
   })
@@ -760,6 +757,102 @@ describe('PhrazleBoard', () => {
       expect(marks(container)).toHaveLength(1)
     })
 
+    // THE LETTER THAT LEAVES NO WAY TO FINISH THE WORD IS THE LETTER THAT SPEAKS, not the letter
+    // that fills it. The fixture's three-letter words are TOE, HOT, OLD and TEA, so T is live and TX
+    // is not -- and the player hears so on the X, two tiles before the word would have completed.
+    //
+    // REDDENS ON: going back to judging only complete words, after which TX is silent and unmarked.
+    it('marks a word on the first letter no word in the list can follow', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'T')
+
+      expect(ribbon()).toBeEmptyDOMElement()
+      expect(marks(container)).toHaveLength(0)
+
+      await type(user, 'X')
+
+      expect(ribbon()).toHaveProperty(
+        'textContent',
+        `The word list has no 3-letter word starting with TX.${REPEAT_MARK}`,
+      )
+      expect(marks(container)).toHaveLength(1)
+      expect(extents(container)).toHaveLength(1)
+    })
+
+    // THE LENGTH IS THE SLOT'S. HA starts HAND, which is four letters, and the slot it is typed
+    // into here is three -- so the A kills it. A board asking "any word" instead of "a word this
+    // long" stays silent.
+    it('judges a prefix against words of the slot length only', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'HA')
+
+      expect(ribbon()).toHaveProperty(
+        'textContent',
+        `The word list has no 3-letter word starting with HA.${REPEAT_MARK}`,
+      )
+      expect(marks(container)).toHaveLength(1)
+    })
+
+    // A DEAD WORD STAYS SAID WHILE IT IS TYPED INTO, and is not said again. Every letter after the
+    // one that killed it leaves the sentence standing -- the reason is still true -- and completing
+    // it does not swap in `HELD isn’t in the word list.`, which would announce a second verdict on
+    // a word the player was already told about.
+    //
+    // REDDENS ON: hushing on the L, or re-announcing on the D's completion.
+    it('leaves the sentence standing while the dead word is typed into', async () => {
+      const { container, user } = renderBoard()
+
+      await type(user, 'TOEHE')
+
+      const said = `The word list has no 4-letter word starting with HE.${REPEAT_MARK}`
+      expect(ribbon()).toHaveProperty('textContent', said)
+
+      await type(user, 'L')
+
+      expect(ribbon()).toHaveProperty('textContent', said)
+      expect(marks(container)).toHaveLength(1)
+    })
+
+    // BUT AN ERASE HUSHES IT, and a letter typed back into a word that is still dead finds the band
+    // empty. That letter speaks, naming what is now typed, or a player repairing the word hears
+    // nothing about the letter they just tried.
+    //
+    // REDDENS ON: returning on `before` alone, which leaves the ribbon empty after the second L.
+    it('speaks again for a letter typed into a dead word after an erase', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TOEHEL')
+      await user.click(keyNamed(/^Delete$/))
+
+      expect(ribbon()).toBeEmptyDOMElement()
+
+      await type(user, 'L')
+
+      // Message two: the E of HE was message one, and the erase said nothing.
+      expect(ribbon()).toHaveProperty('textContent', 'The word list has no 4-letter word starting with HEL.')
+    })
+
+    // THE ROW'S NAME SAYS THE PREFIX FACT, NOT `not in the word list`, because nobody typed HE
+    // expecting it to be a word. Beside a complete offender it comes last, after the list clause,
+    // because its word is the last one typed. Erasing back to a live prefix takes it away again.
+    //
+    // REDDENS ON: listing HE among the `not in the word list` offenders.
+    it('names a dead prefix in the row with its own clause', async () => {
+      const { user } = renderBoard()
+
+      await type(user, 'TODHE')
+
+      expect(composing()).toHaveAccessibleName(
+        'Your guess, TOD HE, TOD not in the word list, the word list has no 4-letter word starting with HE',
+      )
+
+      await user.click(keyNamed(/^Delete$/))
+
+      expect(composing()).toHaveAccessibleName('Your guess, TOD H, TOD not in the word list')
+    })
+
     // THE ROW-FULL THRESHOLD SAYS THE OTHER SPELLING, verbatim the sentence Guess itself says, so
     // the typing-time refusal and the Guess-time refusal are one string said at two moments. The
     // imperative arrives exactly when it becomes actionable, and `Every tile is full. Press Guess.`
@@ -771,21 +864,22 @@ describe('PhrazleBoard', () => {
 
       await type(user, 'TOEHELD')
 
-      expect(ribbon()).toHaveProperty('textContent', `${NOT_IN_LIST}${REPEAT_MARK}`)
+      // Message two: the E of HE was message one.
+      expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST)
     })
 
     // THE FIRST OFFENDER AND ONLY THE FIRST, which is `commit`'s rule reused rather than a second
     // one: a player fixes one word and presses again, and a list read into a live region is a list
     // read for nothing. The row's NAME lists both, because a label is read on demand.
     //
-    // TOD's completion was message one and this is message two, so the text stands alone -- and the
-    // two consecutive messages differ, which is what makes the second one announce at all.
+    // TOD's completion was message one, the E of HE message two, and this is message three, so the
+    // mark is due -- and the consecutive messages differ, which is what makes each one announce.
     it('names the first offender when the full row has two of them', async () => {
       const { user } = renderBoard()
 
       await type(user, 'TODHELD')
 
-      expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST_TOD)
+      expect(ribbon()).toHaveProperty('textContent', `${NOT_IN_LIST_TOD}${REPEAT_MARK}`)
     })
 
     // AN ERASE HUSHES AND THE MARK STAYS, which is the split stated as one assertion. The ribbon is
@@ -797,13 +891,14 @@ describe('PhrazleBoard', () => {
       const { container, user } = renderBoard()
       await type(user, 'TODHELD')
 
-      expect(ribbon()).toHaveProperty('textContent', NOT_IN_LIST_TOD)
+      expect(ribbon()).toHaveProperty('textContent', `${NOT_IN_LIST_TOD}${REPEAT_MARK}`)
 
       await user.click(keyNamed(/^Delete$/))
 
+      // TWO MARKS, because erasing the D leaves HEL, and no four-letter word starts with that either.
       expect(ribbon()).toBeEmptyDOMElement()
-      expect(marks(container)).toHaveLength(1)
-      expect(extents(container)).toHaveLength(1)
+      expect(marks(container)).toHaveLength(2)
+      expect(extents(container)).toHaveLength(2)
     })
 
     // THE ROW'S NAME GAINS THE CLAUSE AND LOSES IT AGAIN. `getByRole(..., { name })` reads the
@@ -1021,7 +1116,8 @@ describe('PhrazleBoard', () => {
 
       await user.click(keyNamed(/^A,/))
 
-      expect(composing()).toHaveAccessibleName('Your guess, A')
+      // The clause is the fixture's doing: none of its three-letter words starts with A.
+      expect(composing()).toHaveAccessibleName('Your guess, A, the word list has no 3-letter word starting with A')
       // BOTH ATTRIBUTES, because they fail differently and only one of them is what `toBeEnabled`
       // reads. `disabled` takes the key out of the tab order outright; `aria-disabled` leaves it
       // reachable and tells a screen reader it does nothing, which is the more tempting edit of the
@@ -1175,7 +1271,8 @@ describe('PhrazleBoard', () => {
 
       await user.click(keyNamed(/^B,/))
 
-      expect(composing()).toHaveAccessibleName('Your guess, B')
+      // The clause is the fixture's doing: none of its three-letter words starts with B.
+      expect(composing()).toHaveAccessibleName('Your guess, B, the word list has no 3-letter word starting with B')
       expect(keyNamed(/^B,/)).toBeEnabled()
       expect(keyNamed(/^B,/)).not.toHaveAttribute('aria-disabled')
     })
@@ -2334,11 +2431,12 @@ describe('PhrazleBoard', () => {
       const { user } = renderBoard()
       await user.click(keyNamed(/^E,/))
 
-      expect(composing()).toHaveAccessibleName('Your guess, E')
+      // The clause is the fixture's doing: none of its three-letter words starts with E.
+      expect(composing()).toHaveAccessibleName('Your guess, E, the word list has no 3-letter word starting with E')
 
       await user.keyboard('{Enter}')
 
-      expect(composing()).toHaveAccessibleName('Your guess, EE')
+      expect(composing()).toHaveAccessibleName('Your guess, EE, the word list has no 3-letter word starting with EE')
       expect(onProgress).not.toHaveBeenCalled()
     })
 

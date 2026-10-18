@@ -3,6 +3,7 @@ import { markGuess, TileState } from '@rules/mark-guess'
 import React, { useEffect, useRef, useState } from 'react'
 
 import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, tileSize, WORD_GAP, WRAP_GAP } from './layout'
+import { startsSomeWord } from './prefixes'
 import { decode, encode } from './progress'
 import type { PhrazleSpentRung } from './rungs'
 import { FloorBar } from '@components/floor-bar'
@@ -180,6 +181,17 @@ const NOT_IN_LIST = (word: string): string => `${word} isn’t in the word list.
 // NOT_IN_LIST on its own full stop, say -- would make the two sentences one string with a seam
 // inside it, and a seam is what an edit to either half breaks in silence.
 const notInList = (word: string): string => `${word} isn’t in the word list.`
+// THE REFUSAL FOR A WORD THAT IS NOT FINISHED YET, and it cannot say `isn’t in the word list`: QX
+// was never meant to be in the list, the player is three letters short of a word. What is true is
+// that nothing in the list can grow from it, and the LENGTH is part of that truth -- TOD starts
+// TODAY, so a sentence that dropped `3-letter` would be contradicted by a player who knows the word.
+// `The word list has` keeps the one noun this bench uses for the list, in the active voice.
+const noWordStarts = (prefix: string, length: number): string =>
+  `The word list has no ${length}-letter word starting with ${prefix}.`
+// The same fact as a clause inside the composing row's name, which already has a head and ends
+// without a full stop. A second function rather than a slice of the first, on notInList's reasoning.
+const noWordStartsClause = (prefix: string, length: number): string =>
+  `the word list has no ${length}-letter word starting with ${prefix}`
 const FINISHED = 'This board is finished. Press Again to start over.'
 // goFigure's sentence verbatim, because it is the same refusal for the same reason on another
 // bench: a sheet is lying over the board and the keyboard is writing underneath it. A player who
@@ -710,10 +722,16 @@ export const PhrazleBoard = ({
   // empty-set floor is the documented behavior of a board handed nothing -- it refuses every word
   // rather than accepting every word, which is what reaching past it to the prop would silently do.
   //
-  // TWO CONJUNCTS AND THE FIRST IS THE WHOLE DESIGN. A word the player is still typing is not
-  // rejected, it is unfinished; without the length check every empty slot on a fresh board would be
-  // marked at mount. `everyWordInDictionary` is false on an empty word too, so the guard is what
-  // separates "not yet" from "no".
+  // A WORD IS REJECTED THE MOMENT NO WORD IN THE LIST CAN FINISH IT, not when its last tile fills.
+  // A half-typed word is unfinished only while some word of that slot's length still starts with it;
+  // the letter that leaves none is the letter the player wants to hear about, because every tile
+  // typed after it is a tile they will have to erase. TWO QUESTIONS FOR TWO KINDS OF WORD: a complete
+  // word is put to `everyWordInDictionary`, so the finished verdict stays the rule's own, and a
+  // partial one to `startsSomeWord`, which can only ever say "no" earlier and never "yes" instead.
+  //
+  // AN EMPTY SLOT IS NEVER REJECTED, which is what stops every slot on a fresh board being marked at
+  // mount. `startsSomeWord('')` would be true anyway on any real list, but on the empty-set floor it
+  // is false, and a board handed nothing should refuse guesses rather than paint its empty grid.
   //
   // A FUNCTION OF `letters` RATHER THAN A READ OF `typed`, because `press` decides about the string
   // it is ABOUT to set and React has not committed it yet. One predicate, two callers, no stale
@@ -725,7 +743,11 @@ export const PhrazleBoard = ({
   // Hoisting the two together would make one function that returns booleans for a half-typed row and
   // strings for a full one, and the shared thing would be the easy half.
   const rejectedIn = (letters: string): boolean[] =>
-    wordsOf(letters).map((word, index) => word.length === lengths[index] && !everyWordInDictionary([word], wordList))
+    wordsOf(letters).map((word, index) =>
+      word.length === lengths[index]
+        ? !everyWordInDictionary([word], wordList)
+        : word.length > 0 && !startsSomeWord(word, lengths[index], wordList),
+    )
 
   // ONLY THE COMPOSING ROW IS EVER MARKED, and nothing here enforces that because nothing has to: a
   // committed guess passed isValidGuess's dictionary clause by definition, so a spent row has no
@@ -780,9 +802,9 @@ export const PhrazleBoard = ({
     // THE TWO THRESHOLDS THAT BREAK THE SILENCE, and the test both of them pass is the one this
     // comment has always stated: the ribbon speaks for a change in WHAT GUESS WILL DO. There used to
     // be one. Filling the last tile is still the first, because an empty Guess becomes a live one.
-    // Completing a word the list does not have is the second, because Guess will now be refused -- a
-    // player who fills the row and presses it has already spent the press, and on a bench with no
-    // Undo the cheap moment to say so is the moment it becomes true.
+    // Typing the letter that leaves a word with no way to finish in the list is the second, because
+    // Guess will now be refused whatever comes next -- and the cheap moment to say so is the moment it
+    // becomes true, which is often letters before the word is complete.
     //
     // A KEYSTROKE THAT MERELY MOVES THE CARET STILL SAYS NOTHING, which is the §8.2 rule this is a
     // documented exception to rather than a repeal of. Position is not a change in what Guess will
@@ -806,12 +828,25 @@ export const PhrazleBoard = ({
       return
     }
 
-    // Which word this keystroke just finished, if any -- the one whose last letter sits at
-    // `next.length`. Found off `offsets` rather than by walking the words for a full slice, because
-    // the arithmetic that cut the words is the arithmetic that says where one ends.
-    const finished = lengths.findIndex((length, index) => offsets[index] + length === next.length)
-    if (finished !== -1 && offenders[finished]) {
-      say(notInList(words[finished]))
+    // Which word this keystroke landed in -- the first whose end is at or past `next.length`. Found
+    // off `offsets` rather than by walking the words for a full slice, because the arithmetic that
+    // cut the words is the arithmetic that says where one ends.
+    //
+    // THE TRANSITION IS PER WORD AND IT IS "THIS LETTER KILLED IT". The word the letter landed in is
+    // asked twice -- with the letter and without it -- and only a live-to-dead change speaks. Once a
+    // word is dead every further letter in it leaves the sentence standing rather than repeating or
+    // hushing it: the reason is still true and still the thing to fix, and role="status" says
+    // nothing for a text that did not change. Completing an already-dead word is one of those
+    // letters, so `notInList` is said only when the LAST letter is the one that killed it.
+    const current = lengths.findIndex((length, index) => next.length <= offsets[index] + length)
+    if (offenders[current]) {
+      // STANDING ONLY WHILE IT IS STILL SAID. An erase hushes the ribbon, so a letter typed back into
+      // a word that is still dead finds the band empty and must speak, or a screen-reader player
+      // repairing the word hears nothing at all about the letter they just tried.
+      const before = rejectedIn(typed)[current]
+      if (before && message.text !== '') return
+      const finished = offsets[current] + lengths[current] === next.length
+      say(finished ? notInList(words[current]) : noWordStarts(words[current], lengths[current]))
       return
     }
     hush()
@@ -1081,7 +1116,16 @@ export const PhrazleBoard = ({
   // TILE NAMES DO NOT CHANGE, and that is the rule this clause exists under. A word-level fact must
   // not be spoken by a letter-level element: a tile that said `X, not in the word list` would be
   // claiming something about one letter that is true of four.
-  const offenderWords = wordsOf(typed).filter((_unused, index) => rejected[index])
+  //
+  // A DEAD PREFIX IS NOT AN OFFENDER IN THIS LIST, and gets its own clause instead. `QX not in the
+  // word list` is true and beside the point -- nobody typed QX expecting it to be a word -- so it is
+  // named with the ribbon's sentence for the same fact. There is AT MOST ONE: letters land in order,
+  // so every word before the one being typed is complete, and only the word being typed can be
+  // dead and unfinished at once. Its clause goes last because its word is last.
+  const typedWords = wordsOf(typed)
+  const offenderWords = typedWords.filter((word, index) => rejected[index] && word.length === lengths[index])
+  const deadIndex = typedWords.findIndex((word, index) => rejected[index] && word.length < lengths[index])
+  const deadClause = deadIndex === -1 ? '' : noWordStartsClause(typedWords[deadIndex], lengths[deadIndex])
   const offenderList =
     offenderWords.length < 2
       ? offenderWords.join('')
@@ -1094,7 +1138,8 @@ export const PhrazleBoard = ({
   // word list`, which no trimming rule removes. Trimmed here rather than in `composed`, so the head
   // is the same string with or without the clause.
   const said = `Your guess, ${composed}`.trimEnd()
-  const composingName = offenderWords.length === 0 ? said : `${said}, ${offenderList} not in the word list`
+  const clauses = [...(offenderWords.length === 0 ? [] : [`${offenderList} not in the word list`]), deadClause]
+  const composingName = [said, ...clauses.filter((clause) => clause !== '')].join(', ')
 
   const announced = message.text === '' ? '' : `${message.text}${REPEAT_MARK.repeat(message.nonce % 2)}`
 
