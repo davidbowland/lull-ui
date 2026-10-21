@@ -1939,13 +1939,59 @@ describe('CryptogramBoard', () => {
       expect(onSolved).toHaveBeenCalledTimes(1)
     })
 
-    // Its sentences are made for the puzzle, not quoted from anywhere, so there is nothing to look up.
-    it('offers no lookup link once solved', async () => {
+    // The same phrase Phrazle ships, so the same link. It searches for the PACK'S text, mixed case,
+    // never the uppercased answer the ribbon says.
+    it('offers a lookup link once solved', async () => {
+      const user = setup()
+
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+
+      await solve(user)
+
+      const link = screen.getByRole('link', { name: 'Look up Ate ate tea on DuckDuckGo' })
+      expect(link).toHaveAttribute('href', 'https://www.duckduckgo.com/?q=Ate%20ate%20tea')
+      expect(link).toHaveAttribute('target', '_blank')
+    })
+
+    // The win lands the link in view, last, after the caret's own scroll.
+    it('scrolls the lookup link into view on the win', async () => {
       const user = setup()
 
       await solve(user)
 
-      expect(screen.queryByRole('link', { name: /^Look up/ })).not.toBeInTheDocument()
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(
+        screen.getByRole('link', { name: 'Look up Ate ate tea on DuckDuckGo' }).parentElement,
+      )
+    })
+
+    // "Show answer" reaches this board as a mount on solved progress, so a mount owes the same scroll.
+    it('scrolls the lookup link into view on a restored win', () => {
+      setup(cryptogramPuzzle, SOLVED)
+
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(
+        screen.getByRole('link', { name: 'Look up Ate ate tea on DuckDuckGo' }).parentElement,
+      )
+    })
+
+    // Solved is derived, so the link goes with it.
+    it('takes the lookup link away when the board un-solves', async () => {
+      const user = setup()
+
+      await solve(user)
+      await user.click(square('Cipher V, letter 1 of 9, holds A'))
+      await user.keyboard('{Backspace}')
+
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    })
+
+    // Not a focus grab: the link waits to be tabbed to.
+    it('leaves focus where the win put it', async () => {
+      const user = setup()
+
+      await solve(user)
+
+      expect(screen.getByRole('link', { name: /^Look up/ })).not.toHaveFocus()
     })
 
     it('says the answer once it is solved', async () => {

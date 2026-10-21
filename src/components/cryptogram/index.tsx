@@ -16,6 +16,7 @@ import {
 import { revealedCiphers } from './rungs'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
+import { LookUp } from '@components/look-up'
 import { CryptogramData, PuzzleComponentProps } from '@types'
 
 // 26 letters plus Undo plus Delete is 28, and the two utilities are ON the pad rather than beside it
@@ -365,6 +366,9 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // aimed at the rest of the page. Only the arrows need the distinction -- see `onKeyDown`.
   const instrumentRef = useRef<HTMLDivElement>(null)
   const squareRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // The wrapper around the solved board's LookUp link, under the last row of squares. Only a solved
+  // board draws it, so it is null everywhere else.
+  const lookUpRef = useRef<HTMLDivElement>(null)
   const hasMoved = useRef(false)
   // Armed for one cursor move, and only for a move that will actually happen. The focus effect's
   // dep array is [cursor], so it does not run when the cursor does not change -- a flag armed on a
@@ -465,6 +469,15 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // a solve that already happened -- the shell marked it solved when the player actually won. Every
   // later transition into solved does report, because the board stays interactive and can be
   // re-solved.
+  // A WIN SHOWS THE LOOKUP LINK, which sits under the last row of squares and so can land under the
+  // pinned floor. Declared after the caret effect, so on a winning keystroke the caret's square
+  // scrolls first and this has the last word. It runs at mount on a solved board too, which is the
+  // case "Show answer" arrives as: the frame reveals by rebuilding this board from the solved
+  // progress it wrote. `nearest` does nothing when the link is already in view.
+  useEffect(() => {
+    if (solved) lookUpRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [solved])
+
   const reported = useRef(solved)
   useEffect(() => {
     if (solved && !reported.current) onSolved()
@@ -1307,6 +1320,20 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
               </div>
             ))}
           </div>
+
+          {/* Keyed to `solved`, which is derived from the mapping, so taking a letter back off takes
+              the link away with the win. The pack's own text, never the uppercased answer the
+              ribbon says: the search is for what the pack said. The wrapper is layout only -- it puts
+              the link on its own right-aligned line -- and carries the squares' scroll margins,
+              because the same sticky sign row and floor overlay the bench's edges. */}
+          {solved && (
+            <div
+              className="mt-[var(--lull-s3)] flex scroll-mt-[46px] scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bottom))] justify-end"
+              ref={lookUpRef}
+            >
+              <LookUp answer={answer} />
+            </div>
+          )}
         </div>
       </section>
 
