@@ -2065,4 +2065,89 @@ describe('ThemedAnagramsBoard', () => {
       expect(onProgress).toHaveBeenLastCalledWith('')
     })
   })
+
+  // AS THE PLAYER TYPES, THE ROW CROSSES OFF WHAT THE DRAFT HAS USED, so what is left reads at a
+  // glance. The strike is drawn; what these rows defend is the accessibility tree, which says the
+  // same thing in words -- style assertions are banned here and the strike is carried by USED.
+  describe('crossing off used letters', () => {
+    // ELKTET with KET typed: K at 2, E at 0, T at 3, named in run order.
+    it('names the used letters in the row as the player types', async () => {
+      const { user } = setup()
+
+      await user.type(boxNamed(1), 'ket')
+
+      expect(tiles(0)).toEqual(['The letters are E L K T E T. E, K, T are used'])
+    })
+
+    it('uses the singular for one letter', async () => {
+      const { user } = setup()
+
+      await user.type(boxNamed(1), 'k')
+
+      expect(tiles(0)).toEqual(['The letters are E L K T E T. K is used'])
+    })
+
+    // The visible run is unchanged by the marking: the same letters in the same order.
+    it('leaves the letters where they were', async () => {
+      const { user } = setup()
+
+      await user.type(boxNamed(1), 'ket')
+
+      expect(runs()).toEqual(PACK_RUNS)
+    })
+
+    it('marks only the row being typed into', async () => {
+      const { user } = setup()
+
+      await user.type(boxNamed(1), 'ket')
+
+      expect(tiles(1)).toEqual(['The letters are U N A S A P C E'])
+    })
+
+    // Deleting a letter gives its tile back.
+    it('puts a tile back when its letter is deleted', async () => {
+      const { user } = setup()
+
+      await user.type(boxNamed(1), 'ket{Backspace}{Backspace}')
+
+      expect(tiles(0)).toEqual(['The letters are E L K T E T. K is used'])
+    })
+
+    // A letter the row does not have is in the box and nowhere on the row.
+    it('crosses off nothing for a letter the row does not have', async () => {
+      const { user } = setup()
+
+      await user.type(boxNamed(1), 'z')
+
+      expect(tiles(0)).toEqual(['The letters are E L K T E T'])
+    })
+
+    // A stored draft comes back crossed off, with nothing typed this session.
+    it('crosses off a restored draft', () => {
+      setup(themedAnagramsPuzzle, 'KET\n\n\n')
+
+      expect(tiles(0)).toEqual(['The letters are E L K T E T. E, K, T are used'])
+    })
+
+    // A pinned tile the draft uses says both facts, revealed first.
+    it('names a used pinned tile as revealed and used', async () => {
+      const showPuzzle: Puzzle<ThemedAnagramsData> = {
+        ...themedAnagramsPuzzle,
+        data: {
+          ...themedAnagramsPuzzle.data,
+          entries: [
+            { answer: 'SHOW', scrambles: ['OSWH'] },
+            { answer: 'KETTLE', scrambles: ['ELKTET'] },
+            { answer: 'SKILLET', scrambles: ['LKSETIL'] },
+            { answer: 'SPATULA', scrambles: ['TPSLAAU'] },
+          ],
+        },
+      }
+      const { user } = setup(showPuzzle, '|1|I0')
+
+      await user.type(boxNamed(1), 'so')
+
+      expect(tiles(0)).toEqual(['S, revealed, used', 'O, used', 'W', 'H'])
+    })
+  })
 })

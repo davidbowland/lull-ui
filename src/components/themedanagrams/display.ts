@@ -1,3 +1,5 @@
+import { normalizeAnswer } from '@rules/normalize-answer'
+
 import { pinnedIndices, ThemedAnagramsSpentRung } from './rungs'
 
 // HOW A PINNED ROW IS DRAWN, and whether there is anything left to draw.
@@ -121,4 +123,46 @@ export const drawnRun = (answer: string, scramble: string, pinned: ReadonlySet<n
   swapped[free[0]] = run[other]
   swapped[other] = run[free[0]]
   return swapped.join('')
+}
+
+/**
+ * WHICH TILES THE PLAYER'S DRAFT HAS USED, as positions in the drawn run -- so the row can cross
+ * them off and the player sees at a glance what is left. Display only: it says nothing about whether
+ * the draft is right, and a draft that is wrong still crosses off whatever letters it shares.
+ *
+ * ONE TILE PER TYPED LETTER, so a doubled letter takes two tiles: KETTLE's two E's are two tiles, and
+ * one typed E crosses off one of them. A typed letter with no tile left for it -- an extra, or a
+ * letter the row does not have -- crosses off nothing; the box still shows it.
+ *
+ * TWO PASSES, and the first is for the pins. A pinned tile stands at its true position, so a draft
+ * that has that letter at that position is using that tile, and it is the one crossed off. Without
+ * the pass, typing SHOW over S-revealed would cross off whichever S came first, which on a run with
+ * two of that letter could be the unpinned one while the revealed S stays uncrossed. Every other
+ * typed letter then takes the leftmost unused tile with that letter, which is where the eye reading
+ * left to right expects the next one to go.
+ *
+ * The draft goes through normalizeAnswer, the same fold the answer check uses, so a space, a hyphen
+ * or a lowercase letter crosses off exactly what it would count as there. The run is compared
+ * uppercased rather than trusted to be, because `data` is opaque JSON off the network.
+ */
+export const usedTiles = (run: string, draft: string, pinned: ReadonlySet<number>): ReadonlySet<number> => {
+  const typed = [...normalizeAnswer(draft)]
+  const tiles = [...run.toUpperCase()]
+  const used = new Set<number>()
+  const placed = new Set<number>()
+
+  typed.forEach((letter, at) => {
+    if (pinned.has(at) && tiles[at] === letter) {
+      used.add(at)
+      placed.add(at)
+    }
+  })
+
+  typed.forEach((letter, at) => {
+    if (placed.has(at)) return
+    const tile = tiles.findIndex((candidate, index) => candidate === letter && !used.has(index))
+    if (tile >= 0) used.add(tile)
+  })
+
+  return used
 }

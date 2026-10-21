@@ -1,4 +1,4 @@
-import { drawnRun, isGivenAway } from './display'
+import { drawnRun, isGivenAway, usedTiles } from './display'
 import { chooseThemedAnagramsRung, pinnedIndices, ThemedAnagramsSpentRung } from './rungs'
 import { seededRandom } from '@utils/seeded-random'
 
@@ -153,5 +153,47 @@ describe('isGivenAway', () => {
     expect(isGivenAway(undefined, [rung('prefix3'), rung('final')], 0)).toBe(false)
     expect(isGivenAway(7, [rung('prefix3'), rung('final')], 0)).toBe(false)
     expect(isGivenAway('', [rung('prefix3'), rung('final')], 0)).toBe(false)
+  })
+})
+
+describe('usedTiles', () => {
+  it('crosses off nothing for an empty draft', () => {
+    expect(usedTiles('ELKTET', '', new Set())).toEqual(new Set())
+  })
+
+  // Run order, not typing order: K, E, T take the K at 2, the first E at 0 and the first T at 3.
+  it('crosses off the leftmost unused tile for each typed letter', () => {
+    expect(usedTiles('ELKTET', 'KET', new Set())).toEqual(new Set([2, 0, 3]))
+  })
+
+  // KETTLE's two E's are two tiles, and each typed E takes one.
+  it('takes one tile per typed letter, so a doubled letter takes two', () => {
+    expect(usedTiles('ELKTET', 'E', new Set())).toEqual(new Set([0]))
+    expect(usedTiles('ELKTET', 'EE', new Set())).toEqual(new Set([0, 4]))
+  })
+
+  // A third E and a Z have no tile left, so the box shows them and the row crosses nothing more off.
+  it('crosses off nothing for a letter the row has run out of or never had', () => {
+    expect(usedTiles('ELKTET', 'EEEZ', new Set())).toEqual(new Set([0, 4]))
+  })
+
+  // The same fold the answer check uses, so case, spaces and hyphens cross off what they count as.
+  it('folds the draft the way the answer check does', () => {
+    expect(usedTiles('ELKTET', 'k-e t', new Set())).toEqual(new Set([2, 0, 3]))
+  })
+
+  // SXSH with the S at 2 pinned: HXS has its S at 2, so it uses the revealed S. Leftmost alone would
+  // have taken the unpinned S at 0 and left the revealed one standing uncrossed.
+  it('crosses off a pinned tile when the draft has its letter in its place', () => {
+    expect(usedTiles('SXSH', 'HXS', new Set([2]))).toEqual(new Set([1, 2, 3]))
+  })
+
+  // The pinned S is not at the typed S's position, so the S takes the leftmost free one instead.
+  it('leaves a pinned tile to the leftmost rule when the draft has another letter there', () => {
+    expect(usedTiles('SXSH', 'S', new Set([2]))).toEqual(new Set([0]))
+  })
+
+  it('compares an off-case run in uppercase', () => {
+    expect(usedTiles('elktet', 'K', new Set())).toEqual(new Set([2]))
   })
 })

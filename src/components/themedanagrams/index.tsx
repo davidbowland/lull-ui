@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 
 import { isRight } from './answers'
-import { drawnRun, isGivenAway } from './display'
+import { drawnRun, isGivenAway, usedTiles } from './display'
 import { decode, decodeHints, encode, Guesses, MAX_GUESS } from './progress'
 import { pinnedIndices } from './rungs'
 import { Button } from '@components/button'
@@ -189,6 +189,16 @@ const describeRow = (displayed: string, pinned: ReadonlySet<number>): string => 
   return `${spellOut(displayed)}. ${revealed.join(', ')} ${verb} revealed and in place.`
 }
 
+// The sentence a row's name gains once the draft has crossed tiles off, so a reader browsing the
+// row is told what a sighted player sees struck through. Empty when nothing is crossed off, so an
+// untouched row's name is byte for byte what it always was. `is`/`are` for describeRow's reason.
+const usedClause = (displayed: string, used: ReadonlySet<number>): string => {
+  const letters = [...displayed].filter((_letter, at) => used.has(at))
+  if (letters.length === 0) return ''
+
+  return `. ${letters.join(', ')} ${letters.length === 1 ? 'is' : 'are'} used`
+}
+
 // The sign over the working surface. `.lull-signrow` (index.css) is the whole band -- height,
 // ground, hairlines and gutter -- because three of the four benches draw the same one, and a band
 // that three benches share is the grammar rather than a string copied four times.
@@ -280,6 +290,29 @@ const SCRAMBLE =
 // jsdom lays nothing out and style assertions are banned in this repo, so this string is carried by
 // the device check and by this comment.
 const PINNED = 'font-semibold underline decoration-2 underline-offset-4'
+
+// A tile the player's draft has used. A STRIKE AND MUTED INK, and the strike is what carries it:
+// muted beside ink is a tone shift a glance can miss, and a line through the letter is one discrete
+// sign that reads cold. Muted on plate is a pair contrast.test.ts holds at 4.5:1, so a crossed-off
+// letter is still readable -- the player may need to check which E they used.
+//
+// THE TRACKING MOVES TO A MARGIN on a struck tile. letter-spacing is drawn after each glyph INSIDE
+// its box, so the strike would run on into the 0.28em gap and join the next letter like a dash.
+// tracking-normal plus a 0.28em end margin lays the tile out exactly where it was and keeps the line
+// on the letter.
+//
+// A pinned tile the draft has used wears both lines. `underline` and `line-through` are both
+// `text-decoration-line`, and two Tailwind utilities for one property are resolved by stylesheet
+// order rather than by class order, so the pair is stated as one value.
+const USED = 'tracking-normal me-[0.28em] text-[var(--lull-muted)] line-through decoration-2'
+const PINNED_USED =
+  'tracking-normal me-[0.28em] text-[var(--lull-muted)] font-semibold decoration-2 underline-offset-4 ' +
+  '[text-decoration-line:underline_line-through]'
+
+const tileClass = (pinned: boolean, used: boolean): string | undefined => {
+  if (used) return pinned ? PINNED_USED : USED
+  return pinned ? PINNED : undefined
+}
 
 // --lull-rule, never --lull-hair: this border is the whole of what tells a player where the box
 // they type into begins, and hair is decoration that must never identify a control. `min-w-0
@@ -470,6 +503,10 @@ export const ThemedAnagramsBoard = ({
   // Storing the answer into `guesses` instead would make Play again's job two things rather than one:
   // the ladder is dropped by `onReset` and the row un-settles itself, with nothing to unwind here.
   const shown: Guesses = guesses.map((guess, index) => (givenAwayRows[index] ? rows[index].answer : guess)) as Guesses
+
+  // The tiles a row's draft has crossed off -- see `usedTiles`. Read off `shown`, so it follows the
+  // box the player is looking at. A right row draws the word instead of tiles and never asks.
+  const usedIn = (index: number): ReadonlySet<number> => usedTiles(displayOf(index), shown[index], pinnedIn(index))
 
   // A TRANSIENT, so it is empty at mount, which is what keeps the region unoccupied on a first
   // render: NVDA and JAWS announce changes inside a region they are ALREADY watching. Anything this
@@ -850,15 +887,31 @@ export const ThemedAnagramsBoard = ({
                     </span>
                   </>
                 ) : pinnedIn(index).size === 0 ? (
-                  <p aria-label={spellOut(displayOf(index))} className={SCRAMBLE} role="img">
-                    <span aria-hidden="true">{displayOf(index)}</span>
+                  // The crossed-off tiles are drawn inside the hidden run, so they cost the
+                  // accessibility tree nothing; the name says the same thing in a sentence.
+                  <p
+                    aria-label={`${spellOut(displayOf(index))}${usedClause(displayOf(index), usedIn(index))}`}
+                    className={SCRAMBLE}
+                    role="img"
+                  >
+                    <span aria-hidden="true">
+                      {[...displayOf(index)].map((letter, at) =>
+                        usedIn(index).has(at) ? (
+                          <span className={USED} key={at}>
+                            {letter}
+                          </span>
+                        ) : (
+                          letter
+                        ),
+                      )}
+                    </span>
                   </p>
                 ) : (
                   <p className={SCRAMBLE}>
                     {[...displayOf(index)].map((letter, at) => (
                       <span
-                        aria-label={pinnedIn(index).has(at) ? `${letter}, revealed` : letter}
-                        className={pinnedIn(index).has(at) ? PINNED : undefined}
+                        aria-label={`${letter}${pinnedIn(index).has(at) ? ', revealed' : ''}${usedIn(index).has(at) ? ', used' : ''}`}
+                        className={tileClass(pinnedIn(index).has(at), usedIn(index).has(at))}
                         key={at}
                         role="img"
                       >
