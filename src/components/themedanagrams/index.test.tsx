@@ -518,12 +518,13 @@ describe('ThemedAnagramsBoard', () => {
 
   describe('a right row settles into its word', () => {
     // The four answers as the links name them: lowercase, so a reader hears a word and not an
-    // acronym, which is also the string the search is for.
+    // acronym. The search quotes the same word and adds the theme, so "kettle" is looked up as a
+    // kitchen tool.
     const LINKS: [string, string][] = [
-      ['Look up kettle on DuckDuckGo', 'https://www.duckduckgo.com/?q=kettle'],
-      ['Look up saucepan on DuckDuckGo', 'https://www.duckduckgo.com/?q=saucepan'],
-      ['Look up skillet on DuckDuckGo', 'https://www.duckduckgo.com/?q=skillet'],
-      ['Look up spatula on DuckDuckGo', 'https://www.duckduckgo.com/?q=spatula'],
+      ['Look up kettle on DuckDuckGo', 'https://www.duckduckgo.com/?q=%22kettle%22%20Kitchen%20tools'],
+      ['Look up saucepan on DuckDuckGo', 'https://www.duckduckgo.com/?q=%22saucepan%22%20Kitchen%20tools'],
+      ['Look up skillet on DuckDuckGo', 'https://www.duckduckgo.com/?q=%22skillet%22%20Kitchen%20tools'],
+      ['Look up spatula on DuckDuckGo', 'https://www.duckduckgo.com/?q=%22spatula%22%20Kitchen%20tools'],
     ]
 
     // Read in row order, one link per row, so a link drawn in the wrong row's place reddens here.
@@ -592,7 +593,7 @@ describe('ThemedAnagramsBoard', () => {
 
       expect(screen.getByRole('link', { name: 'Look up kettle on DuckDuckGo' })).toHaveAttribute(
         'href',
-        'https://www.duckduckgo.com/?q=kettle',
+        'https://www.duckduckgo.com/?q=%22kettle%22%20Kitchen%20tools',
       )
       expect(boxNamed(1)).toHaveFocus()
       expect(ribbon()).toHaveTextContent('KETTLE is right — 3 to go.')
@@ -1601,6 +1602,19 @@ describe('ThemedAnagramsBoard', () => {
       expect(onProgress).toHaveBeenLastCalledWith('KETTLE\n\n\n')
       expect(screen.getAllByRole('listitem')[0]).toContainElement(screen.getByText('Right'))
     })
+
+    // The lookup reads the same guarded theme, so a right row still gets a link, searching the
+    // bare word.
+    it('looks up the bare word on a board whose theme is unusable', async () => {
+      const { user } = setup(objectTheme)
+
+      await user.type(boxNamed(1), 'KETTLE')
+
+      expect(screen.getByRole('link', { name: 'Look up kettle on DuckDuckGo' })).toHaveAttribute(
+        'href',
+        'https://www.duckduckgo.com/?q=kettle',
+      )
+    })
   })
 
   // The band the shell orders the scrambles into. The component renders the class and learns
@@ -1894,7 +1908,7 @@ describe('ThemedAnagramsBoard', () => {
       expect(within(row).getByText('ladle')).toBeInTheDocument()
       expect(within(row).getByRole('link', { name: 'Look up ladle on DuckDuckGo' })).toHaveAttribute(
         'href',
-        'https://www.duckduckgo.com/?q=ladle',
+        'https://www.duckduckgo.com/?q=%22ladle%22%20Kitchen%20tools',
       )
     })
 

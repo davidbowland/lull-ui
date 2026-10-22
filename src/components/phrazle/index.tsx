@@ -1357,7 +1357,7 @@ export const PhrazleBoard = ({
               className="mt-[var(--lull-s3)] flex scroll-mt-[52px] scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bottom))] justify-end"
               ref={lookUpRef}
             >
-              <LookUp answer={answer} />
+              <LookUp answer={answer} context={category} />
             </div>
           )}
         </div>

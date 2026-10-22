@@ -230,7 +230,7 @@ export const MissingVowelsBoard = ({
               of the app. The wrapper is layout only; every style the link has is LookUp's. */}
           {solved && (
             <div className="flex justify-end">
-              <LookUp answer={answer} />
+              <LookUp answer={answer} context={category} />
             </div>
           )}
         </div>

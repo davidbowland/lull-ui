@@ -449,7 +449,7 @@ describe('MissingVowelsBoard', () => {
   // because a link naming the answer would give the puzzle away.
   describe('the settled plate', () => {
     const LOOKUP = 'Look up The Empire Strikes Back on DuckDuckGo'
-    const HREF = 'https://www.duckduckgo.com/?q=The%20Empire%20Strikes%20Back'
+    const HREF = 'https://www.duckduckgo.com/?q=%22The%20Empire%20Strikes%20Back%22%20Film'
 
     it('offers a lookup of the answer on a board that opens solved', () => {
       setup(missingVowelsPuzzle, SOLVED)
@@ -465,6 +465,16 @@ describe('MissingVowelsBoard', () => {
       expect(container.querySelector('.lull-board')).toContainElement(screen.getByText(SOLVED))
       expect(screen.queryByRole('img')).not.toBeInTheDocument()
       expect(screen.queryByText('THMP RSTR KSBCK')).not.toBeInTheDocument()
+    })
+
+    // An older pack with no category searches the answer alone, unquoted, as before context existed.
+    it('looks up the bare answer when the pack has no category', () => {
+      setup(hiddenCategoryPuzzle, SOLVED)
+
+      expect(screen.getByRole('link', { name: LOOKUP })).toHaveAttribute(
+        'href',
+        'https://www.duckduckgo.com/?q=The%20Empire%20Strikes%20Back',
+      )
     })
 
     it('puts the lookup in the board rather than the floor', () => {

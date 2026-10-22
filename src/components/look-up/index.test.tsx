@@ -41,6 +41,49 @@ describe('LookUp', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', 'https://www.duckduckgo.com/?q=Rock%20%26%20Roll')
   })
 
+  describe('with context', () => {
+    const queryOf = (answer: string, context: string): string | null => {
+      render(<LookUp answer={answer} context={context} />)
+      return new URL(screen.getByRole('link').getAttribute('href') ?? '').searchParams.get('q')
+    }
+
+    it('quotes the answer and adds the context after it', () => {
+      expect(queryOf('python', 'Jungle animals')).toBe('"python" Jungle animals')
+    })
+
+    it('trims the context', () => {
+      expect(queryOf('high noon', '  Film ')).toBe('"high noon" Film')
+    })
+
+    it.each([[''], ['   ']])('searches the bare answer when the context is %j', (context) => {
+      expect(queryOf('pomelo', context)).toBe('pomelo')
+    })
+
+    // A cached pack is untrusted, and `.trim()` on a number throws during render.
+    it('searches the bare answer when the context is not a string', () => {
+      expect(queryOf('pomelo', 7 as unknown as string)).toBe('pomelo')
+    })
+
+    it('makes a lone surrogate in the context well-formed too', () => {
+      expect(queryOf('pomelo', 'Fruit \uD800')).toBe('"pomelo" Fruit �')
+    })
+
+    it('builds the exact DuckDuckGo address', () => {
+      render(<LookUp answer="budgie" context="Pet shop animals" />)
+
+      expect(screen.getByRole('link')).toHaveAttribute(
+        'href',
+        'https://www.duckduckgo.com/?q=%22budgie%22%20Pet%20shop%20animals',
+      )
+    })
+
+    it('keeps the context out of the link name', () => {
+      render(<LookUp answer="budgie" context="Pet shop animals" />)
+
+      expect(screen.getByRole('link', { name: 'Look up budgie on DuckDuckGo' })).toBeInTheDocument()
+    })
+  })
+
   it('is a link named for the answer and the destination', () => {
     render(<LookUp answer="pomelo" />)
 

@@ -1940,7 +1940,9 @@ describe('CryptogramBoard', () => {
     })
 
     // The same phrase Phrazle ships, so the same link. It searches for the PACK'S text, mixed case,
-    // never the uppercased answer the ribbon says.
+    // never the uppercased answer the ribbon says. Unquoted and without the fixture's "Saying"
+    // category: a cryptogram answer is a whole sentence, often with " - Author" on the end, and a
+    // quoted search would make the author part of the exact match.
     it('offers a lookup link once solved', async () => {
       const user = setup()
 

@@ -1644,7 +1644,7 @@ describe('PhrazleBoard', () => {
 
       const link = screen.getByRole('link', { name: 'Look up Toe hold on DuckDuckGo' })
 
-      expect(link).toHaveAttribute('href', 'https://www.duckduckgo.com/?q=Toe%20hold')
+      expect(link).toHaveAttribute('href', 'https://www.duckduckgo.com/?q=%22Toe%20hold%22%20Saying')
       expect(link).toHaveAttribute('target', '_blank')
       expect(guesses()).not.toContainElement(link)
       expect(screen.getByRole('group', { name: 'Guess 6, TOE HOLD' }).compareDocumentPosition(link)).toBe(
@@ -1681,7 +1681,7 @@ describe('PhrazleBoard', () => {
 
       expect(screen.getByRole('link', { name: LINK_NAME })).toHaveAttribute(
         'href',
-        'https://www.duckduckgo.com/?q=TOE%20HOLD',
+        'https://www.duckduckgo.com/?q=%22TOE%20HOLD%22%20Saying',
       )
       expect(screen.getByRole('button', { name: 'Play again' })).toHaveFocus()
     })

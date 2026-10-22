@@ -354,6 +354,9 @@ export const ThemedAnagramsBoard = ({
   puzzle,
 }: PuzzleComponentProps<ThemedAnagramsData>): React.ReactNode => {
   const { entries, theme } = puzzle.data
+  // Guarded once and read twice, by the sign row and by every right row's lookup -- see the sign row
+  // for why a non-string theme must never reach either.
+  const themeText = typeof theme === 'string' ? theme : ''
 
   // REFUSED WHOLE, never in part -- the refusal `decode` makes one file over and the one
   // gofigure/board.ts states in the same words: a half-drawn board is "a state with no test and no
@@ -808,9 +811,9 @@ export const ThemedAnagramsBoard = ({
               can be an object -- and an object rendered as a React child throws `Objects are not
               valid as a React child` DURING RENDER. ErrorBoundary catches it, which is worse than it
               sounds: one malformed field in one puzzle replaces the whole app with "Lull got stuck".
-              One expression is the whole guard, and '' draws an empty sign row rather than a broken
+              `themeText` is the whole guard, and '' draws an empty sign row rather than a broken
               one -- the tally beside it is still true, and the four rows are still playable. */}
-          <span className={THEME}>{typeof theme === 'string' ? theme : ''}</span>
+          <span className={THEME}>{themeText}</span>
           {/* Outside every live region, deliberately: it is the silent visual twin of the sentence
               the ribbon just said, so a session's worth of counting announces nothing. No special
               case at 4 of 4 -- a tally that turns into a sentence at the end is a second string to
@@ -883,7 +886,7 @@ export const ThemedAnagramsBoard = ({
                       {rows[index].answer.toLowerCase()}
                     </p>
                     <span className="me-auto flex shrink-0">
-                      <LookUp answer={rows[index].answer.toLowerCase()} />
+                      <LookUp answer={rows[index].answer.toLowerCase()} context={themeText} />
                     </span>
                   </>
                 ) : pinnedIn(index).size === 0 ? (
