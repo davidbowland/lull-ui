@@ -309,32 +309,67 @@ interface Move {
   mapping: Mapping
 }
 
+// A run of the phrase between spaces, as drawn: its squares with the punctuation left where the
+// pack put it. The generator passes punctuation through the cipher untouched, and DON'T, MAN'S and
+// a trailing comma are word-shape cues the player needs as much as the letter counts -- so a mark
+// is drawn but never pressed, and never counted as a square.
+//
+// A run with no letters in it -- the author separator's lone "-" -- is not a word of its own. It
+// rides in front of the word after it as `lead`, so the two wrap as one unit and the dash can never
+// end a line with the author's name starting the next. It is numbered as no word, so "Word 3 of 5"
+// still counts what the arrow keys step through. Trailing punctuation needs none of this: a comma
+// or a full stop is in the same run as its word, so it is already a cell of that word.
+type Cell = Square | string
+interface Chunk {
+  cells: Cell[]
+  lead: string[]
+  word: number
+}
+
+const isSquare = (cell: Cell): cell is Square => typeof cell !== 'string'
+
+const chunksOf = (ciphertext: string): Chunk[] => {
+  let index = 0
+  let pending: string[] = []
+  const chunks: Chunk[] = []
+  const runs = ciphertext
+    .toUpperCase()
+    .split(' ')
+    .map((run) => run.split('').filter((character) => character.trim() !== ''))
+    .filter((run) => run.length > 0)
+  for (const run of runs) {
+    if (!run.some((character) => /[A-Z]/.test(character))) {
+      pending = [...pending, ...run]
+      continue
+    }
+    const word = chunks.length
+    const cells = run.map((character): Cell =>
+      /[A-Z]/.test(character) ? { cipher: character, index: index++, word } : character,
+    )
+    chunks.push({ cells, lead: pending, word })
+    pending = []
+  }
+  // Marks after the last word have no word to lead, so they close the last one instead. No pack
+  // the generator writes ends this way; dropping them would hide text the pack shipped.
+  const last = chunks.at(-1)
+  if (last !== undefined) last.cells = [...last.cells, ...pending]
+  return chunks
+}
+
 // Letters only, matching cipherLetters. A pack is JSON off the network, so the ciphertext is
 // untrusted -- and a square keyed on an apostrophe would be one no key on the pad could ever fill,
 // so the tally could never reach its total and the status line would understate the board forever.
-const squaresOf = (ciphertext: string): Square[] => {
-  const words = ciphertext
-    .toUpperCase()
-    .split(' ')
-    .map((word) => (word.match(/[A-Z]/g) ?? []).join(''))
-    .filter((word) => word !== '')
-  let index = 0
-  return words.flatMap((word, wordIndex) =>
-    word.split('').map((cipher) => ({ cipher, index: index++, word: wordIndex })),
-  )
-}
+const squaresOf = (chunks: Chunk[]): Square[] => chunks.flatMap((chunk) => chunk.cells.filter(isSquare))
 
-const wordsOf = (squares: Square[]): Square[][] =>
-  squares.reduce<Square[][]>((words, square) => {
-    const current = words[square.word] ?? []
-    words[square.word] = [...current, square]
-    return words
-  }, [])
+// What a mark is worth against a square when the longest word is sized to fit one line. A mark is
+// drawn at its own glyph width, and an apostrophe or comma is well under half a square.
+const MARK_WEIGHT = 0.5
 
 export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: PuzzleComponentProps<CryptogramData>) => {
   const { answer, category, ciphertext } = puzzle.data
 
-  const [squares] = useState(() => squaresOf(ciphertext))
+  const [chunks] = useState(() => chunksOf(ciphertext))
+  const [squares] = useState(() => squaresOf(chunks))
   const [letters] = useState(() => cipherLetters(ciphertext))
   // Restored once, at mount. The shell keys this component on the puzzle id, so a different puzzle
   // is a different component rather than a prop change, and re-reading would hand it its own writes.
@@ -484,12 +519,39 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
     reported.current = solved
   }, [onSolved, solved])
 
-  const words = wordsOf(squares)
-  const longest = Math.max(...words.map((word) => word.length), 1)
+  // A lead costs its marks plus the word gap that parts it from the word, which is about a mark's
+  // worth again.
+  const longest = Math.max(
+    ...chunks.map(
+      (chunk) =>
+        chunk.cells.reduce((width, cell) => width + (isSquare(cell) ? 1 : MARK_WEIGHT), 0) +
+        (chunk.lead.length > 0 ? (chunk.lead.length + 1) * MARK_WEIGHT : 0),
+    ),
+    1,
+  )
   // squareSize does its arithmetic with layout.ts's 2px GAP, and the bench draws 4px between the
   // letters of a word, so the extra is taken off the width before the question is asked. The
   // alternative was editing layout.ts, which is shared logic and not this bench's to retune.
   const size = Math.min(SQUARE_WIDTH, squareSize(available - (LETTER_GAP - GAP) * (longest - 1), longest))
+
+  // A MARK: a box the square's height, centering a glyph in the same face at the same size exactly
+  // as the square centers its letter -- so the two share a baseline and DON'T reads as one word.
+  // Aligning the box's bottom edge instead floated the apostrophe at mid-height and dropped the
+  // comma below the squares. No border, no caption, no button: there is nothing to type into it and
+  // nothing it stands for. aria-hidden because a word's label carries its marks, and a lead belongs
+  // to no word's label.
+  const markOf = (mark: string, key: string): React.JSX.Element => (
+    <span
+      aria-hidden="true"
+      className="flex items-center leading-none text-[var(--lull-ink)]"
+      key={key}
+      style={{ height: `${Math.round(size * SQUARE_ASPECT)}px` }}
+    >
+      <span className="lull-sign" style={{ fontSize: `${Math.round(size * 0.77)}px` }}>
+        {mark}
+      </span>
+    </span>
+  )
 
   // The cipher letter under the pointer. Every square showing it presses together -- that is the
   // mirror this bench is built on, and it is why the squares carry aria-pressed rather than one
@@ -1231,92 +1293,108 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
           <p className="mb-[var(--lull-s4)] text-[12.5px] leading-[1.45] text-[var(--lull-muted)]">{INSTRUCTION}</p>
 
           <div className="flex flex-wrap" style={{ columnGap: `${WORD_GAP}px`, rowGap: `${LINE_GAP}px` }}>
-            {words.map((word, wordIndex) => (
-              <div
-                aria-label={`Word ${wordIndex + 1} of ${words.length}, ${word.map((square) => square.cipher).join(' ')}`}
-                // Words never break: word shape is the primary solving cue in a cryptogram, so a
-                // wrapped word reads as two words. The squares are sized so the longest word of the
-                // phrase fits one line, and the phrase wraps BETWEEN words instead.
-                //
-                // This row may still wrap, and that is a last resort rather than a layout: a single
-                // word too long for the line even at the 24px floor would otherwise be clipped by
-                // the overflow rule above and its squares would be unreachable by touch. The
-                // group's label above carries the whole word, so assistive tech never sees the
-                // break.
-                className="flex flex-wrap"
-                key={wordIndex}
-                role="group"
-                style={{ gap: `${LETTER_GAP}px` }}
-              >
-                {word.map((square) => (
-                  // The CELL: the control and its caption. The caption sits outside the button on
-                  // purpose -- it is a label for the square, not a second thing to press, and
-                  // inside the button it would have been read as part of the target and would have
-                  // taken the accent border around itself when the square was selected.
-                  <div
-                    className="flex flex-col items-center"
-                    key={square.index}
-                    style={{ gap: `${CAPTION_GAP}px`, width: `${size}px` }}
-                  >
-                    <button
-                      // Absent on every other square, never "false": aria-current has no
-                      // there-is-no-caret-here state to say, and saying it on eight squares would
-                      // put the word in a screen reader's mouth eight times for the one square it
-                      // is not about.
-                      aria-current={cursor === square.index ? 'true' : undefined}
-                      // aria-disabled AND NOT `disabled`, which is the same call every pressed
-                      // control on this bench already makes: a disabled element blurs on press and
-                      // drops focus to <body>, and a revealed square still has to be reachable. It
-                      // is part of the phrase, it carries a letter worth reading, and the caret
-                      // still steps through it. What it will not do is take an assignment, which is
-                      // what this attribute says and what `apply`'s rows 7 and 8 enforce.
-                      //
-                      // Absent rather than "false" on every other square, matching aria-current
-                      // above: an explicit false on twenty squares puts the word in a reader's
-                      // mouth twenty times for the one square it is not about.
-                      aria-disabled={locked.has(square.cipher) ? true : undefined}
-                      aria-label={nameOf(square)}
-                      aria-pressed={selectedCipher === square.cipher}
-                      className={[SQUARE, locked.has(square.cipher) ? SQUARE_LOCKED : '']
-                        .concat(cursor === square.index ? SQUARE_CARET : '')
-                        .filter((part) => part !== '')
-                        .join(' ')}
-                      onClick={() => select(square)}
-                      ref={(element) => void (squareRefs.current[square.index] = element)}
-                      style={{ height: `${Math.round(size * SQUARE_ASPECT)}px`, width: `${size}px` }}
-                      // `?? 0` is load-bearing: with a literal null the board would have NO tabbable
-                      // square and could not be reached by keyboard at all. The focus effect gets the
-                      // opposite treatment, and the asymmetry is the point -- tabbability must always
-                      // name a square, focus must not be seized when the pointer is dropped.
-                      tabIndex={(cursor ?? 0) === square.index ? 0 : -1}
-                      type="button"
-                    >
-                      {/* aria-hidden: the button's aria-label already says "Cipher V, letter 1 of
+            {chunks.map((chunk) => (
+              // One unit for the row to wrap: the lead, if there is one, and its word. Without
+              // this wrapper the author separator was a flex item of its own and ended a line
+              // with the author's name on the next. Nowrap is the default, so the pair moves to
+              // the next line together.
+              <div className="flex" key={chunk.word} style={{ columnGap: `${WORD_GAP}px` }}>
+                {chunk.lead.length > 0 && (
+                  // Hidden from a screen reader along with every mark (see markOf): it has no
+                  // square to reach and belongs to no word's label.
+                  <div className="flex">{chunk.lead.map((mark, markIndex) => markOf(mark, `lead-${markIndex}`))}</div>
+                )}
+                <div
+                  // Inside a word the marks join the label, because DON'T is a different word
+                  // shape from DONT for a listener too.
+                  aria-label={`Word ${chunk.word + 1} of ${chunks.length}, ${chunk.cells.map((cell) => (isSquare(cell) ? cell.cipher : cell)).join(' ')}`}
+                  // Words never break: word shape is the primary solving cue in a cryptogram, so a
+                  // wrapped word reads as two words. The squares are sized so the longest word of the
+                  // phrase fits one line, and the phrase wraps BETWEEN words instead.
+                  //
+                  // This row may still wrap, and that is a last resort rather than a layout: a single
+                  // word too long for the line even at the 24px floor would otherwise be clipped by
+                  // the overflow rule above and its squares would be unreachable by touch. The
+                  // group's label above carries the whole word, so assistive tech never sees the
+                  // break.
+                  className="flex flex-wrap"
+                  role="group"
+                  style={{ gap: `${LETTER_GAP}px` }}
+                >
+                  {chunk.cells.map((cell, cellIndex) =>
+                    isSquare(cell) ? (
+                      // The CELL: the control and its caption. The caption sits outside the button on
+                      // purpose -- it is a label for the square, not a second thing to press, and
+                      // inside the button it would have been read as part of the target and would have
+                      // taken the accent border around itself when the square was selected.
+                      <div
+                        className="flex flex-col items-center"
+                        key={cell.index}
+                        style={{ gap: `${CAPTION_GAP}px`, width: `${size}px` }}
+                      >
+                        <button
+                          // Absent on every other square, never "false": aria-current has no
+                          // there-is-no-caret-here state to say, and saying it on eight squares would
+                          // put the word in a screen reader's mouth eight times for the one square it
+                          // is not about.
+                          aria-current={cursor === cell.index ? 'true' : undefined}
+                          // aria-disabled AND NOT `disabled`, which is the same call every pressed
+                          // control on this bench already makes: a disabled element blurs on press and
+                          // drops focus to <body>, and a revealed square still has to be reachable. It
+                          // is part of the phrase, it carries a letter worth reading, and the caret
+                          // still steps through it. What it will not do is take an assignment, which is
+                          // what this attribute says and what `apply`'s rows 7 and 8 enforce.
+                          //
+                          // Absent rather than "false" on every other square, matching aria-current
+                          // above: an explicit false on twenty squares puts the word in a reader's
+                          // mouth twenty times for the one square it is not about.
+                          aria-disabled={locked.has(cell.cipher) ? true : undefined}
+                          aria-label={nameOf(cell)}
+                          aria-pressed={selectedCipher === cell.cipher}
+                          className={[SQUARE, locked.has(cell.cipher) ? SQUARE_LOCKED : '']
+                            .concat(cursor === cell.index ? SQUARE_CARET : '')
+                            .filter((part) => part !== '')
+                            .join(' ')}
+                          onClick={() => select(cell)}
+                          ref={(element) => void (squareRefs.current[cell.index] = element)}
+                          style={{ height: `${Math.round(size * SQUARE_ASPECT)}px`, width: `${size}px` }}
+                          // `?? 0` is load-bearing: with a literal null the board would have NO tabbable
+                          // square and could not be reached by keyboard at all. The focus effect gets the
+                          // opposite treatment, and the asymmetry is the point -- tabbability must always
+                          // name a square, focus must not be seized when the pointer is dropped.
+                          tabIndex={(cursor ?? 0) === cell.index ? 0 : -1}
+                          type="button"
+                        >
+                          {/* aria-hidden: the button's aria-label already says "Cipher V, letter 1 of
                           9, holds A", and letting this through would have a screen reader read the
                           square twice. The size is a fraction of the square rather than a step on
                           the type scale, because the square itself is a fraction of the measure --
                           a fixed size would look set on a 390 phone and lost on a 320 one. */}
-                      <span
-                        aria-hidden="true"
-                        className="lull-sign"
-                        style={{ fontSize: `${Math.round(size * 0.77)}px` }}
-                      >
-                        {board[square.cipher] ?? ''}
-                      </span>
-                    </button>
-                    {/* Which squares repeat is the entire information content of a cryptogram, so
+                          <span
+                            aria-hidden="true"
+                            className="lull-sign"
+                            style={{ fontSize: `${Math.round(size * 0.77)}px` }}
+                          >
+                            {board[cell.cipher] ?? ''}
+                          </span>
+                        </button>
+                        {/* Which squares repeat is the entire information content of a cryptogram, so
                         the cipher letter never goes away once a guess lands -- that is exactly when
                         the repeats are being counted. Also aria-hidden, for the same reason as the
                         span above: the square's own name carries it. */}
-                    <span
-                      aria-hidden="true"
-                      className={selectedCipher === square.cipher ? CIPHER_SELECTED : CIPHER}
-                      style={{ fontSize: `${Math.max(9, Math.round(size * 0.38))}px` }}
-                    >
-                      {square.cipher}
-                    </span>
-                  </div>
-                ))}
+                        <span
+                          aria-hidden="true"
+                          className={selectedCipher === cell.cipher ? CIPHER_SELECTED : CIPHER}
+                          style={{ fontSize: `${Math.max(9, Math.round(size * 0.38))}px` }}
+                        >
+                          {cell.cipher}
+                        </span>
+                      </div>
+                    ) : (
+                      markOf(cell, `mark-${cellIndex}`)
+                    ),
+                  )}
+                </div>
               </div>
             ))}
           </div>

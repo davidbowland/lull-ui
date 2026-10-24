@@ -214,6 +214,55 @@ describe('CryptogramBoard', () => {
       expect(screen.getByText('0 of 9 squares filled')).toBeInTheDocument()
     })
 
+    // The generator passes punctuation through the cipher, and the shape of DON'T is a solving cue:
+    // an apostrophe one letter from the end of a word all but names the T. The marks are drawn where
+    // the pack put them, are never squares, and are read inside the word's label. The author
+    // separator's lone "-" has no letters, so it is drawn and hidden rather than numbered as a word
+    // the arrow keys can never land in, and it rides in front of the author's name. QVM'Z = DON'T
+    // under Q=D V=O M=N Z=T; the first word ends in a comma and the second in a full stop.
+    const punctuatedPuzzle: Puzzle<CryptogramData> = {
+      ...cryptogramPuzzle,
+      data: { ...cryptogramPuzzle.data, answer: "Don't, Ann. - Ann", ciphertext: "QVM'Z, BMM. - BMM" },
+    }
+
+    it('draws punctuation inside its word without making it a square', () => {
+      setup(punctuatedPuzzle)
+
+      expect(screen.getByRole('group', { name: "Word 1 of 3, Q V M ' Z ," })).toHaveTextContent("QVM'Z,")
+      expect(screen.getByRole('group', { name: 'Word 2 of 3, B M M .' })).toHaveTextContent('BMM.')
+      expect(screen.getByRole('group', { name: 'Word 3 of 3, B M M' })).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: /^Cipher / })).toHaveLength(10)
+      expect(screen.getByText('0 of 10 squares filled')).toBeInTheDocument()
+    })
+
+    it('draws the author separator between the words and hides it from a screen reader', () => {
+      setup(punctuatedPuzzle)
+
+      const separator = screen.getByText('-')
+
+      expect(separator.closest('[aria-hidden="true"]')).not.toBeNull()
+      expect(screen.getAllByRole('group', { name: /^Word / })).toHaveLength(3)
+    })
+
+    // The dash and the author's name are one unit for the row to wrap, so a line can never end on
+    // the dash with the name starting the next. The dash is not IN the name's group -- that would
+    // put it in the word's label -- but beside it, inside the one element the row wraps.
+    it('keeps the author separator on the same line as the name after it', () => {
+      setup(punctuatedPuzzle)
+
+      const name = screen.getByRole('group', { name: 'Word 3 of 3, B M M' })
+
+      expect(name).not.toContainElement(screen.getByText('-'))
+      expect(name.parentElement).toContainElement(screen.getByText('-'))
+    })
+
+    // Nothing after a trailing mark to lead, so it closes the last word rather than vanishing.
+    it('keeps a mark that ends the phrase on the last word', () => {
+      setup({ ...punctuatedPuzzle, data: { ...punctuatedPuzzle.data, answer: 'Ann -', ciphertext: 'BMM -' } })
+
+      expect(screen.getByRole('group', { name: 'Word 1 of 1, B M M -' })).toHaveTextContent('BMM-')
+    })
+
     // A word no line can hold keeps its group and every one of its squares. The group's label
     // carries the whole word, so a screen reader reads one word however the row had to fall.
     it('keeps a very long word whole for a screen reader', () => {
