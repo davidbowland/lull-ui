@@ -16,7 +16,7 @@ import {
 import { revealedCiphers } from './rungs'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
-import { LookUp } from '@components/look-up'
+import { LookUp, SETTLE } from '@components/look-up'
 import { CryptogramData, PuzzleComponentProps } from '@types'
 
 // 26 letters plus Undo plus Delete is 28, and the two utilities are ON the pad rather than beside it
@@ -98,6 +98,9 @@ const NO_SQUARE_SELECTED = 'Tap a square first, then a letter.'
 // thing to do there is the same thing: activating a square picks where the next letter goes and
 // never takes one off, so there is no second gesture to offer on the filled half.
 const PICK = 'Pick a letter.'
+// Phrazle's sentence, word for word, because it is the same pad saying the same thing: a solved
+// board takes no more letters, and the key that starts it over is the one that used to be Undo.
+const FINISHED = 'This board is finished. Press Again to start over.'
 // Appended to a repeated message so a live region has something to announce. `setMessage` with an
 // identical string is an Object.is bail-out: the DOM text never changes, and role="status" is
 // keyed to a change rather than to a write. The messages most likely to repeat are exactly the
@@ -167,7 +170,13 @@ const LOCKED_ELSEWHERE = (cipher: string, plain: string): string =>
 const SQUARE =
   'scroll-mt-[46px] scroll-mb-[calc(var(--lull-seam)+env(safe-area-inset-bottom)+14px)] ' +
   'flex cursor-pointer items-center justify-center rounded-[var(--lull-r-sm)] ' +
-  'border border-[var(--lull-rule)] bg-[var(--lull-raised)] leading-none text-[var(--lull-ink)] ' +
+  'border leading-none text-[var(--lull-ink)]'
+
+// What makes a square look like a square to press: its rule, its raised ground, its highlight, and
+// the accent it takes under a pointer or when pressed. Split from SQUARE so a solved board can drop
+// all of it at once (see SQUARE_SETTLED).
+const SQUARE_OPEN =
+  'border-[var(--lull-rule)] bg-[var(--lull-raised)] ' +
   'shadow-[inset_0_1px_1px_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.09)] ' +
   'hover:border-[var(--lull-accent)] aria-pressed:border-2 aria-pressed:border-[var(--lull-accent)]'
 
@@ -216,6 +225,59 @@ const SQUARE_LOCKED = 'border-2 border-[var(--lull-rule)] bg-[var(--lull-plate)]
 // for the same reason a spent key annotates itself: the mark and its label move together.
 const CIPHER = 'leading-none tracking-[0.09em] text-[var(--lull-muted)]'
 const CIPHER_SELECTED = 'leading-none tracking-[0.09em] font-semibold text-[var(--lull-accent)]'
+
+// THE SETTLE: a solved board stops looking like a form and reads as the sentence it now is. Every
+// square drops its border, ground and highlight, every cipher caption fades out, and each WORD takes
+// one plate of its own (see WORD_PLATE). The squares tell the player the puzzle is over; before
+// this, nothing on the board itself changed.
+//
+// The squares are never remounted, so this is a class change on a live element. A transition runs
+// on a change and never on a first render, so a board that OPENS solved -- a restore, or the reveal
+// that rebuilds it -- arrives settled with no motion, and no opened-solved flag is needed here the
+// way Missing Vowels needs one. The fade is LookUp's shared SETTLE, so all three boards settle at
+// the same pace, and motion-reduce makes it instant.
+//
+// It drops the caret and the selection with the rest, which is the point: an accent ring in the
+// middle of the finished sentence would be the one thing still saying "form". Keyboard focus is
+// untouched, because :focus-visible is drawn by index.css and not by these classes. Nothing here
+// carries the fact either -- the tally, the ribbon and the LookUp link all say "solved" in words.
+//
+// It REPLACES SQUARE_OPEN rather than overriding it: `hover:` and `aria-pressed:` outrank a plain
+// `border-transparent`, so a pressed square would have kept its accent border through the settle.
+// The transition is carried only by the settled string, so the way back is instant -- Again empties
+// the board and every square is a control on the press that asked for it -- and the existing hover
+// stays as immediate as it always was.
+const SQUARE_SETTLED =
+  'border-transparent bg-transparent shadow-none transition-[border-color,background-color,box-shadow] ' +
+  'duration-[380ms] ease-[cubic-bezier(0.22,0.68,0.12,1)] motion-reduce:transition-none'
+const CIPHER_SETTLED = `${CIPHER} ${SETTLE} opacity-0`
+
+// One plate behind each settled word, because the square was what grouped the letters. A bare
+// square holds its glyph with room either side, so with every border gone the space between two
+// letters came within a few pixels of the space between two words, and "AND EARLY TO" read as one
+// run of letters. Respacing would fix it by moving every letter and rewrapping the phrase on the
+// keystroke that solved it, so the words get a shape instead: the same rule and ground a square
+// had, drawn once around the whole word, which is the word gap made visible.
+//
+// A ::before rather than a border on the group, so it costs no layout. It is the height of the
+// SQUARES and not of the group, which also holds the faded captions -- a plate that ran down over
+// their empty line would sit low under its own letters. --square-h is set beside it from the same
+// arithmetic as each square's height. `isolate` gives the group its own stacking context, so -z-10
+// puts the plate under the transparent squares and never under the board's own plate.
+//
+// Three pixels wider than the word on each side, out of a 14px WORD_GAP, so neighbors keep eight
+// between them. Flush with the squares, a W or M touched the plate's rule, and a trailing comma --
+// a bare mark with no square around it -- sat on the rule itself.
+//
+// Always drawn and only faded, because a pseudo-element that is created on solve has no previous
+// style to transition from. Hidden from nothing: it has no content, so it is not in the
+// accessibility tree to begin with.
+const WORD = 'isolate relative flex flex-wrap'
+const WORD_PLATE =
+  `before:absolute before:-inset-x-[3px] before:top-0 before:-z-10 before:h-[var(--square-h)] before:content-[''] ` +
+  'before:rounded-[var(--lull-r-sm)] before:border before:border-[var(--lull-rule)] before:bg-[var(--lull-raised)] ' +
+  'before:transition-opacity before:duration-[380ms] before:ease-[cubic-bezier(0.22,0.68,0.12,1)] ' +
+  'motion-reduce:before:transition-none'
 
 // The panel the phrase is worked on. Flat --lull-plate rather than an Enclosure bezel: the nested
 // double-bezel is reserved for the plates that carry weight (the date plate, the goal plate), and a
@@ -365,7 +427,13 @@ const squaresOf = (chunks: Chunk[]): Square[] => chunks.flatMap((chunk) => chunk
 // drawn at its own glyph width, and an apostrophe or comma is well under half a square.
 const MARK_WEIGHT = 0.5
 
-export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: PuzzleComponentProps<CryptogramData>) => {
+export const CryptogramBoard = ({
+  onProgress,
+  onReset,
+  onSolved,
+  progress,
+  puzzle,
+}: PuzzleComponentProps<CryptogramData>) => {
   const { answer, category, ciphertext } = puzzle.data
 
   const [chunks] = useState(() => chunksOf(ciphertext))
@@ -499,6 +567,12 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   )
 
   const solved = isSolved(ciphertext, board, answer)
+
+  // SOLVED LOCKS THE BOARD, as it does on goFigure, Phrazle, Missing Vowels and Themed Anagrams. It
+  // used to stay open, and a tap on the settled sentence put every square's rule back with no way to
+  // settle it again short of changing a letter and changing it back. Squares, pad letters, Delete,
+  // Undo and the hardware keys all answer FINISHED instead, and the way in is Again, which empties
+  // the board (see `playAgain`).
 
   // Initialized with the MOUNT-TIME value, so a board restored into a solved mapping does not report
   // a solve that already happened -- the shell marked it solved when the player actually won. Every
@@ -809,6 +883,10 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // board's own key handler does not -- only one of the two announces the landed square by moving
   // focus onto it, and the other would then say the same fact twice.
   const press = (plain: string, keepFocus: boolean): void => {
+    if (solved) {
+      say(FINISHED)
+      return
+    }
     if (cursor === null) {
       say(NO_SQUARE_SELECTED)
       return
@@ -901,6 +979,10 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // pad, so the phone player this gesture was invented for is no longer the reason to keep it.
   const select = (square: Square): void => {
     hasMoved.current = true
+    if (solved) {
+      say(FINISHED)
+      return
+    }
     // A no-op when the caret is already here, and deliberately not special-cased: React bails out on
     // an unchanged value, so the [cursor] effect does not run and focus is not seized. Re-activating
     // the square the caret is on is therefore a re-announcement and nothing else, which is the only
@@ -931,7 +1013,28 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // belongs on the key the player is holding down, not on the square the board just rewound to.
   // Which is also why the sentence takes the `Now on ...` tail every other pad press takes -- with
   // focus staying put, nothing else says where the caret went.
+  // Empties a solved board, and it is the only way in once the board is locked. The caret goes with
+  // the letters, so the player starts as they did the first time: tap a square, then a letter.
+  //
+  // `onProgress('')` then `onReset()`, the order Phrazle and Missing Vowels use, and the second is
+  // the one that matters. The '' alone would NOT clear the ladder -- the adapter's `merge`
+  // re-attaches the stored hint tail to every board write, '' included (see CLAUDE.md) -- and
+  // PuzzleFrame answers onReset by storing '' over the whole record. That rewrites `progress`, so
+  // `spent` empties and the squares a rung had locked are free again with no work here.
+  const playAgain = (): void => {
+    setMapping({})
+    setHistory([])
+    setCursor(null)
+    say('')
+    onProgress('')
+    onReset?.()
+  }
+
   const undo = (): void => {
+    if (solved) {
+      say(FINISHED)
+      return
+    }
     const previous = history.at(-1)
     if (previous === undefined) {
       say(NOTHING_TO_UNDO)
@@ -959,12 +1062,6 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
       setCursor(landed.index)
     }
 
-    // A restore can put the answer back on the board -- empty a run on a solved board, then Undo --
-    // and the solve is the complete news there exactly as it is on the assignment path.
-    if (isSolved(ciphertext, restoredBoard, answer)) {
-      say(solvedMessage())
-      return
-    }
     const restored = undoMessage(restoredBoard)
     // Named against the RESTORED mapping, never against the mapping state, which has not updated
     // inside this handler -- the square the caret is going back to may be one this very undo just
@@ -997,6 +1094,10 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
   // follows the caret there. It is also why only the pad path gets a tail -- on the keyboard path
   // the landed square announces its own name, and a tail would say that fact twice.
   const erase = (keepFocus: boolean): void => {
+    if (solved) {
+      say(FINISHED)
+      return
+    }
     // Branch 1: nothing picked. The key acts on a square and there is none; guessing one and then
     // writing to it is worse than asking.
     if (cursor === null) {
@@ -1135,7 +1236,7 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
         // Said here rather than routed through `press` for its null guard to say it. Both reach the
         // same sentence; only one of them reads like the Backspace branch three lines above, which
         // is the same refusal for the same reason.
-        say(NO_SQUARE_SELECTED)
+        say(solved ? FINISHED : NO_SQUARE_SELECTED)
       }
       return
     }
@@ -1317,9 +1418,14 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
                   // the overflow rule above and its squares would be unreachable by touch. The
                   // group's label above carries the whole word, so assistive tech never sees the
                   // break.
-                  className="flex flex-wrap"
+                  className={`${WORD} ${WORD_PLATE} ${solved ? 'before:opacity-100' : 'before:opacity-0'}`}
                   role="group"
-                  style={{ gap: `${LETTER_GAP}px` }}
+                  style={
+                    {
+                      '--square-h': `${Math.round(size * SQUARE_ASPECT)}px`,
+                      gap: `${LETTER_GAP}px`,
+                    } as React.CSSProperties
+                  }
                 >
                   {chunk.cells.map((cell, cellIndex) =>
                     isSquare(cell) ? (
@@ -1348,11 +1454,17 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
                           // Absent rather than "false" on every other square, matching aria-current
                           // above: an explicit false on twenty squares puts the word in a reader's
                           // mouth twenty times for the one square it is not about.
-                          aria-disabled={locked.has(cell.cipher) ? true : undefined}
+                          // A solved board is locked whole, so every square says so, not only the
+                          // ones a rung handed over.
+                          aria-disabled={solved || locked.has(cell.cipher) ? true : undefined}
                           aria-label={nameOf(cell)}
                           aria-pressed={selectedCipher === cell.cipher}
-                          className={[SQUARE, locked.has(cell.cipher) ? SQUARE_LOCKED : '']
-                            .concat(cursor === cell.index ? SQUARE_CARET : '')
+                          className={(solved
+                            ? [SQUARE, SQUARE_SETTLED]
+                            : [SQUARE, SQUARE_OPEN, locked.has(cell.cipher) ? SQUARE_LOCKED : ''].concat(
+                                cursor === cell.index ? SQUARE_CARET : '',
+                              )
+                          )
                             .filter((part) => part !== '')
                             .join(' ')}
                           onClick={() => select(cell)}
@@ -1384,7 +1496,9 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
                         span above: the square's own name carries it. */}
                         <span
                           aria-hidden="true"
-                          className={selectedCipher === cell.cipher ? CIPHER_SELECTED : CIPHER}
+                          className={
+                            solved ? CIPHER_SETTLED : selectedCipher === cell.cipher ? CIPHER_SELECTED : CIPHER
+                          }
                           style={{ fontSize: `${Math.max(9, Math.round(size * 0.38))}px` }}
                         >
                           {cell.cipher}
@@ -1477,7 +1591,14 @@ export const CryptogramBoard = ({ onProgress, onSolved, progress, puzzle }: Puzz
               // The cost is that a mis-tap walks a move back with no redo to walk it forward -- a
               // two-second loss, visible on the board and named in the ribbon, against a shared
               // eraser that would otherwise sit in a different corner on each of the two pads.
-              { label: 'Undo', onClick: undo, tone: TONE_UTILITY },
+              //
+              // AGAIN ON A SOLVED BOARD, swapped in place exactly as Phrazle swaps Guess: Keypad
+              // draws the utility keys outside its map, so the element survives and a keyboard
+              // player's focus is never dropped to <body>. `Play again` does not fit the key, so the
+              // visible label is `Again` and the name contains it (2.5.3).
+              solved
+                ? { label: 'Again', name: 'Play again', onClick: playAgain, tone: TONE_UTILITY }
+                : { label: 'Undo', onClick: undo, tone: TONE_UTILITY },
             ]}
           />
         </FloorBar>

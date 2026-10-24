@@ -9,6 +9,7 @@ import { CryptogramData, Puzzle } from '@types'
 describe('CryptogramBoard', () => {
   const onProgress = jest.fn()
   const onSolved = jest.fn()
+  const onReset = jest.fn()
 
   // JSDOM IMPLEMENTS NO SCROLLING AT ALL, so Element.prototype.scrollIntoView does not exist and the
   // caret effect would throw on its first move. THE DELETE IS NOT OPTIONAL: `clearMocks` clears the
@@ -48,7 +49,15 @@ describe('CryptogramBoard', () => {
     puzzle: Puzzle<CryptogramData> = cryptogramPuzzle,
     progress: string | null = null,
   ): ReturnType<typeof render> =>
-    render(<CryptogramBoard onProgress={onProgress} onSolved={onSolved} progress={progress} puzzle={puzzle} />)
+    render(
+      <CryptogramBoard
+        onProgress={onProgress}
+        onReset={onReset}
+        onSolved={onSolved}
+        progress={progress}
+        puzzle={puzzle}
+      />,
+    )
 
   const setup = (
     puzzle: Puzzle<CryptogramData> = cryptogramPuzzle,
@@ -1548,23 +1557,6 @@ describe('CryptogramBoard', () => {
       expect(onProgress).toHaveBeenLastCalledWith('VA')
     })
 
-    // A restore can put the answer back, and the solve is the complete news there exactly as it is
-    // when a keystroke spells it. The board un-solves and re-solves on the mapping alone, so the
-    // shell hears about it either way -- this is about what the player hears.
-    it('says the answer when the move it takes back had un-solved the board', async () => {
-      const user = setup()
-
-      await user.click(square('Cipher V, letter 1 of 9, empty'))
-      await user.keyboard('ate')
-      // The solve leaves the caret on the square the winning keystroke landed on, and focus with
-      // it, so Backspace takes E off the board from where the player is already standing.
-      await user.keyboard('{Backspace}')
-      await user.click(key('Undo'))
-
-      expect(ribbon()).toHaveTextContent('Solved. The answer is ATE ATE TEA.')
-      expect(onSolved).toHaveBeenCalledTimes(2)
-    })
-
     // The most recent one, not the selected one. A player who has moved on to another square still
     // gets the move they just made taken back, which is the only thing "undo" can mean.
     it('empties the most recent assignment rather than the selected square', async () => {
@@ -1623,7 +1615,7 @@ describe('CryptogramBoard', () => {
       const user = setup()
 
       await user.click(square('Cipher V, letter 1 of 9, empty'))
-      await user.keyboard('ate')
+      await user.keyboard('atx')
       await user.click(key('Undo'))
       await user.click(key('Undo'))
       await user.click(key('Undo'))
@@ -1636,7 +1628,7 @@ describe('CryptogramBoard', () => {
       const user = setup()
 
       await user.click(square('Cipher V, letter 1 of 9, empty'))
-      await user.keyboard('ate')
+      await user.keyboard('atx')
       await user.click(key('Undo'))
       await user.click(key('Undo'))
       await user.click(key('Undo'))
@@ -2025,17 +2017,6 @@ describe('CryptogramBoard', () => {
       )
     })
 
-    // Solved is derived, so the link goes with it.
-    it('takes the lookup link away when the board un-solves', async () => {
-      const user = setup()
-
-      await solve(user)
-      await user.click(square('Cipher V, letter 1 of 9, holds A'))
-      await user.keyboard('{Backspace}')
-
-      expect(screen.queryByRole('link')).not.toBeInTheDocument()
-    })
-
     // Not a focus grab: the link waits to be tabbed to.
     it('leaves focus where the win put it', async () => {
       const user = setup()
@@ -2061,25 +2042,84 @@ describe('CryptogramBoard', () => {
       expect(screen.getByText('You solved this one')).toBeInTheDocument()
     })
 
-    // Solved is DERIVED from the mapping, so the board stays interactive and taking a letter back
-    // off un-solves it. A latched solve would leave a board claiming to be finished while showing
-    // something else.
-    it('un-solves when a letter is taken back off', async () => {
+    // SOLVED LOCKS THE BOARD. It used to stay open, and a tap on the finished sentence brought every
+    // square's rule back with no way to settle it again. Every input now answers the same sentence
+    // and changes nothing, and Again is the way back in.
+    it('refuses a tap on a square of a solved board', async () => {
       const user = setup()
 
       await solve(user)
       await user.click(square('Cipher V, letter 1 of 9, holds A'))
-      await user.keyboard('{Backspace}')
 
-      expect(screen.getByText('6 of 9 squares filled')).toBeInTheDocument()
+      expect(ribbon()).toHaveTextContent('This board is finished. Press Again to start over.')
+      expect(screen.getByText('You solved this one')).toBeInTheDocument()
     })
 
-    it('reports the solve again when the board is re-solved', async () => {
+    it('refuses Backspace and letters on a solved board', async () => {
       const user = setup()
 
       await solve(user)
-      await user.click(square('Cipher V, letter 1 of 9, holds A'))
-      await user.keyboard('{Backspace}a')
+      await user.keyboard('{Backspace}x')
+
+      expect(screen.getByText('You solved this one')).toBeInTheDocument()
+      expect(onProgress).toHaveBeenLastCalledWith('QEVAZT')
+    })
+
+    it('refuses the pad on a solved board', async () => {
+      const user = setup()
+
+      await solve(user)
+      await user.click(key('X, not used yet'))
+      await user.click(key('Delete'))
+
+      expect(ribbon()).toHaveTextContent('This board is finished. Press Again to start over.')
+      expect(onProgress).toHaveBeenLastCalledWith('QEVAZT')
+    })
+
+    it('says every square of a solved board is unavailable', () => {
+      setup(cryptogramPuzzle, SOLVED)
+
+      const squares = screen.getAllByRole('button', { name: /^Cipher [VZQ], / })
+
+      expect(squares.filter((button) => button.getAttribute('aria-disabled') === 'true')).toHaveLength(9)
+    })
+
+    // Phrazle's swap, on the same pad: the right-hand key changes its job and keeps its element.
+    it('turns Undo into Play again once the board is solved', async () => {
+      const user = setup()
+
+      await solve(user)
+
+      expect(key('Play again')).toHaveTextContent('Again')
+      expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    })
+
+    it('empties the board and tells the shell it started over on Play again', async () => {
+      const user = setup()
+
+      await solve(user)
+      await user.click(key('Play again'))
+
+      expect(screen.getAllByRole('button', { name: /^Cipher [VZQ], .*empty$/ })).toHaveLength(9)
+      expect(onProgress).toHaveBeenLastCalledWith('')
+      expect(onReset).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps focus on the key after Play again, which is Undo again', async () => {
+      const user = setup()
+
+      await solve(user)
+      await user.click(key('Play again'))
+
+      expect(key('Undo')).toHaveFocus()
+    })
+
+    it('reports the solve again when the board is solved after Play again', async () => {
+      const user = setup()
+
+      await solve(user)
+      await user.click(key('Play again'))
+      await solve(user)
 
       expect(onSolved).toHaveBeenCalledTimes(2)
     })
