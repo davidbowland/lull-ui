@@ -2799,7 +2799,7 @@ describe('PhrazleBoard', () => {
         lastObserver().callback([{ contentRect: { width: 300 } }])
       })
 
-      expect(mockTileSize).toHaveBeenLastCalledWith(300, [3, 4])
+      expect(mockTileSize).toHaveBeenLastCalledWith(300, [3, 4], [0, 0])
     })
 
     // A hidden or not-yet-laid-out box reports zero, and honoring that writes a zero straight onto
@@ -2824,7 +2824,7 @@ describe('PhrazleBoard', () => {
         lastObserver().callback(entries)
       })
 
-      expect(mockTileSize).toHaveBeenLastCalledWith(DEFAULT_WIDTH, [3, 4])
+      expect(mockTileSize).toHaveBeenLastCalledWith(DEFAULT_WIDTH, [3, 4], [0, 0])
     })
 
     // ONE BOX IS WATCHED, and the section is NOT among them -- asserted rather than left implied,
@@ -2846,6 +2846,83 @@ describe('PhrazleBoard', () => {
       unmount()
 
       expect(lastObserver().disconnects).toEqual(1)
+    })
+  })
+
+  // A PUNCTUATED ANSWER. The pack ships DON'T STOP, NOW! and the player types DONTSTOPNOW: the marks
+  // are drawn between and after the tiles, take no input and no tile, and leave marking alone.
+  describe('a punctuated answer', () => {
+    const punctuated: Puzzle<PhrazleData> = { ...phrazlePuzzle, data: { answer: "DON'T STOP, NOW!" } }
+    const plain: Puzzle<PhrazleData> = { ...phrazlePuzzle, data: { answer: 'DONT STOP NOW' } }
+    const words: ReadonlySet<string> = new Set(['DONT', 'STOP', 'NOW', 'SPOT', 'OWN', 'TOPS'])
+    const namesIn = (row: HTMLElement): string[] =>
+      within(row)
+        .getAllByRole('img')
+        .map((element) => element.getAttribute('aria-label') ?? '')
+    const EMPTY_ROW = [
+      ...['Empty', 'Empty', 'Empty', 'apostrophe', 'Empty'],
+      ...['Empty', 'Empty', 'Empty', 'Empty', 'comma'],
+      ...['Empty', 'Empty', 'Empty', 'exclamation point'],
+    ]
+
+    it('draws each mark in its gap', () => {
+      renderBoard(punctuated, null, words)
+
+      expect(namesIn(composing())).toEqual(EMPTY_ROW)
+    })
+
+    it('draws no marks for a pack that shipped none', () => {
+      renderBoard(plain, null, words)
+
+      expect(namesIn(composing())).toEqual(Array.from({ length: 11 }, () => 'Empty'))
+    })
+
+    it('fills the tiles on either side of a mark with no keystroke spent on it', async () => {
+      const { user } = renderBoard(punctuated, null, words)
+
+      await type(user, 'DONTS')
+
+      expect(namesIn(composing())).toEqual(['D', 'O', 'N', 'apostrophe', 'T', 'S', ...EMPTY_ROW.slice(6)])
+    })
+
+    it('solves on the letters alone and says the answer as the pack punctuates it', async () => {
+      const { user } = renderBoard(punctuated, null, words)
+
+      await type(user, 'DONTSTOPNOW')
+      await user.click(keyNamed(/^Guess$/))
+
+      expect(onProgress).toHaveBeenCalledWith('{"guesses":["DONT STOP NOW"]}')
+      expect(onSolved).toHaveBeenCalledTimes(1)
+      // No second full stop after the pack's own exclamation point.
+      expect(ribbon()).toHaveProperty('textContent', "Solved. The answer is DON'T STOP, NOW!")
+    })
+
+    it('keeps the marks on a spent row', () => {
+      renderBoard(punctuated, '{"guesses":["DONT STOP NOW"]}', words)
+
+      expect(namesIn(rows()[0])).toEqual([
+        ...['D, in place', 'O, in place', 'N, in place', 'apostrophe', 'T, in place'],
+        ...['S, in place', 'T, in place', 'O, in place', 'P, in place', 'comma'],
+        ...['N, in place', 'O, in place', 'W, in place', 'exclamation point'],
+      ])
+      expect(screen.getByText("Solved. The answer is DON'T STOP, NOW!")).toBeInTheDocument()
+    })
+
+    it('marks a guess exactly as it would against the same answer unpunctuated', () => {
+      const guess = '{"guesses":["DONT SPOT OWN"]}'
+      const { unmount } = renderBoard(plain, guess, words)
+      const expected = namesIn(rows()[0])
+      unmount()
+
+      renderBoard(punctuated, guess, words)
+
+      expect(namesIn(rows()[0]).filter((name) => name.includes(','))).toEqual(expected)
+    })
+
+    it('budgets the marks when it sizes the tiles', () => {
+      renderBoard(punctuated, null, words)
+
+      expect(mockTileSize).toHaveBeenLastCalledWith(DEFAULT_WIDTH, [4, 4, 3], [1, 1, 1])
     })
   })
 })

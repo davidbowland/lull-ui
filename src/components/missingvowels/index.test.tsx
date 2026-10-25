@@ -645,4 +645,35 @@ describe('MissingVowelsBoard', () => {
       expect(answerBox()).toHaveValue('Star')
     })
   })
+
+  // The pack ships the answer's punctuation; the player types letters. normalizeAnswer drops every
+  // mark on both sides, and the won plate shows the answer as the pack wrote it.
+  describe('a punctuated answer', () => {
+    const punctuated: Puzzle<MissingVowelsData> = {
+      ...missingVowelsPuzzle,
+      data: { ...missingVowelsPuzzle.data, answer: "HERE'S LOOKING AT YOU, KID", displayed: 'HR SLK NGTYK D' },
+    }
+
+    it('solves on the letters alone', async () => {
+      const { user } = setup(punctuated)
+
+      await user.type(answerBox(), 'heres looking at you kid')
+
+      expect(onSolved).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('status')).toHaveTextContent("Solved. The answer is HERE'S LOOKING AT YOU, KID.")
+    })
+
+    it('shows the answer with its punctuation once solved', () => {
+      setup(punctuated, 'HERES LOOKING AT YOU KID')
+
+      expect(screen.getByText("HERE'S LOOKING AT YOU, KID")).toBeInTheDocument()
+    })
+
+    it('ends the sentence on the answer’s own mark rather than adding a second', () => {
+      const question = { ...punctuated, data: { ...punctuated.data, answer: "WHAT'S UP?", displayed: 'WH TSP' } }
+      setup(question, 'whats up')
+
+      expect(screen.getByRole('status')).toHaveTextContent(/^Solved\. The answer is WHAT'S UP\?$/)
+    })
+  })
 })

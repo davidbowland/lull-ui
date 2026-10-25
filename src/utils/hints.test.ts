@@ -104,6 +104,17 @@ describe('answerOf', () => {
     expect(answerOf(missingVowelsPuzzle)).toBe('The answer is The Empire Strikes Back.')
   })
 
+  it('states a punctuated answer as the pack wrote it', () => {
+    expect(answerOf(withData({ answer: "HERE'S LOOKING AT YOU, KID" }))).toBe(
+      "The answer is HERE'S LOOKING AT YOU, KID.",
+    )
+  })
+
+  // `The answer is WHAT'S UP?.` reads as a typo.
+  it.each([["WHAT'S UP?"], ['NOT NOW!'], ["I'M SORRY."]])('adds no second mark after %j', (answer) => {
+    expect(answerOf(withData({ answer }))).toBe(`The answer is ${answer}`)
+  })
+
   // goFigure's answer is not a phrase and is not on `data.answer` at all -- the pack ships
   // `acceptedSolutions`, several of which are right. The board composes its own line; this function
   // must decline rather than invent one, and today the shell never renders a bar for that bench

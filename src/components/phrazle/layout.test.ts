@@ -1,4 +1,14 @@
-import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, MAX_TILE, MIN_TILE, tileSize, WORD_GAP, WRAP_GAP } from './layout'
+import {
+  DEFAULT_WIDTH,
+  GUESS_GAP,
+  LETTER_GAP,
+  MARK_WIDTH,
+  MAX_TILE,
+  MIN_TILE,
+  tileSize,
+  WORD_GAP,
+  WRAP_GAP,
+} from './layout'
 
 // The grid box's CONTENT width at a 390 viewport and at a 320 one, after the plate's own 16px a
 // side. Measured with a ResizeObserver in the board, never derived from the viewport -- so these
@@ -162,5 +172,30 @@ describe('tileSize', () => {
     ['a phrase with no words', AT_390, []],
   ])('falls back to the floor on %s', (_description, width, wordLengths) => {
     expect(tileSize(width, wordLengths)).toEqual(MIN_TILE)
+  })
+
+  describe('with punctuation marks', () => {
+    it('sizes a word with no marks exactly as it sized before marks existed', () => {
+      expect(tileSize(AT_320, [6, 9], [0, 0])).toEqual(tileSize(AT_320, [6, 9]))
+    })
+
+    it('gives up tile width to the marks on the longest word', () => {
+      expect(tileSize(AT_320, [9], [1])).toBeLessThan(tileSize(AT_320, [9]))
+    })
+
+    // A mark on a short word costs nothing while a longer word is the one setting the size.
+    it('ignores marks on a word that is not the tightest', () => {
+      expect(tileSize(AT_320, [9, 3], [0, 1])).toEqual(tileSize(AT_320, [9]))
+    })
+
+    // Nine tiles and two marks is eleven neighbors with ten gaps between them.
+    it.each<[string, number]>([
+      ['320', AT_320],
+      ['390', AT_390],
+    ])('never draws a punctuated word wider than the box at %s', (_description, availableWidth) => {
+      const tile = tileSize(availableWidth, [9], [2])
+
+      expect(tile * 9 + tile * MARK_WIDTH * 2 + LETTER_GAP * 10).toBeLessThanOrEqual(availableWidth)
+    })
   })
 })

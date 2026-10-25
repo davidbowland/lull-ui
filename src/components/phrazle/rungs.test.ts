@@ -430,3 +430,32 @@ describe('totality', () => {
     expect(() => phrazleHintFor(broken, { kind: 'absent', letters: '' })).not.toThrow()
   })
 })
+
+// THE PACK'S PUNCTUATION IS DISPLAY ONLY. Every rung reads splitPhrase's canonical words, so an
+// apostrophe or a comma never becomes a letter a rung can name.
+describe('a punctuated answer', () => {
+  const PUNCTUATED = { answer: "DON'T STOP, NOW!" }
+  const PLAIN = { answer: 'DONT STOP NOW' }
+
+  it('chooses the same rungs it would for the answer without its marks', () => {
+    const fold = (data: { answer: string }): (PhrazleSpentRung | null)[] => {
+      const random = fixedRandom()
+      const spent: PhrazleSpentRung[] = []
+      const chosen: (PhrazleSpentRung | null)[] = []
+      for (let step = 0; step < 3; step += 1) {
+        const rung = choosePhrazleRung(data, fresh, spent, random)
+        chosen.push(rung)
+        spent.push(rung as PhrazleSpentRung)
+      }
+      return chosen
+    }
+
+    expect(fold(PUNCTUATED)).toEqual(fold(PLAIN))
+  })
+
+  it('spells a word rung from the letters alone', () => {
+    expect(phrazleHintFor(PUNCTUATED, { index: 0, kind: 'word' }).text).toBe(
+      'Word 1 uses these letters, alphabetized: D, N, O, and T.',
+    )
+  })
+})

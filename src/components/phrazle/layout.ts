@@ -44,8 +44,14 @@ export const MAX_TILE = 40
 // There is no DEFAULT_HEIGHT beside it any more, and nothing measures the band's height at all.
 export const DEFAULT_WIDTH = 358
 
+// What a punctuation mark is budgeted against a tile when sizing. A mark is drawn at its own glyph
+// width in the letter's face and size (0.58 of a tile), and the widest the contract ships, `?`, is
+// about 0.25 of a tile there -- so 0.3 keeps every word inside its line without sizing to a guess.
+export const MARK_WIDTH = 0.3
+
 /**
- * One tile size for the whole grid, large enough that the LONGEST WORD sits on one line.
+ * One tile size for the whole grid, large enough that the LONGEST WORD sits on one line, its
+ * punctuation marks included (`wordMarks[i]` counts word i's).
  *
  * THE LONGEST WORD, NOT THE PHRASE, and that is the whole of what this function decides. Sizing the
  * phrase to one line made the tile a function of how much the pack happened to ship: `TOE HOLD` drew
@@ -89,17 +95,19 @@ export const DEFAULT_WIDTH = 358
  * at a 320 viewport. It takes a fifteen-letter word to reach 18 there, and a word that long is a
  * malformed pack rather than a puzzle. A guard that only fires on bad data is still a guard.
  */
-export const tileSize = (availableWidth: number, wordLengths: number[]): number => {
-  // `reduce` rather than `Math.max(...wordLengths)`, so an empty phrase yields 0 and divides by zero
-  // -- the arm the guard below already catches -- instead of -Infinity, which makes the numerator
-  // Infinity and the quotient a NaN that says nothing about which input was wrong.
-  const longest = wordLengths.reduce((most, length) => Math.max(most, length), 0)
-  const widthFit = (availableWidth - LETTER_GAP * (longest - 1)) / longest
+export const tileSize = (availableWidth: number, wordLengths: number[], wordMarks: number[] = []): number => {
+  // The tightest word sets the size: each word fits its tiles, its marks at MARK_WIDTH of a tile,
+  // and a LETTER_GAP between every pair of neighbors. Starting from Infinity means an empty phrase
+  // reaches the guard below instead of returning a size for a grid with nothing in it.
+  const widthFit = wordLengths.reduce((tightest, length, index) => {
+    const marks = wordMarks[index] ?? 0
+    return Math.min(tightest, (availableWidth - LETTER_GAP * (length + marks - 1)) / (length + MARK_WIDTH * marks))
+  }, Infinity)
 
-  // STILL GUARDED, and both arms it has to catch are live. A phrase with no words divides by zero
-  // and yields Infinity, which Math.min(40, Infinity) returns as a perfectly ordinary 40 for a grid
-  // with nothing in it. A NaN measurement is not rescued by the clamp either -- Math.max(18, NaN) is
-  // NaN and so is Math.min(40, NaN) -- and the board writes this number straight into a px width.
+  // STILL GUARDED, and both arms it has to catch are live. A phrase with no words leaves the fold at
+  // Infinity, which Math.min(40, Infinity) would return as a perfectly ordinary 40 for a grid with
+  // nothing in it. A NaN measurement is not rescued by the clamp either -- Math.max(18, NaN) is NaN
+  // and so is Math.min(40, NaN) -- and the board writes this number straight into a px width.
   if (!Number.isFinite(widthFit)) return MIN_TILE
 
   return Math.min(MAX_TILE, Math.max(MIN_TILE, Math.floor(widthFit)))

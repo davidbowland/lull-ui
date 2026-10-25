@@ -306,4 +306,12 @@ describe('the phrazle hint adapter', () => {
       }).not.toThrow()
     })
   })
+
+  // The marks are display only, so the same id and the same letters buy the same ladder.
+  it('offers a punctuated answer the ladder its letters alone would get', () => {
+    const punctuated = { ...PUZZLE, data: { answer: "DON'T STOP, NOW!" } } as Puzzle<unknown>
+    const plain = { ...PUZZLE, data: { answer: 'DONT STOP NOW' } } as Puzzle<unknown>
+
+    expect(phrazleHints.ladder(punctuated, '')).toEqual(phrazleHints.ladder(plain, ''))
+  })
 })

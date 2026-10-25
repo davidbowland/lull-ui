@@ -5,11 +5,13 @@ import React, { useEffect, useRef, useState } from 'react'
 import { DEFAULT_WIDTH, GUESS_GAP, LETTER_GAP, tileSize, WORD_GAP, WRAP_GAP } from './layout'
 import { startsSomeWord } from './prefixes'
 import { decode, encode } from './progress'
+import { punctuatedPhrase, punctuationOf } from './punctuation'
 import type { PhrazleSpentRung } from './rungs'
 import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
 import { LookUp } from '@components/look-up'
 import { PhrazleData, PuzzleComponentProps } from '@types'
+import { theAnswerIs } from '@utils/hints'
 
 // The floor a board handed no dictionary stands on. everyWordInDictionary is documented and TESTED
 // to reject every word against an empty set, so such a board refuses every guess rather than
@@ -331,6 +333,38 @@ const Strike = (): React.ReactNode => (
   />
 )
 
+// What a screen reader calls each mark the contract ships. Anything else is named by itself.
+const MARK_NAME: Record<string, string> = {
+  "'": 'apostrophe',
+  ',': 'comma',
+  '.': 'period',
+  '?': 'question mark',
+  '!': 'exclamation point',
+  ';': 'semicolon',
+  ':': 'colon',
+}
+
+// A PUNCTUATION MARK IN THE GRID, drawn on every row because it is part of the phrase's shape, as
+// the word lengths are. The cryptogram's mark: no border, no ground, the letter's face and size,
+// centered in a box the tile's height so it shares the letters' baseline and HERE'S reads as one
+// word. It is never typed into, so it takes no tile and no slot in the guess.
+//
+// role="img" with a name, the tile's own convention, so a screen reader working a row hears
+// `E, apostrophe, S` in the order a sighted player reads it.
+const Mark = ({ height, mark, size }: { height: number; mark: string; size: number }): React.ReactNode => (
+  <span
+    aria-label={MARK_NAME[mark] ?? mark}
+    className="lull-sign flex shrink-0 items-center leading-none text-[var(--lull-ink)]"
+    data-mark=""
+    role="img"
+    style={{ height: `${height}px` }}
+  >
+    <span aria-hidden="true" style={{ fontSize: `${size}px` }}>
+      {mark}
+    </span>
+  </span>
+)
+
 // THE HAIRLINE BETWEEN ONE GUESS AND THE NEXT, drawn in `rule` rather than in `hair`. hair is
 // documented as decorative and forbidden from carrying meaning, and this line carries the only
 // thing on the board that says where one attempt ends: a sixteen-letter phrase wraps at 390, so
@@ -516,9 +550,14 @@ export const PhrazleBoard = ({
   const answerWords = splitPhrase(typeof answer === 'string' ? answer : '')
   const drawable = answerWords.length > 0
 
-  // The canonical phrase, re-joined from the SAME splitter the guess goes through, so the copy can
-  // never show a stray double space the pack happened to ship.
+  // The canonical phrase, re-joined from the SAME splitter the guess goes through: the form stored
+  // guesses are decoded against. The copy says `spoken` below, which keeps the pack's punctuation.
   const phrase = answerWords.join(' ')
+  // The pack's punctuation, gap by gap around each word's tiles, and the phrase as drawn with it.
+  // Display only: every letter above is still splitPhrase's.
+  const gaps = punctuationOf(typeof answer === 'string' ? answer : '')
+  const spoken = punctuatedPhrase(answerWords, gaps)
+  const markCounts = gaps.map((word) => word.reduce((count, marks) => count + marks.length, 0))
   const lengths = answerWords.map((word) => word.length)
   const total = lengths.reduce((sum, length) => sum + length, 0)
   // Where each word starts in the phrase's letters, so a typed run can be cut into words and a
@@ -904,7 +943,7 @@ export const PhrazleBoard = ({
 
     const tiles = markGuess(words, answerWords)
     if (tiles.every((word) => word.every((tile) => tile === 'green'))) {
-      say(`Solved. The answer is ${phrase}.`)
+      say(`Solved. ${theAnswerIs(spoken)}`)
       return
     }
     // NO LOSS BRANCH, because there is no loss. This is where `Out of guesses. The answer is X.`
@@ -1067,7 +1106,7 @@ export const PhrazleBoard = ({
     return () => window.removeEventListener('keydown', onKeyDown)
   })
 
-  const tile = tileSize(width, lengths)
+  const tile = tileSize(width, lengths, markCounts)
   const letter = Math.round(tile * 0.58)
   const bar = Math.round(tile * 0.6)
 
@@ -1095,7 +1134,7 @@ export const PhrazleBoard = ({
   // and the band stays empty.
   const restingLine = (): string => {
     if (!drawable) return INCOMPLETE
-    if (solved) return `Solved. The answer is ${phrase}.`
+    if (solved) return `Solved. ${theAnswerIs(spoken)}`
     return ''
   }
 
@@ -1303,6 +1342,9 @@ export const PhrazleBoard = ({
                           key={wordIndex}
                           style={{ gap: `${LETTER_GAP}px` }}
                         >
+                          {gaps[wordIndex][0].map((mark, markIndex) => (
+                            <Mark height={tile} key={`lead-${markIndex}`} mark={mark} size={letter} />
+                          ))}
                           {Array.from({ length: lengths[wordIndex] }, (_unused, at) => at).map((at) => {
                             const state = done ? marked[index][wordIndex][at] : undefined
                             const shown = word[at] ?? ''
@@ -1315,24 +1357,28 @@ export const PhrazleBoard = ({
                             // it makes the tile one stop for a screen reader working the row rather than
                             // two.
                             return (
-                              <span
-                                aria-label={tileName(shown, state)}
-                                className={`${TILE} ${state === undefined ? composingFill : FILL[state]}`}
-                                key={at}
-                                role="img"
-                                style={{ height: `${tile}px`, width: `${tile}px` }}
-                              >
-                                <span aria-hidden="true" style={{ fontSize: `${letter}px` }}>
-                                  {shown}
-                                </span>
-                                {state !== undefined && <Bar state={state} width={bar} />}
-                                {/* THE FIRST TILE OF THE WORD AND NO OTHER. One chip annotates a
+                              <React.Fragment key={at}>
+                                <span
+                                  aria-label={tileName(shown, state)}
+                                  className={`${TILE} ${state === undefined ? composingFill : FILL[state]}`}
+                                  role="img"
+                                  style={{ height: `${tile}px`, width: `${tile}px` }}
+                                >
+                                  <span aria-hidden="true" style={{ fontSize: `${letter}px` }}>
+                                    {shown}
+                                  </span>
+                                  {state !== undefined && <Bar state={state} width={bar} />}
+                                  {/* THE FIRST TILE OF THE WORD AND NO OTHER. One chip annotates a
                                     word; a chip per tile would read as a fifth marking verdict and
                                     would make a five-letter word look more rejected than a
                                     two-letter one. Drawn LAST so the letter and the bar keep the
                                     child positions the suite reads them at. */}
-                                {wordRejected && at === 0 && <NotAWord />}
-                              </span>
+                                  {wordRejected && at === 0 && <NotAWord />}
+                                </span>
+                                {gaps[wordIndex][at + 1].map((mark, markIndex) => (
+                                  <Mark height={tile} key={`mark-${markIndex}`} mark={mark} size={letter} />
+                                ))}
+                              </React.Fragment>
                             )
                           })}
                         </div>

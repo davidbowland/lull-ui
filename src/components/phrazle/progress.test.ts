@@ -68,6 +68,11 @@ describe('phrazle progress', () => {
       expect(decode('{"guesses":["HOT HAND"]}', ANSWER)).toEqual({ guesses: ['HOT HAND'] })
     })
 
+    // The answer's marks are not letters, so a punctuated answer has the same shape as its letters.
+    it('reads a guess back against a punctuated answer', () => {
+      expect(decode('{"guesses":["DONT STOP NOW"]}', "DON'T STOP, NOW!")).toEqual({ guesses: ['DONT STOP NOW'] })
+    })
+
     // Canonicalized on the way OUT as well as on the way in, so a board restored from a key someone
     // hand-edited paints uppercase tiles and hands markGuess canonical words. The two directions
     // are separate assertions because encode is not the only writer a localStorage key can have.

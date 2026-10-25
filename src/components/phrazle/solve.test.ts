@@ -42,4 +42,10 @@ describe('phrazleSolve', () => {
   ])('has no finished board to give when %s', (_description, data) => {
     expect(phrazleSolve({ ...PUZZLE, data } as Puzzle<PhrazleData>, '')).toBeNull()
   })
+
+  // The pack's marks are drawn by the board, never stored: the row is the letters a player types.
+  it('writes a punctuated answer as the letters the player types', () => {
+    const punctuated = { ...PUZZLE, data: { answer: "HERE'S LOOKING AT YOU, KID" } } as Puzzle<PhrazleData>
+    expect(phrazleSolve(punctuated, '')).toEqual('{"guesses":["HERES LOOKING AT YOU KID"]}')
+  })
 })

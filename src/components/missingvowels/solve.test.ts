@@ -12,6 +12,11 @@ describe('missingVowelsSolve', () => {
     expect(missingVowelsSolve(PUZZLE)).toEqual('The Empire Strikes Back')
   })
 
+  it('types a punctuated answer onto the line as the pack wrote it', () => {
+    const punctuated = { ...PUZZLE, data: { answer: "HERE'S LOOKING AT YOU, KID" } } as Puzzle<MissingVowelsData>
+    expect(missingVowelsSolve(punctuated)).toEqual("HERE'S LOOKING AT YOU, KID")
+  })
+
   it.each<[string, unknown]>([
     ['the answer never arrived', { displayed: 'THMP RSTR KSBCK' }],
     ['the answer is blank', { answer: '   ' }],

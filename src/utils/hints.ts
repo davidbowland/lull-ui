@@ -18,6 +18,12 @@ const MIN_HINT_COUNT = 1
 const MAX_HINT_COUNT = 3
 
 /**
+ * `The answer is X.`, without a second full stop when X already ends a sentence. Phrase answers can
+ * end in `?`, `!` or `.`, and `The answer is WHAT'S UP?.` reads as a typo.
+ */
+export const theAnswerIs = (answer: string): string => `The answer is ${answer}${/[.?!]$/.test(answer) ? '' : '.'}`
+
+/**
  * The ladder a puzzle carries, or null.
  *
  * It cannot live in src/types.ts: that file is a copy-verbatim mirror of lull-api with zero runtime
@@ -118,7 +124,7 @@ export const answerOf = (puzzle: Puzzle<unknown>): string | null => {
   if (typeof data !== 'object' || data === null) return null
 
   const answer = data.answer
-  if (typeof answer === 'string' && answer.trim() !== '') return `The answer is ${answer}.`
+  if (typeof answer === 'string' && answer.trim() !== '') return theAnswerIs(answer)
 
   const entries = data.entries
   if (!Array.isArray(entries) || entries.length === 0) return null
@@ -133,5 +139,5 @@ export const answerOf = (puzzle: Puzzle<unknown>): string | null => {
 
   // The singular exists because this function is structural over untrusted JSON: the wire type is a
   // four-tuple, but a one-entry array must not produce "The answers are KETTLE."
-  return words.length === 1 ? `The answer is ${words[0]}.` : `The answers are ${listOf(words)}.`
+  return words.length === 1 ? theAnswerIs(words[0]) : `The answers are ${listOf(words)}.`
 }

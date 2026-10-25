@@ -6,6 +6,7 @@ import { Plate, Shell } from '@components/enclosure'
 import { FloorBar } from '@components/floor-bar'
 import { LookUp, SETTLE } from '@components/look-up'
 import { MissingVowelsData, PuzzleComponentProps } from '@types'
+import { theAnswerIs } from '@utils/hints'
 
 // The one rule this component applies, and it is vendored rather than authored: the backend
 // decides what counts as the answer, and normalizeAnswer exists only because the comparison runs
@@ -156,7 +157,7 @@ export const MissingVowelsBoard = ({
   }
 
   const message = (): string => {
-    if (solved) return `Solved. The answer is ${answer}.`
+    if (solved) return `Solved. ${theAnswerIs(answer)}`
     // An unfinished guess is not a wrong one, so nothing is said until the player asks.
     if (!checked) return ''
     if (normalizeAnswer(guess) === '') return 'Type your answer first.'
