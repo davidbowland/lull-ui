@@ -450,14 +450,11 @@ export interface CryptogramData extends PhrasePuzzleData {
 // pack, and it can never end a game -- a player at guess 25 keeps playing, and only the oldest rows
 // roll off the far end.
 //
-// `answer` SHIPS THE CANONICAL FORM -- uppercase A-Z words separated by single spaces, the output of
-// splitPhrase re-joined -- and is the ONLY phrase-type answer that is not `phrase.text` verbatim.
-// The board paints its characters as tiles and marks them with markGuess, which works on canonical
-// words, so shipping corpus text with an accent or a stray double space would give the board an
-// answer string whose characters are not the characters the marker marks. Missing Vowels and
-// Cryptogram both display a DERIVATION of `answer` (a consonant run, a ciphertext) and adjudicate
-// through normalizeAnswer, so neither has this constraint. utils/exclusions.ts is unaffected either
-// way, because the anti-repetition list keys on normalizeAnswer, which collapses both forms.
+// `answer` SHIPS UPPERCASE WORDS SEPARATED BY SINGLE SPACES, KEEPING THE PHRASE'S ' , ? AND ! for
+// display (HERE'S LOOKING AT YOU, KID); packs older than 2026-10-25 carry A-Z only. The board marks
+// splitPhrase(answer), which folds each word to its letters, so a mark is drawn as a fixed glyph
+// and is never a tile, and `answer.split(' ')` is the wrong grid. components/phrazle/punctuation.ts
+// places the marks, counting letters with the same normalizer, so grid and marks cannot disagree.
 //
 // AND IT IS NOT A SECRET. endpoints.rest says so in one sentence rather than obscuring it. A hash
 // cannot color a tile -- marking needs the letters -- and an encoding would ship its own reversal in
