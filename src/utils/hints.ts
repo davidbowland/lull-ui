@@ -18,10 +18,11 @@ const MIN_HINT_COUNT = 1
 const MAX_HINT_COUNT = 3
 
 /**
- * `The answer is X.`, without a second full stop when X already ends a sentence. Phrase answers can
- * end in `?`, `!` or `.`, and `The answer is WHAT'S UP?.` reads as a typo.
+ * `The answer is X.`, without a full stop X has no use for. Phrase answers can end in `?`, `!` or
+ * `.`, and `The answer is WHAT'S UP?.` reads as a typo. A cryptogram's answer can also end in
+ * ` - AUTHOR`, which lull-api's AUTHOR_SEPARATOR keeps unambiguous, and a name takes no full stop.
  */
-export const theAnswerIs = (answer: string): string => `The answer is ${answer}${/[.?!]$/.test(answer) ? '' : '.'}`
+export const theAnswerIs = (answer: string): string => `The answer is ${answer}${/[.?!]$| - /.test(answer) ? '' : '.'}`
 
 /**
  * The ladder a puzzle carries, or null.

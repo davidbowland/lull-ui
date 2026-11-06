@@ -115,6 +115,14 @@ describe('answerOf', () => {
     expect(answerOf(withData({ answer }))).toBe(`The answer is ${answer}`)
   })
 
+  // A name is not a sentence, so a quote's attribution takes no period of its own.
+  it.each([['NOTHING GOLD CAN STAY. - ROBERT FROST'], ['WHO GOES THERE? - ANN'], ['KNOW THYSELF - SOCRATES']])(
+    'adds no period after the author in %j',
+    (answer) => {
+      expect(answerOf(withData({ answer }))).toBe(`The answer is ${answer}`)
+    },
+  )
+
   // goFigure's answer is not a phrase and is not on `data.answer` at all -- the pack ships
   // `acceptedSolutions`, several of which are right. The board composes its own line; this function
   // must decline rather than invent one, and today the shell never renders a bar for that bench

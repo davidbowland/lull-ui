@@ -18,6 +18,7 @@ import { FloorBar } from '@components/floor-bar'
 import { Keypad } from '@components/keypad'
 import { LookUp, SETTLE } from '@components/look-up'
 import { CryptogramData, PuzzleComponentProps } from '@types'
+import { theAnswerIs } from '@utils/hints'
 
 // 26 letters plus Undo plus Delete is 28, and the two utilities are ON the pad rather than beside it
 // so that every key sits in the same place on every board the player ever opens. The rectangle they
@@ -747,7 +748,7 @@ export const CryptogramBoard = ({
   // in the pack's own casing would look like a different string from the one just spelled. Shared,
   // because a board can also arrive back at the answer by Undo restoring the mapping that spelled
   // it, and the two paths must not read differently.
-  const solvedMessage = (): string => `Solved. The answer is ${answer.toUpperCase()}.`
+  const solvedMessage = (): string => `Solved. ${theAnswerIs(answer.toUpperCase())}`
 
   // The one path that ASSIGNS, so a tapped key, a typed letter and an erase cannot drift apart: all
   // of them arrive here and all of them are the same six-row table. Undo is the exception and is one

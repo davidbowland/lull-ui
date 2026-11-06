@@ -1938,6 +1938,18 @@ describe('CryptogramBoard', () => {
       expect(screen.getByText('Solved. The answer is ATE ATE TEA.')).toBeInTheDocument()
     })
 
+    // A proverb ships its own full stop and a quote ships a name after it, which is most of what this
+    // bench deals. `The answer is DON'T, ANN..` read as a typo and `... - ANN.` punctuated a name.
+    it.each([
+      ['a proverb on its own mark', "Don't, Ann.", "QVM'Z, BMM.", "Solved. The answer is DON'T, ANN."],
+      ['a question on its own mark', "Don't, Ann?", "QVM'Z, BMM?", "Solved. The answer is DON'T, ANN?"],
+      ['a quote on its author', "Don't, Ann. - Ann", "QVM'Z, BMM. - BMM", "Solved. The answer is DON'T, ANN. - ANN"],
+    ])('ends the sentence on %s rather than adding a period', (_, answer, ciphertext, sentence) => {
+      setup({ ...cryptogramPuzzle, data: { ...cryptogramPuzzle.data, answer, ciphertext } }, 'QDVOMNZTBA')
+
+      expect(screen.getByText(sentence)).toBeInTheDocument()
+    })
+
     // An unsolved board at rest has nothing here the board is not already saying, and the blank
     // lasts exactly one keystroke.
     it('leaves the floor blank on a board still being solved', () => {
